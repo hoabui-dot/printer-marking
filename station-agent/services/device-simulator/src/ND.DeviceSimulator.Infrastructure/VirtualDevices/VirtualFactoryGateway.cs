@@ -1,0 +1,210 @@
+using System.Text;
+using System.Text.Json;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using MQTTnet;
+using MQTTnet.Client;
+using ND.DeviceSimulator.Application.Abstractions;
+using ND.DeviceSimulator.Application.Dtos;
+using ND.DeviceSimulator.Domain.Entities;
+using ND.DeviceSimulator.Infrastructure.Hubs;
+using ND.DeviceSimulator.Infrastructure.Persistence;
+using ND.UnifiedContracts.Events;
+
+namespace ND.DeviceSimulator.Infrastructure.VirtualDevices;
+
+/// <summary>
+/// Virtual Factory Gateway — MQTT client that connects to the broker.
+/// Publishes UnifiedEvent format messages (manual or scheduled).
+/// Subscribes to command topics and forwards to timeline.
+/// </summary>
+public sealed class VirtualFactoryGateway : BackgroundService
+{
+    private IMqttClient? _mqttClient;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ISimulatorStateService _state;
+    private readonly IHubContext<SimulatorHub, ISimulatorClient> _hub;
+    private readonly IConfiguration _config;
+    private readonly ILogger<VirtualFactoryGateway> _logger;
+
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+
+    public VirtualFactoryGateway(
+        IServiceScopeFactory scopeFactory,
+        ISimulatorStateService state,
+        IHubContext<SimulatorHub, ISimulatorClient> hub,
+        IConfiguration config,
+        ILogger<VirtualFactoryGateway> logger)
+    {
+        _scopeFactory = scopeFactory;
+        _state = state;
+        _hub = hub;
+        _config = config;
+        _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await ConnectAsync(stoppingToken);
+                await RunSchedulerAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "VirtualFactoryGateway error — reconnecting in 10s");
+                _state.SetGatewayConnected(false);
+                await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+            }
+        }
+
+        if (_mqttClient?.IsConnected == true)
+            await _mqttClient.DisconnectAsync(cancellationToken: stoppingToken);
+    }
+
+    private async Task ConnectAsync(CancellationToken ct)
+    {
+        var host = _config["Simulator:MQTT_HOST"] ?? "localhost";
+        var port = int.TryParse(_config["Simulator:MQTT_PORT"] ?? "1883", out var p) ? p : 1883;
+        var user = _config["Simulator:MQTT_USERNAME"] ?? "";
+        var pass = _config["Simulator:MQTT_PASSWORD"] ?? "";
+        var subscribeTopic = _config["Simulator:MQTT_SUBSCRIBE_TOPIC"] ?? "factory/commands/#";
+
+        var factory = new MqttFactory();
+        _mqttClient = factory.CreateMqttClient();
+
+        var opts = new MqttClientOptionsBuilder()
+            .WithTcpServer(host, port)
+            .WithClientId($"device-simulator-gateway-{Guid.NewGuid()}")
+            .WithCleanSession();
+
+        if (!string.IsNullOrWhiteSpace(user))
+            opts = opts.WithCredentials(user, pass);
+
+        _mqttClient.ApplicationMessageReceivedAsync += async args =>
+        {
+            var payload = Encoding.UTF8.GetString(args.ApplicationMessage.PayloadSegment);
+            _state.RecordGatewayReceive(args.ApplicationMessage.Topic);
+            await RecordAndBroadcastAsync("RECEIVE", args.ApplicationMessage.Topic, payload, ct);
+            await AddTimelineAsync("MQTT_RECEIVED", "INFO", $"Topic: {args.ApplicationMessage.Topic}", ct);
+        };
+
+        _mqttClient.DisconnectedAsync += async args =>
+        {
+            _state.SetGatewayConnected(false);
+            await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+            _logger.LogWarning("Gateway MQTT disconnected");
+        };
+
+        await _mqttClient.ConnectAsync(opts.Build(), ct);
+
+        var subOpts = new MqttFactory().CreateSubscribeOptionsBuilder()
+            .WithTopicFilter(f => f.WithTopic(subscribeTopic))
+            .Build();
+        await _mqttClient.SubscribeAsync(subOpts, ct);
+
+        _state.SetGatewayConnected(true, host, port);
+        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+        _logger.LogInformation("VirtualFactoryGateway connected to MQTT {Host}:{Port}, subscribed to {Topic}", host, port, subscribeTopic);
+    }
+
+    private async Task RunSchedulerAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested && _mqttClient?.IsConnected == true)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5), ct);
+
+            var enabled = (_config["Simulator:GATEWAY_AUTO_PUBLISH_ENABLED"] ?? "false") == "true";
+            if (!enabled) continue;
+
+            var intervalSec = int.TryParse(_config["Simulator:GATEWAY_AUTO_PUBLISH_INTERVAL_SEC"] ?? "30", out var i) ? i : 30;
+            await Task.Delay(TimeSpan.FromSeconds(intervalSec - 5), ct); // already waited 5s above
+
+            await PublishHeartbeatAsync(ct);
+        }
+    }
+
+    public async Task PublishAsync(GatewayPublishRequest request, CancellationToken ct = default)
+    {
+        if (_mqttClient?.IsConnected != true)
+            throw new InvalidOperationException("Gateway not connected to MQTT broker");
+
+        var tags = request.Data.Select(d => new UnifiedTag { Tag = d.Tag, Value = d.Value, Quality = d.Quality }).ToList();
+        var evt = UnifiedEvent.Create(request.Site, request.Area, request.Line, request.Machine, request.EdgeId, tags);
+        var json = JsonSerializer.Serialize(evt, JsonOpts);
+
+        await _mqttClient.PublishAsync(new MqttApplicationMessageBuilder()
+            .WithTopic(request.Topic)
+            .WithPayload(json)
+            .Build(), ct);
+
+        _state.RecordGatewayPublish(request.Topic);
+        await RecordAndBroadcastAsync("PUBLISH", request.Topic, json, ct);
+        await AddTimelineAsync("GATEWAY_PUBLISHED", "OK", $"Published to {request.Topic}", ct);
+
+        _logger.LogInformation("Gateway published to {Topic}", request.Topic);
+    }
+
+    private async Task PublishHeartbeatAsync(CancellationToken ct)
+    {
+        var topic = _config["Simulator:MQTT_PUBLISH_TOPIC"] ?? "factory/events/simulator";
+        var site = _config["Simulator:SITE_CODE"] ?? "FACTORY-A";
+        var area = _config["Simulator:AREA_CODE"] ?? "LINE-1";
+        var line = _config["Simulator:LINE_CODE"] ?? "LINE-1";
+        var machine = _config["Simulator:MACHINE_CODE"] ?? "SIMULATOR-01";
+        var edgeId = _config["Simulator:EDGE_ID"] ?? "edge-simulator";
+
+        var tags = new List<UnifiedTag> { new() { Tag = "simulator.heartbeat", Value = "ALIVE", Quality = "GOOD" } };
+        var evt = UnifiedEvent.Create(site, area, line, machine, edgeId, tags);
+        var json = JsonSerializer.Serialize(evt, JsonOpts);
+
+        if (_mqttClient?.IsConnected != true) return;
+
+        await _mqttClient.PublishAsync(new MqttApplicationMessageBuilder()
+            .WithTopic(topic)
+            .WithPayload(json)
+            .Build(), ct);
+
+        _state.RecordGatewayPublish(topic);
+        await RecordAndBroadcastAsync("PUBLISH", topic, json, ct);
+        _logger.LogDebug("Gateway auto-heartbeat published");
+    }
+
+    private async Task RecordAndBroadcastAsync(string direction, string topic, string payloadJson, CancellationToken ct)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<SimulatorDbContext>();
+
+        var entity = GatewayEvent.Create(direction, topic, payloadJson);
+        db.GatewayEvents.Add(entity);
+
+        var count = await db.GatewayEvents.CountAsync(ct);
+        if (count > 500)
+        {
+            var oldest = await db.GatewayEvents.OrderBy(e => e.OccurredAt).Take(count - 500).ToListAsync(ct);
+            db.GatewayEvents.RemoveRange(oldest);
+        }
+        await db.SaveChangesAsync(ct);
+
+        var dto = new GatewayEventDto(entity.Id, direction, topic, payloadJson, entity.OccurredAt);
+        await _hub.Clients.All.GatewayEventOccurred(dto);
+    }
+
+    private async Task AddTimelineAsync(string stage, string status, string detail, CancellationToken ct)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<SimulatorDbContext>();
+        var evt = TimelineEvent.Create(stage, status, detail);
+        db.TimelineEvents.Add(evt);
+        await db.SaveChangesAsync(ct);
+        await _hub.Clients.All.TimelineEventAdded(new TimelineEventDto(evt.Id, evt.Stage, evt.Status, evt.Detail, evt.OccurredAt));
+    }
+}

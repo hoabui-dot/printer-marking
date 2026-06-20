@@ -1,0 +1,401 @@
+///////////////////////////////////////////////////////////
+// DATABASE #1
+// station_core.db
+//
+// Service:
+// - MQTT Module
+// - Job Engine
+// - Outbox Publisher
+///////////////////////////////////////////////////////////
+
+Table jobs {
+id text [pk]
+
+external_job_id text
+lot_no text
+serial_no text
+
+job_type text
+status text
+
+priority integer
+
+retry_count integer
+overwrite_count integer
+
+payload_json text
+
+created_at datetime
+started_at datetime
+completed_at datetime
+
+Note: 'Core Job Aggregate'
+}
+
+Table job_attempts {
+id text [pk]
+
+job_id text [not null]
+
+attempt_no integer
+
+trigger_source text
+status text
+
+created_at datetime
+completed_at datetime
+
+Note: 'Reprint / Remark tracking'
+}
+
+Table job_steps {
+id text [pk]
+
+job_id text [not null]
+
+attempt_id text
+
+step_type text
+status text
+
+started_at datetime
+ended_at datetime
+
+error_code text
+error_message text
+
+Note: 'PRINT / MARK / CAMERA / PLC'
+}
+
+Table job_state_transitions {
+id text [pk]
+
+job_id text [not null]
+
+from_state text
+to_state text
+
+actor_type text
+actor_id text
+
+reason text
+
+created_at datetime
+
+Note: 'Immutable state machine history'
+}
+
+Table job_history {
+id text [pk]
+
+job_id text [not null]
+
+event_type text
+
+old_status text
+new_status text
+
+operator_id text
+
+message text
+
+created_at datetime
+
+Note: 'Audit Trail'
+}
+
+Table overwrite_requests {
+id text [pk]
+
+job_id text [not null]
+
+operator_id text [not null]
+
+action_type text
+
+reason text
+
+status text
+
+created_at datetime
+executed_at datetime
+
+Note: 'Manual Overwrite Requests'
+}
+
+Table outbox_events {
+id text [pk]
+
+aggregate_id text
+
+event_type text
+
+payload_json text
+
+status text
+
+retry_count integer
+
+created_at datetime
+published_at datetime
+
+Note: 'Transactional Outbox Pattern'
+}
+
+Ref: job_attempts.job_id > jobs.id
+Ref: job_steps.job_id > jobs.id
+Ref: job_steps.attempt_id > job_attempts.id
+Ref: job_history.job_id > jobs.id
+Ref: overwrite_requests.job_id > jobs.id
+Ref: job_state_transitions.job_id > jobs.id
+
+///////////////////////////////////////////////////////////
+// DATABASE #2
+// device_manager.db
+//
+// Service:
+// - Device Manager
+// - Printer Adapter
+// - Laser Adapter
+// - PLC Adapter
+// - Vision Adapter
+///////////////////////////////////////////////////////////
+
+Table devices {
+id text [pk]
+
+device_code text
+
+device_type text
+
+name text
+
+ip_address text
+
+port integer
+
+protocol text
+
+status text
+
+last_heartbeat datetime
+
+metadata_json text
+
+created_at datetime
+
+Note: 'All physical devices'
+}
+
+Table device_health_logs {
+id text [pk]
+
+device_id text [not null]
+
+status text
+
+response_time_ms integer
+
+message text
+
+created_at datetime
+
+Note: 'Heartbeat history'
+}
+
+Table printer_jobs {
+id text [pk]
+
+job_id text
+
+device_id text
+
+label_template text
+
+zpl_content text
+
+status text
+
+started_at datetime
+completed_at datetime
+
+Note: 'Printer execution'
+}
+
+Table laser_jobs {
+id text [pk]
+
+job_id text
+
+device_id text
+
+mark_template text
+
+mark_content text
+
+status text
+
+started_at datetime
+completed_at datetime
+
+Note: 'Laser execution'
+}
+
+Table vision_results {
+id text [pk]
+
+job_id text
+
+device_id text
+
+image_path text
+
+result text
+
+score real
+
+defect_code text
+
+created_at datetime
+
+Note: 'Camera Inspection Result'
+}
+
+Table plc_events {
+id text [pk]
+
+job_id text
+
+device_id text
+
+signal_name text
+
+signal_value text
+
+created_at datetime
+
+Note: 'PLC Commands'
+}
+
+Table robot_pick_events {
+id text [pk]
+
+job_id text
+
+plc_event_id text
+
+result text
+
+created_at datetime
+
+Note: 'NG Product Removal'
+}
+
+Ref: device_health_logs.device_id > devices.id
+
+Ref: printer_jobs.device_id > devices.id
+Ref: laser_jobs.device_id > devices.id
+
+Ref: vision_results.device_id > devices.id
+Ref: plc_events.device_id > devices.id
+
+Ref: robot_pick_events.plc_event_id > plc_events.id
+
+///////////////////////////////////////////////////////////
+// DATABASE #3
+// kiosk_auth.db
+//
+// Service:
+// - Kiosk UI
+// - Authentication
+// - Authorization
+///////////////////////////////////////////////////////////
+
+Table users {
+id text [pk]
+
+username text [unique]
+
+password_hash text
+
+full_name text
+
+employee_code text
+
+status text
+
+created_at datetime
+
+Note: 'System Users'
+}
+
+Table roles {
+id text [pk]
+
+role_name text
+
+description text
+}
+
+Table permissions {
+id text [pk]
+
+permission_key text
+
+description text
+}
+
+Table user_roles {
+user_id text
+role_id text
+
+Note: 'RBAC Mapping'
+}
+
+Table role_permissions {
+role_id text
+permission_id text
+
+Note: 'RBAC Mapping'
+}
+
+Table access_logs {
+id text [pk]
+
+user_id text
+
+action text
+
+target_type text
+
+target_id text
+
+ip_address text
+
+created_at datetime
+
+Note: 'Security Audit'
+}
+
+Table kiosk_sessions {
+id text [pk]
+
+user_id text
+
+token text
+
+login_at datetime
+expired_at datetime
+
+Note: 'Session Tracking'
+}
+
+Ref: user_roles.user_id > users.id
+Ref: user_roles.role_id > roles.id
+
+Ref: role_permissions.role_id > roles.id
+Ref: role_permissions.permission_id > permissions.id
+
+Ref: access_logs.user_id > users.id
+Ref: kiosk_sessions.user_id > users.id
+

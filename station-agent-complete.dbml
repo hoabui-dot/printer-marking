@@ -1,0 +1,326 @@
+
+// ======================================================
+// STATION AGENT PLATFORM - DBML
+// 7 SERVICES - DBDIAGRAM.IO COMPATIBLE
+// ======================================================
+
+Table mqtt_messages {
+  id uuid [pk]
+  message_id varchar [unique]
+  topic varchar
+  payload_json text
+  direction varchar
+  received_at timestamp
+  processed_at timestamp
+}
+
+Table mqtt_outbox_events {
+  id uuid [pk]
+  aggregate_type varchar
+  aggregate_id uuid
+  event_type varchar
+  payload_json text
+  status varchar
+  retry_count int
+  created_at timestamp
+  published_at timestamp
+}
+
+TableGroup MQTT_Service {
+  mqtt_messages
+  mqtt_outbox_events
+}
+
+Table job_engine_jobs {
+  id uuid [pk]
+  job_no varchar [unique]
+  source_system varchar
+  job_type varchar
+  current_status varchar
+  product_code varchar
+  created_at timestamp
+  completed_at timestamp
+}
+
+Table job_engine_job_attempts {
+  id uuid [pk]
+  job_id uuid
+  attempt_no int
+  trigger_type varchar
+  result_status varchar
+  created_by varchar
+  created_at timestamp
+}
+
+Table job_engine_job_steps {
+  id uuid [pk]
+  job_id uuid
+  step_name varchar
+  status varchar
+  started_at timestamp
+  ended_at timestamp
+}
+
+Table job_engine_job_history {
+  id uuid [pk]
+  job_id uuid
+  old_status varchar
+  new_status varchar
+  action_name varchar
+  action_by varchar
+  created_at timestamp
+}
+
+Table job_engine_state_transitions {
+  id uuid [pk]
+  job_id uuid
+  from_state varchar
+  to_state varchar
+  reason text
+  created_at timestamp
+}
+
+Table job_engine_overwrite_requests {
+  id uuid [pk]
+  job_id uuid
+  requested_by uuid
+  overwrite_type varchar
+  reason text
+  status varchar
+  approved_at timestamp
+  created_at timestamp
+}
+
+TableGroup Job_Engine_Service {
+  job_engine_jobs
+  job_engine_job_attempts
+  job_engine_job_steps
+  job_engine_job_history
+  job_engine_state_transitions
+  job_engine_overwrite_requests
+}
+
+Table printer_printers {
+  id uuid [pk]
+  printer_code varchar
+  printer_name varchar
+  ip_address varchar
+  status varchar
+  last_heartbeat timestamp
+}
+
+Table printer_jobs {
+  id uuid [pk]
+  job_id uuid
+  attempt_id uuid
+  printer_id uuid
+  label_template varchar
+  print_status varchar
+  started_at timestamp
+  ended_at timestamp
+}
+
+Table printer_events {
+  id uuid [pk]
+  printer_id uuid
+  event_type varchar
+  event_message text
+  created_at timestamp
+}
+
+TableGroup Printer_Service {
+  printer_printers
+  printer_jobs
+  printer_events
+}
+
+Table laser_lasers {
+  id uuid [pk]
+  laser_code varchar
+  laser_name varchar
+  ip_address varchar
+  status varchar
+  last_heartbeat timestamp
+}
+
+Table laser_jobs {
+  id uuid [pk]
+  job_id uuid
+  attempt_id uuid
+  laser_id uuid
+  template_name varchar
+  mark_status varchar
+  started_at timestamp
+  ended_at timestamp
+}
+
+Table laser_events {
+  id uuid [pk]
+  laser_id uuid
+  event_type varchar
+  event_message text
+  created_at timestamp
+}
+
+TableGroup Laser_Service {
+  laser_lasers
+  laser_jobs
+  laser_events
+}
+
+Table vision_cameras {
+  id uuid [pk]
+  camera_code varchar
+  camera_name varchar
+  status varchar
+  last_heartbeat timestamp
+}
+
+Table vision_results {
+  id uuid [pk]
+  job_id uuid
+  camera_id uuid
+  inspection_result varchar
+  defect_code varchar
+  image_path varchar
+  created_at timestamp
+}
+
+TableGroup Vision_Service {
+  vision_cameras
+  vision_results
+}
+
+Table plc_devices {
+  id uuid [pk]
+  plc_code varchar
+  plc_name varchar
+  ip_address varchar
+  status varchar
+}
+
+Table plc_commands {
+  id uuid [pk]
+  plc_id uuid
+  job_id uuid
+  command_name varchar
+  command_payload text
+  execution_status varchar
+  created_at timestamp
+}
+
+Table plc_events {
+  id uuid [pk]
+  plc_id uuid
+  event_type varchar
+  event_message text
+  created_at timestamp
+}
+
+Table plc_robot_pick_events {
+  id uuid [pk]
+  job_id uuid
+  plc_command_id uuid
+  pick_result varchar
+  created_at timestamp
+}
+
+TableGroup PLC_Service {
+  plc_devices
+  plc_commands
+  plc_events
+  plc_robot_pick_events
+}
+
+Table kiosk_users {
+  id uuid [pk]
+  username varchar [unique]
+  full_name varchar
+  password_hash varchar
+  status varchar
+  created_at timestamp
+}
+
+Table kiosk_roles {
+  id uuid [pk]
+  role_code varchar [unique]
+  role_name varchar
+}
+
+Table kiosk_permissions {
+  id uuid [pk]
+  permission_code varchar [unique]
+  permission_name varchar
+}
+
+Table kiosk_user_roles {
+  user_id uuid
+  role_id uuid
+}
+
+Table kiosk_role_permissions {
+  role_id uuid
+  permission_id uuid
+}
+
+Table kiosk_sessions {
+  id uuid [pk]
+  user_id uuid
+  token varchar
+  login_at timestamp
+  expired_at timestamp
+}
+
+Table kiosk_access_logs {
+  id uuid [pk]
+  user_id uuid
+  action_name varchar
+  target_type varchar
+  target_id varchar
+  created_at timestamp
+}
+
+TableGroup Kiosk_Service {
+  kiosk_users
+  kiosk_roles
+  kiosk_permissions
+  kiosk_user_roles
+  kiosk_role_permissions
+  kiosk_sessions
+  kiosk_access_logs
+}
+
+Ref: job_engine_job_attempts.job_id > job_engine_jobs.id
+Ref: job_engine_job_steps.job_id > job_engine_jobs.id
+Ref: job_engine_job_history.job_id > job_engine_jobs.id
+Ref: job_engine_state_transitions.job_id > job_engine_jobs.id
+Ref: job_engine_overwrite_requests.job_id > job_engine_jobs.id
+
+Ref: printer_jobs.job_id > job_engine_jobs.id
+Ref: laser_jobs.job_id > job_engine_jobs.id
+Ref: vision_results.job_id > job_engine_jobs.id
+Ref: plc_commands.job_id > job_engine_jobs.id
+Ref: plc_robot_pick_events.job_id > job_engine_jobs.id
+
+Ref: printer_jobs.printer_id > printer_printers.id
+Ref: printer_events.printer_id > printer_printers.id
+
+Ref: laser_jobs.laser_id > laser_lasers.id
+Ref: laser_events.laser_id > laser_lasers.id
+
+Ref: vision_results.camera_id > vision_cameras.id
+
+Ref: plc_commands.plc_id > plc_devices.id
+Ref: plc_events.plc_id > plc_devices.id
+Ref: plc_robot_pick_events.plc_command_id > plc_commands.id
+
+Ref: kiosk_user_roles.user_id > kiosk_users.id
+Ref: kiosk_user_roles.role_id > kiosk_roles.id
+
+Ref: kiosk_role_permissions.role_id > kiosk_roles.id
+Ref: kiosk_role_permissions.permission_id > kiosk_permissions.id
+
+Ref: kiosk_sessions.user_id > kiosk_users.id
+Ref: kiosk_access_logs.user_id > kiosk_users.id
+
+Ref: job_engine_overwrite_requests.requested_by > kiosk_users.id

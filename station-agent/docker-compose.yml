@@ -1,0 +1,265 @@
+name: station-agent
+
+services:
+  # ─────────────────────────────────────────────
+  # Infrastructure
+  # ─────────────────────────────────────────────
+  redis:
+    image: redis:7.4-alpine
+    container_name: station-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass "${REDIS_PASSWORD:-changeme}"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - station-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # 1. MQTT Adapter
+  # ─────────────────────────────────────────────
+  mqtt-adapter:
+    build:
+      context: .
+      dockerfile: services/mqtt-adapter/docker/Dockerfile
+    container_name: station-mqtt-adapter
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - STATION_ID=${STATION_ID:-STATION-01}
+      - REDIS_CONNECTION_STRING=redis:6379,password=${REDIS_PASSWORD:-changeme}
+      - SQLITE_MQTT_PATH=/data/mqtt.db
+      - Mqtt__BrokerHost=${MQTT_BROKER_HOST:-mosquitto}
+      - Mqtt__BrokerPort=${MQTT_BROKER_PORT:-1883}
+      - Mqtt__UseTls=${MQTT_USE_TLS:-false}
+      - Mqtt__Username=${MQTT_USERNAME:-}
+      - Mqtt__Password=${MQTT_PASSWORD:-}
+      - Mqtt__SubscribeTopics__0=station/${STATION_ID:-STATION-01}/job/create
+    volumes:
+      - ./sqlite-databases:/data
+      - mqtt-logs:/logs
+    networks:
+      - station-net
+
+  # ─────────────────────────────────────────────
+  # 2. Job Engine
+  # ─────────────────────────────────────────────
+  job-engine:
+    build:
+      context: .
+      dockerfile: services/job-engine/docker/Dockerfile
+    container_name: station-job-engine
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5002:5002"
+    environment:
+      - STATION_ID=${STATION_ID:-STATION-01}
+      - REDIS_CONNECTION_STRING=redis:6379,password=${REDIS_PASSWORD:-changeme}
+      - SQLITE_JOB_ENGINE_PATH=/data/job_engine.db
+      - ASPNETCORE_ENVIRONMENT=Production
+    volumes:
+      - ./sqlite-databases:/data
+      - job-engine-logs:/logs
+    networks:
+      - station-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5002/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ─────────────────────────────────────────────
+  # 3. Printer Adapter
+  # ─────────────────────────────────────────────
+  printer-adapter:
+    build:
+      context: .
+      dockerfile: services/printer-adapter/docker/Dockerfile
+    container_name: station-printer-adapter
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5003:5003"
+    environment:
+      - STATION_ID=${STATION_ID:-STATION-01}
+      - REDIS_CONNECTION_STRING=redis:6379,password=${REDIS_PASSWORD:-changeme}
+      - SQLITE_PRINTER_PATH=/data/printer.db
+      - ASPNETCORE_ENVIRONMENT=Production
+    volumes:
+      - ./sqlite-databases:/data
+      - printer-logs:/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - station-net
+
+  # ─────────────────────────────────────────────
+  # 4. Laser Adapter
+  # ─────────────────────────────────────────────
+  laser-adapter:
+    build:
+      context: .
+      dockerfile: services/laser-adapter/docker/Dockerfile
+    container_name: station-laser-adapter
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5004:5004"
+    environment:
+      - STATION_ID=${STATION_ID:-STATION-01}
+      - REDIS_CONNECTION_STRING=redis:6379,password=${REDIS_PASSWORD:-changeme}
+      - SQLITE_LASER_PATH=/data/laser.db
+      - ASPNETCORE_ENVIRONMENT=Production
+    volumes:
+      - ./sqlite-databases:/data
+      - laser-logs:/logs
+    networks:
+      - station-net
+
+  # ─────────────────────────────────────────────
+  # 5. Vision Service
+  # ─────────────────────────────────────────────
+  vision-service:
+    build:
+      context: .
+      dockerfile: services/vision-service/docker/Dockerfile
+    container_name: station-vision-service
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5005:5005"
+    environment:
+      - STATION_ID=${STATION_ID:-STATION-01}
+      - REDIS_CONNECTION_STRING=redis:6379,password=${REDIS_PASSWORD:-changeme}
+      - SQLITE_VISION_PATH=/data/vision.db
+      - VISION_IMAGE_STORAGE_PATH=/storage/vision
+      - ASPNETCORE_ENVIRONMENT=Production
+    volumes:
+      - ./sqlite-databases:/data
+      - vision-logs:/logs
+      - vision-storage:/storage
+    networks:
+      - station-net
+
+  # ─────────────────────────────────────────────
+  # 6. PLC Adapter
+  # ─────────────────────────────────────────────
+  plc-adapter:
+    build:
+      context: .
+      dockerfile: services/plc-adapter/docker/Dockerfile
+    container_name: station-plc-adapter
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5006:5006"
+    environment:
+      - STATION_ID=${STATION_ID:-STATION-01}
+      - REDIS_CONNECTION_STRING=redis:6379,password=${REDIS_PASSWORD:-changeme}
+      - SQLITE_PLC_PATH=/data/plc.db
+      - ASPNETCORE_ENVIRONMENT=Production
+    volumes:
+      - ./sqlite-databases:/data
+      - plc-logs:/logs
+    networks:
+      - station-net
+
+  # ─────────────────────────────────────────────
+  # 7. Kiosk UI
+  # ─────────────────────────────────────────────
+  kiosk-ui:
+    build:
+      context: .
+      dockerfile: services/kiosk-ui/docker/Dockerfile
+    container_name: station-kiosk-ui
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5007:5007"
+    environment:
+      - STATION_ID=${STATION_ID:-STATION-01}
+      - REDIS_CONNECTION_STRING=redis:6379,password=${REDIS_PASSWORD:-changeme}
+      - SQLITE_KIOSK_PATH=/data/kiosk.db
+      - Jwt__Secret=${JWT_SECRET:-change_me_to_a_long_random_secret_at_least_32_chars}
+      - Jwt__Issuer=${JWT_ISSUER:-nd-station-agent}
+      - Jwt__Audience=${JWT_AUDIENCE:-nd-kiosk}
+      - Jwt__ExpiryMinutes=${JWT_EXPIRY_MINUTES:-480}
+      - ASPNETCORE_ENVIRONMENT=Production
+    volumes:
+      - ./sqlite-databases:/data
+      - kiosk-logs:/logs
+    networks:
+      - station-net
+
+  # ─────────────────────────────────────────────
+  # 8. Device Simulator
+  # ─────────────────────────────────────────────
+  device-simulator:
+    build:
+      context: .
+      dockerfile: services/device-simulator/Dockerfile
+    container_name: station-device-simulator
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5008:8080"
+    environment:
+      - ConnectionStrings__Sqlite=Data Source=/data/device-simulator.db
+      - ConnectionStrings__Redis=redis:6379,password=${REDIS_PASSWORD:-changeme}
+      - ASPNETCORE_ENVIRONMENT=Production
+    volumes:
+      - ./sqlite-databases:/data
+      - device-simulator-logs:/app/logs
+    networks:
+      - station-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+# ─────────────────────────────────────────────
+# Volumes
+# ─────────────────────────────────────────────
+volumes:
+  redis-data:
+  mqtt-logs:
+  job-engine-logs:
+  printer-logs:
+  laser-logs:
+  vision-logs:
+  vision-storage:
+  plc-logs:
+  kiosk-logs:
+  device-simulator-logs:
+
+# ─────────────────────────────────────────────
+# Networks
+# ─────────────────────────────────────────────
+networks:
+  station-net:
+    driver: bridge
+    name: station-net
