@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDashboard } from '@/hooks/useDashboard'
-import { jobsApi, rbacApi } from '@/api/client'
+import { rbacApi } from '@/api/client'
 import { useAuth } from '@/context/AuthContext'
 import { PROTECTED_ADMIN_USERNAME, CREATABLE_ROLES } from '@/constants/roles'
-import { translateJobType, translatePermission, translateRole } from '@/lib/utils'
+import { translatePermission, translateRole } from '@/lib/utils'
 
 // Icons
 import {
   Activity, Users, LayoutDashboard, Key, Trash2, Plus,
   CheckCircle2, ShieldAlert, LogOut, UserCheck, Wifi, WifiOff,
-  Flame,
+  Flame, Cpu, Printer as PrinterIcon, Zap, Camera, Clock, Info,
+  AlertCircle, Play, CheckCircle
 } from 'lucide-react'
 
 // Common Components
@@ -43,9 +44,8 @@ export default function DashboardPage() {
   const stationId = 'STATION-01'
   const navigate  = useNavigate()
   const { user: currentUser, logout } = useAuth()
-  const { isConnected, latestJobStatus } = useDashboard(stationId)
+  const { isConnected, production, activities, devices } = useDashboard(stationId)
 
-  const [jobs,                 setJobs]                = useState<any[]>([])
   const [tab,                  setTab]                 = useState<KioskTab>('dashboard')
   const [users,                setUsers]               = useState<any[]>([])
   const [availablePermissions, setAvailablePermissions] = useState<any[]>([])
@@ -58,11 +58,6 @@ export default function DashboardPage() {
   const [newRole,              setNewRole]             = useState('MEMBER')
   const [rbacError,            setRbacError]           = useState('')
   const [rbacSuccess,          setRbacSuccess]         = useState('')
-
-  /* ── load jobs ────────────────────────────────────────── */
-  useEffect(() => {
-    jobsApi.list(1, 20).then((res) => setJobs(res.data.items ?? [])).catch(console.error)
-  }, [latestJobStatus])
 
   const isSuperAdmin =
     currentUser?.roles?.includes('SUPER_ADMIN') ||
@@ -214,69 +209,198 @@ export default function DashboardPage() {
         {tab === 'dashboard' && (
           <div className="space-y-6 max-w-7xl mx-auto">
 
-            {/* Live status toast */}
-            {latestJobStatus && (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-primary/40 bg-gradient-to-r from-brand/8 to-card px-5 py-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand/15">
-                    <Activity className="h-5 w-5 text-brand-light animate-pulse" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm">Thay đổi trạng thái gần nhất</p>
-                    <p className="text-xs text-muted-fg mt-0.5">
-                      Công việc{' '}
-                      <span className="font-mono font-bold text-foreground">
-                        {latestJobStatus.jobNo}
-                      </span>{' '}
-                      chuyển sang:
-                    </p>
-                  </div>
-                </div>
-                <StatusBadge status={latestJobStatus.status} />
-              </div>
-            )}
+            {/* Top Grid of Production Status Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              
+              {/* Card 1: Active Work Order */}
+              <Card className="relative overflow-hidden bg-card border-border shadow-sm">
+                <CardHeader className="pb-2">
+                  <CardDescription className="text-xs uppercase tracking-wider font-semibold">Lệnh sản xuất</CardDescription>
+                  <CardTitle className="text-xl font-bold font-mono tracking-tight text-foreground">
+                    {production?.workOrderNo || 'Không có lệnh'}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <span className="text-xs text-muted-fg">Lệnh sản xuất hiện tại tại trạm</span>
+                </CardContent>
+              </Card>
 
-            {/* Jobs table */}
-            <Card className="overflow-hidden">
-              <CardHeader className="border-b border-border px-6 py-4 bg-gradient-to-r from-surface-2 to-card">
-                <CardTitle>Công việc sản xuất đang hoạt động</CardTitle>
-                <CardDescription>Danh sách các lệnh in &amp; khắc laser tại trạm</CardDescription>
-              </CardHeader>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader className="bg-surface-2">
-                    <TableRow>
-                      <TableHead className="pl-6">Mã công việc</TableHead>
-                      <TableHead>Loại yêu cầu</TableHead>
-                      <TableHead>Sản phẩm</TableHead>
-                      <TableHead>Trạng thái</TableHead>
-                      <TableHead className="pr-6">Thời gian tạo</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {jobs.map((job) => (
-                      <TableRow key={job.id}>
-                        <TableCell className="pl-6 font-mono font-bold">{job.jobNo}</TableCell>
-                        <TableCell className="text-muted-fg">{translateJobType(job.jobType)}</TableCell>
-                        <TableCell className="font-mono">{job.productCode}</TableCell>
-                        <TableCell><StatusBadge status={job.currentStatus} /></TableCell>
-                        <TableCell className="pr-6 text-xs text-muted-fg">
-                          {new Date(job.createdAt).toLocaleString('vi-VN')}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {jobs.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={5} className="py-16 text-center text-muted-fg">
-                          <LayoutDashboard className="h-10 w-10 mx-auto mb-3 opacity-20" />
-                          Không tìm thấy công việc hoạt động nào.
-                        </TableCell>
-                      </TableRow>
+              {/* Card 2: Product Code */}
+              <Card className="relative overflow-hidden bg-card border-border shadow-sm">
+                <CardHeader className="pb-2">
+                  <CardDescription className="text-xs uppercase tracking-wider font-semibold">Mã sản phẩm</CardDescription>
+                  <CardTitle className="text-xl font-bold font-mono tracking-tight text-foreground">
+                    {production?.productCode || '—'}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <span className="text-xs text-muted-fg">Mã SKU của sản phẩm đang gia công</span>
+                </CardContent>
+              </Card>
+
+              {/* Card 3: Product Serial */}
+              <Card className="relative overflow-hidden bg-card border-border shadow-sm">
+                <CardHeader className="pb-2">
+                  <CardDescription className="text-xs uppercase tracking-wider font-semibold">Số Serial / UID</CardDescription>
+                  <CardTitle className="text-xl font-bold font-mono tracking-tight text-foreground">
+                    {production?.productSerial || '—'}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <span className="text-xs text-muted-fg">Mã định danh duy nhất của sản phẩm</span>
+                </CardContent>
+              </Card>
+
+              {/* Card 4: Job Status */}
+              <Card className={`relative overflow-hidden border shadow-sm transition-all duration-300 ${
+                production?.jobStatus === 'QUEUED' ? 'border-amber-500/20 bg-amber-500/5' :
+                production?.jobStatus === 'PROCESSING' ? 'border-blue-500/20 bg-blue-500/5' :
+                production?.jobStatus === 'COMPLETED' ? 'border-emerald-500/20 bg-emerald-500/5' :
+                production?.jobStatus === 'FAILED' ? 'border-red-500/20 bg-red-500/5' :
+                'border-border bg-card'
+              }`}>
+                <CardHeader className="pb-2">
+                  <CardDescription className="text-xs uppercase tracking-wider font-semibold">Trạng thái công việc</CardDescription>
+                  <CardTitle className="text-xl font-extrabold tracking-wide flex items-center gap-2">
+                    <StatusBadge status={production?.jobStatus || 'IDLE'} />
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <span className="text-xs text-muted-fg">
+                    {production?.updatedAt 
+                      ? `Cập nhật lúc: ${new Date(production.updatedAt).toLocaleTimeString('vi-VN')}`
+                      : 'Đang đợi lệnh sản xuất'}
+                  </span>
+                </CardContent>
+              </Card>
+
+            </div>
+
+            {/* Split layout: Device Connectivity vs Activity Feed */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+              {/* Left Column: Device Health Status */}
+              <Card className="lg:col-span-1 border border-border bg-card">
+                <CardHeader className="border-b border-border bg-gradient-to-r from-surface-2 to-card py-4 px-6">
+                  <CardTitle className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
+                    <Cpu className="h-4 w-4 text-brand-light" />
+                    Trạng thái kết nối thiết bị
+                  </CardTitle>
+                  <CardDescription className="text-xs">Theo dõi kết nối phần cứng của trạm</CardDescription>
+                </CardHeader>
+                <CardContent className="p-6 divide-y divide-border">
+                  {devices.map((device) => {
+                    const DeviceIcon = 
+                      device.deviceType === 'PLC' ? Cpu :
+                      device.deviceType === 'PRINTER' ? PrinterIcon :
+                      device.deviceType === 'LASER' ? Zap :
+                      device.deviceType === 'VISION_CAMERA' ? Camera :
+                      Cpu;
+
+                    return (
+                      <div key={device.deviceId} className="flex items-center justify-between py-3.5 first:pt-0 last:pb-0">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2.5 rounded-lg border ${
+                            device.isOnline ? 'border-emerald-500/10 bg-emerald-500/5 text-emerald-400' : 'border-red-500/10 bg-red-500/5 text-red-400'
+                          }`}>
+                            <DeviceIcon className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <p className="font-bold text-sm text-foreground">{device.deviceId.toUpperCase()}</p>
+                            <p className="text-xs text-muted-fg mt-0.5">{device.deviceType}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-end gap-1">
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-bold ${
+                            device.isOnline ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                          }`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${device.isOnline ? 'bg-emerald-400' : 'bg-red-400'}`}></span>
+                            {device.isOnline ? 'Online' : 'Offline'}
+                          </span>
+                          <span className="text-[10px] text-muted-fg">
+                            {new Date(device.lastSeenAt).toLocaleTimeString('vi-VN')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {devices.length === 0 && (
+                    <p className="text-sm text-muted-fg text-center py-6">Không có thông tin thiết bị.</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Right Column: Activity Feed */}
+              <Card className="lg:col-span-2 border border-border bg-card">
+                <CardHeader className="border-b border-border bg-gradient-to-r from-surface-2 to-card py-4 px-6">
+                  <CardTitle className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-brand-light" />
+                    Lịch sử hoạt động thời gian thực
+                  </CardTitle>
+                  <CardDescription className="text-xs">Theo dõi các sự kiện sản xuất mới nhất (Tối đa 10)</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="max-h-[380px] overflow-y-auto divide-y divide-border">
+                    {activities.map((act) => {
+                      const ActIcon = 
+                        act.eventType === 'MqttMessageReceived' ? Flame :
+                        act.eventType === 'JobCreated' ? Play :
+                        act.eventType === 'JobProcessing' ? Activity :
+                        act.eventType === 'JobCompleted' ? CheckCircle :
+                        act.eventType === 'JobFailed' ? AlertCircle :
+                        Info;
+
+                      const actColorClass = 
+                        act.eventType === 'JobCompleted' ? 'text-emerald-400' :
+                        act.eventType === 'JobFailed' ? 'text-red-400' :
+                        act.eventType === 'JobProcessing' ? 'text-blue-400' :
+                        act.eventType === 'JobCreated' ? 'text-amber-400' :
+                        'text-muted-fg';
+
+                      return (
+                        <div key={act.id} className="flex gap-4 p-4 hover:bg-surface-1 transition-colors duration-200">
+                          <div className={`p-2 rounded-full border border-border h-fit ${actColorClass} bg-card`}>
+                            <ActIcon className="h-4 w-4" />
+                          </div>
+                          <div className="flex-1 space-y-1 min-w-0">
+                            <div className="flex justify-between items-start gap-2">
+                              <p className="text-sm font-bold text-foreground leading-none">
+                                {act.eventType === 'MqttMessageReceived' ? 'Yêu cầu MQTT nhận' :
+                                 act.eventType === 'JobCreated' ? 'Khởi tạo công việc' :
+                                 act.eventType === 'JobProcessing' ? 'Đang gia công' :
+                                 act.eventType === 'JobCompleted' ? 'Hoàn thành' :
+                                 act.eventType === 'JobFailed' ? 'Lỗi sản xuất' :
+                                 act.eventType}
+                              </p>
+                              <span className="text-[10px] text-muted-fg shrink-0 flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {new Date(act.occurredAt).toLocaleTimeString('vi-VN')}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-fg font-medium">{act.message}</p>
+                            
+                            {/* Inner Details */}
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1 text-[10px] font-mono text-muted-fg">
+                              {act.jobNo && <span>Job: <strong className="text-foreground">{act.jobNo}</strong></span>}
+                              {act.productCode && <span>Product: <strong className="text-foreground">{act.productCode}</strong></span>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {activities.length === 0 && (
+                      <div className="text-center py-20 text-muted-fg">
+                        <Activity className="h-10 w-10 mx-auto mb-3 opacity-20" />
+                        Không có hoạt động nào được ghi nhận.
+                      </div>
                     )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+                  </div>
+                </CardContent>
+              </Card>
+
+            </div>
+
           </div>
         )}
 

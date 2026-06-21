@@ -1,12 +1,33 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using ND.MqttAdapter.Domain.Entities;
 using ND.SharedKernel.Abstractions;
 
 namespace ND.MqttAdapter.Infrastructure.Persistence;
 
-public sealed class MqttDbContext : DbContext, IUnitOfWork
+public sealed class MqttDbContext : DbContext, ITransactionalUnitOfWork
 {
     public MqttDbContext(DbContextOptions<MqttDbContext> options) : base(options) { }
+
+    /// <inheritdoc />
+    public async Task<IDbTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+    {
+        var efTx = await Database.BeginTransactionAsync(cancellationToken);
+        return new EfCoreDbTransaction(efTx);
+    }
+
+    /// <summary>
+    /// Adapter that wraps an EF Core <see cref="IDbContextTransaction"/>
+    /// behind the <see cref="IDbTransaction"/> abstraction.
+    /// </summary>
+    private sealed class EfCoreDbTransaction : IDbTransaction
+    {
+        private readonly IDbContextTransaction _tx;
+        public EfCoreDbTransaction(IDbContextTransaction tx) => _tx = tx;
+        public Task CommitAsync(CancellationToken ct = default) => _tx.CommitAsync(ct);
+        public Task RollbackAsync(CancellationToken ct = default) => _tx.RollbackAsync(ct);
+        public ValueTask DisposeAsync() => _tx.DisposeAsync();
+    }
 
     public DbSet<MqttMessage> MqttMessages => Set<MqttMessage>();
     public DbSet<MqttOutboxEvent> MqttOutboxEvents => Set<MqttOutboxEvent>();

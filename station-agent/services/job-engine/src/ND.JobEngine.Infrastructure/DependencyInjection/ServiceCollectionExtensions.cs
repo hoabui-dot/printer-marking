@@ -1,10 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using ND.Infrastructure.Messaging;
 using ND.Infrastructure.Redis;
 using ND.JobEngine.Application.Commands;
 using ND.JobEngine.Application.Interfaces;
 using ND.JobEngine.Application.Queries;
+using ND.JobEngine.Infrastructure.Messaging;
 using ND.JobEngine.Infrastructure.Persistence;
 using ND.JobEngine.Infrastructure.Repositories;
 using ND.SharedKernel.Abstractions;
@@ -31,6 +33,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IJobHistoryRepository, JobHistoryRepository>();
         services.AddScoped<IJobStateTransitionRepository, JobStateTransitionRepository>();
         services.AddScoped<IOverwriteRequestRepository, OverwriteRequestRepository>();
+        services.AddScoped<IJobEngineOutboxRepository, JobEngineOutboxRepository>();
 
         // Redis
         var redisConnection = configuration["REDIS_CONNECTION_STRING"] ?? "localhost:6379";
@@ -44,6 +47,18 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ProcessJobHandler>();
         services.AddScoped<CreateOverwriteRequestHandler>();
         services.AddScoped<GetJobQueryHandler>();
+        services.AddScoped<CompleteJobStepHandler>();
+
+        // RabbitMQ Publisher & Consumer
+        services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));
+        services.AddSingleton<IRabbitMqConsumer, RabbitMqConsumer>();
+        services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
+
+        // Background Workers / Hosted Services
+        services.AddHostedService<MqttMessageReceivedConsumer>();
+        services.AddHostedService<JobEngineOutboxProcessorWorker>();
+        services.AddHostedService<PrinterPrintedConsumer>();
+        services.AddHostedService<LaserMarkedConsumer>();
 
         return services;
     }

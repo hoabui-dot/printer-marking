@@ -1,8 +1,9 @@
-mqtt-adapter:18011
-job-engine:18014
-printer-adapter:18017
-laser-adapter:18020
-vision-service:18027
-plc-adapter:18031
-kiosk-ui:18036
-kiosk-ui-frontend:18040
+mqtt-adapter:37829
+job-engine:37833
+printer-adapter:37836
+laser-adapter:37839
+vision-service:37842
+plc-adapter:37845
+projection-service:37848
+kiosk-ui:37851
+kiosk-ui-frontend:37854

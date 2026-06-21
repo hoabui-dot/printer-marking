@@ -1,6 +1,7 @@
-using ND.MqttAdapter.Application.Interfaces;
-using ND.SharedKernel.Abstractions;
 using Microsoft.Extensions.Logging;
+using ND.MqttAdapter.Application.Interfaces;
+using ND.MqttAdapter.Domain.Entities;
+using ND.SharedKernel.Abstractions;
 
 namespace ND.MqttAdapter.Application.Commands;
 
@@ -9,70 +10,88 @@ public record ProcessInboundMessageCommand(
     string Topic,
     string PayloadJson);
 
+/// <summary>
+/// Handles an inbound MQTT message by atomically persisting:
+///   1. MqttMessage       — the raw received message
+///   2. MqttOutboxEvent   — the event queued for downstream publishing via RabbitMQ
+///
+/// Both writes are wrapped in a single database transaction.
+/// If either insert fails, both are rolled back — no partial state is committed.
+///
+/// The outbox poller (OutboxProcessorWorker) is responsible for picking up
+/// PENDING events and publishing them to RabbitMQ.
+/// </summary>
 public sealed class ProcessInboundMessageHandler
 {
     private readonly IMqttMessageRepository _messageRepository;
-    private readonly IInboundMessageDispatcher _dispatcher;
+    private readonly IMqttOutboxRepository _outboxRepository;
     private readonly IIdempotencyService _idempotency;
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly ITransactionalUnitOfWork _unitOfWork;
     private readonly ILogger<ProcessInboundMessageHandler> _logger;
 
     public ProcessInboundMessageHandler(
         IMqttMessageRepository messageRepository,
-        IInboundMessageDispatcher dispatcher,
+        IMqttOutboxRepository outboxRepository,
         IIdempotencyService idempotency,
-        IUnitOfWork unitOfWork,
+        ITransactionalUnitOfWork unitOfWork,
         ILogger<ProcessInboundMessageHandler> logger)
     {
         _messageRepository = messageRepository;
-        _dispatcher = dispatcher;
+        _outboxRepository = outboxRepository;
         _idempotency = idempotency;
         _unitOfWork = unitOfWork;
         _logger = logger;
     }
 
-    public async Task HandleAsync(ProcessInboundMessageCommand command, CancellationToken cancellationToken = default)
+    public async Task HandleAsync(
+        ProcessInboundMessageCommand command,
+        CancellationToken cancellationToken = default)
     {
+        // ── Idempotency guard ────────────────────────────────────────────────
         var idempotencyKey = $"idempotency:msg:{command.MessageId}";
+        var isNew = await _idempotency.TryRegisterAsync(
+            idempotencyKey, TimeSpan.FromHours(24), cancellationToken);
 
-        // Check idempotency — skip if already processed
-        var isNew = await _idempotency.TryRegisterAsync(idempotencyKey, TimeSpan.FromHours(24), cancellationToken);
         if (!isNew)
         {
-            _logger.LogInformation("Duplicate MQTT message {MessageId} skipped", command.MessageId);
+            _logger.LogInformation(
+                "Duplicate MQTT message {MessageId} skipped", command.MessageId);
             return;
         }
 
-        var message = Domain.Entities.MqttMessage.CreateInbound(command.MessageId, command.Topic, command.PayloadJson);
+        // ── Build domain objects ─────────────────────────────────────────────
+        var message = MqttMessage.CreateInbound(
+            command.MessageId, command.Topic, command.PayloadJson);
 
+        var outboxEvent = MqttOutboxEvent.Create(
+            aggregateType: "MqttMessage",
+            aggregateId: command.MessageId,
+            eventType: "MqttMessageReceived",
+            payloadJson: command.PayloadJson,
+            topic: command.Topic);
+
+        // ── Atomic dual-write ────────────────────────────────────────────────
+        // Both rows are inserted inside a single DB transaction.
+        // If either insert or the commit fails, the transaction is rolled back
+        // so no partial state is persisted.
+        await using var tx = await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
             await _messageRepository.AddAsync(message, cancellationToken);
+            await _outboxRepository.AddAsync(outboxEvent, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            await _dispatcher.DispatchAsync(command.Topic, command.PayloadJson, cancellationToken);
-
-            message.MarkProcessed();
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
 
             _logger.LogInformation(
-                "MQTT message {MessageId} on {Topic} processed successfully",
+                "MQTT message {MessageId} on {Topic} persisted — outbox event queued for RabbitMQ",
                 command.MessageId, command.Topic);
         }
         catch (Exception ex)
         {
-            message.MarkFailed(ex.Message);
-            try
-            {
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-            }
-            catch (Exception saveEx)
-            {
-                _logger.LogError(saveEx, "Failed to save failed status for MQTT message {MessageId}", command.MessageId);
-            }
+            await tx.RollbackAsync(cancellationToken);
 
             _logger.LogError(ex,
-                "Failed to process MQTT message {MessageId} on {Topic}",
+                "Failed to persist MQTT message {MessageId} on {Topic} — transaction rolled back",
                 command.MessageId, command.Topic);
 
             throw;

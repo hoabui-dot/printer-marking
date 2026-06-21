@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using ND.Infrastructure.Messaging;
 using ND.Infrastructure.Redis;
 using ND.MqttAdapter.Application.Interfaces;
 using ND.MqttAdapter.Infrastructure.Messaging;
@@ -26,6 +27,7 @@ public static class ServiceCollectionExtensions
         services.AddDbContext<MqttDbContext>(opts =>
             opts.UseSqlite($"Data Source={dbPath}"));
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<MqttDbContext>());
+        services.AddScoped<ITransactionalUnitOfWork>(sp => sp.GetRequiredService<MqttDbContext>());
 
         // Repositories
         services.AddScoped<IMqttMessageRepository, MqttMessageRepository>();
@@ -41,6 +43,10 @@ public static class ServiceCollectionExtensions
         // MQTT Client (singleton — one connection per process)
         services.AddSingleton<MqttClientService>();
         services.AddSingleton<IMqttPublisher>(sp => sp.GetRequiredService<MqttClientService>());
+
+        // RabbitMQ publisher (singleton — one AMQP connection per process)
+        services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));
+        services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 
         // Outbox processor background worker
         services.AddHostedService<OutboxProcessorWorker>();

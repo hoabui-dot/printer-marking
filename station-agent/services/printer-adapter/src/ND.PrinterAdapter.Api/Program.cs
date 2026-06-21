@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using ND.Infrastructure.Observability;
+using ND.Infrastructure.Messaging;
 using ND.PrinterAdapter.Application.Interfaces;
 using ND.PrinterAdapter.Infrastructure.DeviceAdapters;
+using ND.PrinterAdapter.Infrastructure.Messaging;
 using ND.PrinterAdapter.Infrastructure.Persistence;
 using ND.SharedKernel.Abstractions;
 using ND.SharedKernel.Time;
@@ -27,6 +29,14 @@ builder.Services.AddSingleton<RedisHeartbeatCache>();
 builder.Services.AddSingleton<ISystemClock, SystemClock>();
 builder.Services.AddSingleton<IPrinterAdapter, ZplTcpPrinterAdapter>();
 
+// RabbitMQ registrations
+builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection(RabbitMqOptions.SectionName));
+builder.Services.AddSingleton<IRabbitMqConsumer, RabbitMqConsumer>();
+builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
+
+// Register hosted consumer
+builder.Services.AddHostedService<JobProcessingConsumer>();
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
@@ -38,6 +48,11 @@ using (var scope = app.Services.CreateScope())
     var dbDir = Path.GetDirectoryName(Path.GetFullPath(dbPath));
     if (!string.IsNullOrEmpty(dbDir)) Directory.CreateDirectory(dbDir);
     await db.Database.EnsureCreatedAsync();
+
+    // Seed default printer (printer-01)
+    var printerHost = app.Configuration["Printer:Host"] ?? "localhost";
+    var printerPort = int.TryParse(app.Configuration["Printer:Port"], out var p) ? p : 9100;
+    await PrinterDbSeeder.SeedAsync(db, printerHost, printerPort);
 }
 
 if (app.Environment.IsDevelopment())

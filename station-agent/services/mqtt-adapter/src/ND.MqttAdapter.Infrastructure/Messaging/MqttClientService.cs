@@ -11,7 +11,9 @@ namespace ND.MqttAdapter.Infrastructure.Messaging;
 
 /// <summary>
 /// MQTTnet-based client. Connects to the broker, subscribes to topics,
-/// and forwards inbound messages to the dispatcher.
+/// and forwards inbound messages to <see cref="ProcessInboundMessageHandler"/>.
+/// The handler atomically persists both MqttMessage + MqttOutboxEvent;
+/// <see cref="OutboxProcessorWorker"/> then publishes the event to RabbitMQ.
 /// </summary>
 public sealed class MqttClientService : IMqttPublisher, IAsyncDisposable
 {

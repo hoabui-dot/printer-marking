@@ -1,6 +1,5 @@
 using ND.Infrastructure.Observability;
 using ND.MqttAdapter.Application.Commands;
-using ND.MqttAdapter.Application.Interfaces;
 using ND.MqttAdapter.Infrastructure.DependencyInjection;
 using ND.MqttAdapter.Infrastructure.Messaging;
 using ND.MqttAdapter.Infrastructure.Persistence;
@@ -8,7 +7,7 @@ using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Serilog
+// ── Serilog ──────────────────────────────────────────────────────────────────
 Log.Logger = SerilogConfiguration.Configure(
     new LoggerConfiguration(),
     builder.Configuration,
@@ -17,21 +16,23 @@ Log.Logger = SerilogConfiguration.Configure(
 builder.Logging.ClearProviders();
 builder.Services.AddSerilog();
 
-// Infrastructure (SQLite, Redis, MQTT, outbox)
+// ── Infrastructure (SQLite, Redis, MQTT, RabbitMQ, outbox poller) ─────────────
 builder.Services.AddMqttAdapterInfrastructure(builder.Configuration);
 
-// Application handlers
+// ── Application layer ─────────────────────────────────────────────────────────
+// ProcessInboundMessageHandler is Scoped — each MQTT message gets its own scope
+// (created inside MqttClientService.OnMessageReceivedAsync).
 builder.Services.AddScoped<ProcessInboundMessageHandler>();
 
-// Default inbound dispatcher — routes by topic
-builder.Services.AddSingleton<IInboundMessageDispatcher, DefaultInboundMessageDispatcher>();
-
-// MQTT connection hosted service
+// ── MQTT connection hosted service ────────────────────────────────────────────
+// Connects to the MQTT broker, subscribes to topics, and forwards messages
+// to ProcessInboundMessageHandler. OutboxProcessorWorker (registered in
+// AddMqttAdapterInfrastructure) handles RabbitMQ publishing.
 builder.Services.AddHostedService<MqttConnectionHostedService>();
 
 var host = builder.Build();
 
-// Ensure database is created / migrated on startup
+// ── Database initialisation ───────────────────────────────────────────────────
 using (var scope = host.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<MqttDbContext>();

@@ -4,6 +4,7 @@ using ND.JobEngine.Domain.Entities;
 using ND.JobEngine.Domain.Enums;
 using ND.JobEngine.Domain.Exceptions;
 using ND.SharedKernel.Abstractions;
+using ND.UnifiedContracts.Events;
 
 namespace ND.JobEngine.Application.Commands;
 
@@ -16,6 +17,7 @@ public sealed class ProcessJobHandler
     private readonly IJobStepRepository _stepRepository;
     private readonly IJobHistoryRepository _historyRepository;
     private readonly IJobStateTransitionRepository _transitionRepository;
+    private readonly IJobEngineOutboxRepository _outboxRepository;
     private readonly IDistributedLock _distributedLock;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<ProcessJobHandler> _logger;
@@ -26,6 +28,7 @@ public sealed class ProcessJobHandler
         IJobStepRepository stepRepository,
         IJobHistoryRepository historyRepository,
         IJobStateTransitionRepository transitionRepository,
+        IJobEngineOutboxRepository outboxRepository,
         IDistributedLock distributedLock,
         IUnitOfWork unitOfWork,
         ILogger<ProcessJobHandler> logger)
@@ -35,6 +38,7 @@ public sealed class ProcessJobHandler
         _stepRepository = stepRepository;
         _historyRepository = historyRepository;
         _transitionRepository = transitionRepository;
+        _outboxRepository = outboxRepository;
         _distributedLock = distributedLock;
         _unitOfWork = unitOfWork;
         _logger = logger;
@@ -73,6 +77,25 @@ public sealed class ProcessJobHandler
 
         var transition = JobStateTransition.Record(job.Id, oldStatus, job.CurrentStatus, "START_PROCESSING");
         await _transitionRepository.AddAsync(transition, cancellationToken);
+
+        // Record outbox event for job processing
+        var jobEvent = JobProcessingEvent.From(
+            job.Id,
+            job.JobNo,
+            job.JobType,
+            job.ProductCode,
+            job.ProductSerial,
+            job.SourceSystem,
+            attempt.AttemptNo);
+
+        var outboxEvent = JobEngineOutboxEvent.Create(
+            nameof(Job),
+            job.Id,
+            jobEvent.EventType,
+            JobEventRoutingKeys.Processing,
+            System.Text.Json.JsonSerializer.Serialize(jobEvent));
+
+        await _outboxRepository.AddAsync(outboxEvent, cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 

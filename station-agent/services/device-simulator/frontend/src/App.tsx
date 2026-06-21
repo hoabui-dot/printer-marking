@@ -6,7 +6,6 @@ import PrinterCard from './components/PrinterCard'
 import LaserCard from './components/LaserCard'
 import VisionCard from './components/VisionCard'
 import PlcCard from './components/PlcCard'
-import GatewayCard from './components/GatewayCard'
 import TimelinePanel from './components/TimelinePanel'
 import ConnectionPanel from './components/ConnectionPanel'
 import EnvPanel from './components/EnvPanel'
@@ -119,7 +118,6 @@ export default function App() {
               <LaserCard state={status.laser} commands={laserCmds} configValues={configValues} onSaveConfig={saveConfig} />
               <VisionCard state={status.vision} results={visionResults} configValues={configValues} onSaveConfig={saveConfig} />
               <PlcCard state={status.plc} configValues={configValues} onSaveConfig={saveConfig} />
-              <GatewayCard state={status.gateway} events={gatewayEvents} />
             </div>
           )}
 
@@ -152,3 +150,4 @@ export default function App() {
     </div>
   )
 }
+

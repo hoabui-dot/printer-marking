@@ -21,6 +21,26 @@ services:
       timeout: 5s
       retries: 5
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: station-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - station-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
   # ─────────────────────────────────────────────
   # 1. MQTT Adapter
   # ─────────────────────────────────────────────
@@ -33,6 +53,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       - STATION_ID=${STATION_ID:-STATION-01}
       - REDIS_CONNECTION_STRING=redis:6379,password=${REDIS_PASSWORD:-changeme}
@@ -43,6 +65,12 @@ services:
       - Mqtt__Username=${MQTT_USERNAME:-}
       - Mqtt__Password=${MQTT_PASSWORD:-}
       - Mqtt__SubscribeTopics__0=station/${STATION_ID:-STATION-01}/job/create
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Port=5672
+      - RabbitMq__Username=${RABBITMQ_USER:-guest}
+      - RabbitMq__Password=${RABBITMQ_PASS:-guest}
+      - RabbitMq__VirtualHost=/
+      - RabbitMq__DefaultExchange=station.events
     volumes:
       - ./sqlite-databases:/data
       - mqtt-logs:/logs
@@ -61,12 +89,20 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     ports:
       - "5002:5002"
     environment:
       - STATION_ID=${STATION_ID:-STATION-01}
       - REDIS_CONNECTION_STRING=redis:6379,password=${REDIS_PASSWORD:-changeme}
       - SQLITE_JOB_ENGINE_PATH=/data/job_engine.db
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Port=5672
+      - RabbitMq__Username=${RABBITMQ_USER:-guest}
+      - RabbitMq__Password=${RABBITMQ_PASS:-guest}
+      - RabbitMq__VirtualHost=/
+      - RabbitMq__DefaultExchange=station.events
       - ASPNETCORE_ENVIRONMENT=Production
     volumes:
       - ./sqlite-databases:/data
@@ -91,6 +127,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     ports:
       - "5003:5003"
     environment:
@@ -98,6 +136,14 @@ services:
       - REDIS_CONNECTION_STRING=redis:6379,password=${REDIS_PASSWORD:-changeme}
       - SQLITE_PRINTER_PATH=/data/printer.db
       - ASPNETCORE_ENVIRONMENT=Production
+      - Printer__Host=device-simulator
+      - Printer__Port=9100
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Port=5672
+      - RabbitMq__Username=${RABBITMQ_USER:-guest}
+      - RabbitMq__Password=${RABBITMQ_PASS:-guest}
+      - RabbitMq__VirtualHost=/
+      - RabbitMq__DefaultExchange=station.events
     volumes:
       - ./sqlite-databases:/data
       - printer-logs:/logs
@@ -241,11 +287,47 @@ services:
       timeout: 5s
       retries: 3
 
+  # ─────────────────────────────────────────────
+  # 9. Projection Service
+  # ─────────────────────────────────────────────
+  projection-service:
+    build:
+      context: .
+      dockerfile: services/projection-service/docker/Dockerfile
+    container_name: station-projection-service
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "5009:5009"
+    environment:
+      - STATION_ID=${STATION_ID:-STATION-01}
+      - SQLITE_PROJECTION_PATH=/data/projection.db
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Port=5672
+      - RabbitMq__Username=${RABBITMQ_USER:-guest}
+      - RabbitMq__Password=${RABBITMQ_PASS:-guest}
+      - RabbitMq__VirtualHost=/
+      - RabbitMq__DefaultExchange=station.events
+      - ASPNETCORE_ENVIRONMENT=Production
+    volumes:
+      - ./sqlite-databases:/data
+      - projection-logs:/logs
+    networks:
+      - station-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5009/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
 # ─────────────────────────────────────────────
 # Volumes
 # ─────────────────────────────────────────────
 volumes:
   redis-data:
+  rabbitmq-data:
   mqtt-logs:
   job-engine-logs:
   printer-logs:
@@ -255,6 +337,7 @@ volumes:
   plc-logs:
   kiosk-logs:
   device-simulator-logs:
+  projection-logs:
 
 # ─────────────────────────────────────────────
 # Networks

@@ -14,6 +14,7 @@ public sealed class JobEngineDbContext : DbContext, IUnitOfWork
     public DbSet<JobHistory> JobHistories => Set<JobHistory>();
     public DbSet<JobStateTransition> JobStateTransitions => Set<JobStateTransition>();
     public DbSet<OverwriteRequest> OverwriteRequests => Set<OverwriteRequest>();
+    public DbSet<JobEngineOutboxEvent> JobEngineOutboxEvents => Set<JobEngineOutboxEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -110,6 +111,23 @@ public sealed class JobEngineDbContext : DbContext, IUnitOfWork
             e.Property(x => x.Status).HasColumnName("status").IsRequired();
             e.Property(x => x.RequestedAt).HasColumnName("requested_at").IsRequired();
             e.Property(x => x.ResolvedAt).HasColumnName("resolved_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+        });
+
+        modelBuilder.Entity<JobEngineOutboxEvent>(e =>
+        {
+            e.ToTable("job_engine_outbox_events");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.AggregateType).HasColumnName("aggregate_type").IsRequired();
+            e.Property(x => x.AggregateId).HasColumnName("aggregate_id").IsRequired();
+            e.Property(x => x.EventType).HasColumnName("event_type").IsRequired();
+            e.Property(x => x.RoutingKey).HasColumnName("routing_key").IsRequired();
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").IsRequired();
+            e.Property(x => x.Status).HasColumnName("status").IsRequired();
+            e.Property(x => x.RetryCount).HasColumnName("retry_count").IsRequired();
+            e.Property(x => x.NextRetryAt).HasColumnName("next_retry_at");
+            e.Property(x => x.PublishedAt).HasColumnName("published_at");
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         });
     }

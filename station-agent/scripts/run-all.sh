@@ -120,7 +120,9 @@ start_service "printer-adapter" "services/printer-adapter/src/ND.PrinterAdapter.
 
 start_service "laser-adapter"   "services/laser-adapter/src/ND.LaserAdapter.Api"           "5004" \
     "ASPNETCORE_ENVIRONMENT=Development" \
-    "ASPNETCORE_URLS=http://localhost:5004"
+    "ASPNETCORE_URLS=http://localhost:5004" \
+    "Laser__Host=localhost" \
+    "Laser__Port=8901"
 
 start_service "vision-service"  "services/vision-service/src/ND.VisionService.Api"         "5005" \
     "ASPNETCORE_ENVIRONMENT=Development" \
@@ -129,6 +131,10 @@ start_service "vision-service"  "services/vision-service/src/ND.VisionService.Ap
 start_service "plc-adapter"     "services/plc-adapter/src/ND.PlcAdapter.Api"               "5006" \
     "ASPNETCORE_ENVIRONMENT=Development" \
     "ASPNETCORE_URLS=http://localhost:5006"
+
+start_service "projection-service" "services/projection-service/src/ND.ProjectionService.Api" "5009" \
+    "ASPNETCORE_ENVIRONMENT=Development" \
+    "ASPNETCORE_URLS=http://localhost:5009"
 
 # Kiosk UI backend API — port 5007 is defined in appsettings.json (Kestrel config)
 start_service "kiosk-ui"        "services/kiosk-ui/src/ND.KioskUi.Api"                    "5007" \
@@ -139,9 +145,10 @@ start_node_service "kiosk-ui-frontend" "services/kiosk-ui/frontend" "5222" "npm 
 
 echo ""
 echo "=== All services started! ==="
-echo "[*] Frontend UI:   http://localhost:5222  (Kiosk UI)"
-echo "[*] Kiosk API:     http://localhost:5007  (Backend API)"
-echo "[*] Job Engine:    http://localhost:5002"
-echo "[*] To view logs:  tail -f scripts/logs/<service>.log"
-echo "[*] To stop all:   scripts/kill-all.sh"
+echo "[*] Frontend UI:     http://localhost:5222  (Kiosk UI)"
+echo "[*] Kiosk API:       http://localhost:5007  (Backend API)"
+echo "[*] Projection API:  http://localhost:5009  (SignalR + CQRS Queries)"
+echo "[*] Job Engine:      http://localhost:5002"
+echo "[*] To view logs:    tail -f scripts/logs/<service>.log"
+echo "[*] To stop all:     scripts/kill-all.sh"
 

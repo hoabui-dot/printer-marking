@@ -1,13 +1,6 @@
-using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Json;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using FluentValidation;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ND.MqttAdapter.Application.Interfaces;
@@ -20,45 +13,52 @@ using ND.UnifiedContracts.Validation;
 namespace ND.MqttAdapter.Infrastructure.Messaging;
 
 /// <summary>
-/// Routes inbound MQTT messages to appropriate handlers by topic pattern.
-/// Implements business validation rules for the Print-Marking Edge Station.
+/// Validates and routes inbound MQTT messages by topic pattern.
+///
+/// Responsibility (after RabbitMQ refactor):
+///   - Deserialize and validate the UnifiedEvent payload (schema + business rules)
+///   - Enforce EdgeId matching and idempotency (via Redis)
+///   - Log warnings for bad-quality tags
+///   - Return after validation — downstream processing is handled by the outbox poller
+///
+/// The caller (ProcessInboundMessageHandler) is responsible for persisting
+/// the MqttOutboxEvent. This dispatcher no longer calls the Job Engine directly.
 /// </summary>
 public sealed class DefaultInboundMessageDispatcher : IInboundMessageDispatcher
 {
     private readonly ILogger<DefaultInboundMessageDispatcher> _logger;
     private readonly IIdempotencyService _idempotency;
     private readonly MqttOptions _options;
-    private readonly IConfiguration _configuration;
     private readonly UnifiedEventValidator _validator;
-    private static readonly HttpClient HttpClient = new();
 
     public DefaultInboundMessageDispatcher(
         ILogger<DefaultInboundMessageDispatcher> logger,
         IIdempotencyService idempotency,
-        IOptions<MqttOptions> options,
-        IConfiguration configuration)
+        IOptions<MqttOptions> options)
     {
         _logger = logger;
         _idempotency = idempotency;
         _options = options.Value;
-        _configuration = configuration;
         _validator = new UnifiedEventValidator();
     }
 
-    public async Task DispatchAsync(string topic, string payloadJson, CancellationToken cancellationToken = default)
+    public async Task DispatchAsync(
+        string topic,
+        string payloadJson,
+        CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Dispatching message for topic: {Topic}", topic);
+        _logger.LogInformation("Dispatching inbound message for topic: {Topic}", topic);
 
-        // Under requirement2, topic structure is "nd/{site}/{edge_id}/command"
-        var isCommandTopic = topic.StartsWith("nd/", StringComparison.OrdinalIgnoreCase) && 
-                             topic.EndsWith("/command", StringComparison.OrdinalIgnoreCase);
+        // nd/{site}/{edge_id}/command — primary topic format
+        var isCommandTopic = topic.StartsWith("nd/", StringComparison.OrdinalIgnoreCase)
+                          && topic.EndsWith("/command", StringComparison.OrdinalIgnoreCase);
 
-        // Also fallback to the old topic "station/{stationId}/job/create"
+        // station/{stationId}/job/create — legacy fallback
         var isLegacyTopic = topic.EndsWith("/job/create", StringComparison.OrdinalIgnoreCase);
 
         if (isCommandTopic || isLegacyTopic)
         {
-            await HandleCommandMessageAsync(topic, payloadJson, cancellationToken);
+            await ValidateCommandMessageAsync(topic, payloadJson, cancellationToken);
         }
         else
         {
@@ -66,18 +66,23 @@ public sealed class DefaultInboundMessageDispatcher : IInboundMessageDispatcher
         }
     }
 
-    private async Task HandleCommandMessageAsync(string topic, string payloadJson, CancellationToken cancellationToken)
-    {
-        _logger.LogInformation("Processing command message from topic: {Topic}", topic);
+    // ────────────────────────────────────────────────────────────────────────
+    // Private helpers
+    // ────────────────────────────────────────────────────────────────────────
 
-        // 1. JSON Schema Validation / Deserialization
+    private async Task ValidateCommandMessageAsync(
+        string topic,
+        string payloadJson,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Validating command message from topic: {Topic}", topic);
+
+        // 1. Deserialize
         UnifiedEvent? unifiedEvent;
         try
         {
-            unifiedEvent = JsonSerializer.Deserialize<UnifiedEvent>(payloadJson, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            unifiedEvent = JsonSerializer.Deserialize<UnifiedEvent>(payloadJson,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         }
         catch (JsonException ex)
         {
@@ -85,12 +90,10 @@ public sealed class DefaultInboundMessageDispatcher : IInboundMessageDispatcher
             throw new ValidationException($"Malformed JSON payload: {ex.Message}");
         }
 
-        if (unifiedEvent == null)
-        {
+        if (unifiedEvent is null)
             throw new ValidationException("Parsed UnifiedEvent was null.");
-        }
 
-        // Run FluentValidation rules
+        // 2. Schema validation (FluentValidation)
         var validationResult = await _validator.ValidateAsync(unifiedEvent, cancellationToken);
         if (!validationResult.IsValid)
         {
@@ -99,102 +102,52 @@ public sealed class DefaultInboundMessageDispatcher : IInboundMessageDispatcher
             throw new ValidationException(validationResult.Errors);
         }
 
-        // 2. Check edge_id matches local station identifier
+        // 3. EdgeId must match local station
         if (!string.Equals(unifiedEvent.EdgeId, _options.StationId, StringComparison.OrdinalIgnoreCase))
         {
-            _logger.LogWarning("Ignoring command with EdgeId '{EdgeId}' (does not match local StationId '{LocalStationId}')", 
+            _logger.LogWarning(
+                "Ignoring command — EdgeId '{EdgeId}' does not match local StationId '{LocalStationId}'",
                 unifiedEvent.EdgeId, _options.StationId);
             return;
         }
 
-        // 3. Check event_id uniqueness using Redis idempotency
-        var eventIdIdempotencyKey = $"idempotency:event:{unifiedEvent.EventId}";
-        var isEventNew = await _idempotency.TryRegisterAsync(eventIdIdempotencyKey, TimeSpan.FromHours(24), cancellationToken);
+        // 4. Idempotency — drop duplicates (deduplicated on EventId)
+        var eventIdKey = $"idempotency:event:{unifiedEvent.EventId}";
+        var isEventNew = await _idempotency.TryRegisterAsync(
+            eventIdKey, TimeSpan.FromHours(24), cancellationToken);
+
         if (!isEventNew)
         {
-            _logger.LogWarning("Discarding duplicate event with EventId '{EventId}'", unifiedEvent.EventId);
+            _logger.LogWarning(
+                "Discarding duplicate event with EventId '{EventId}'", unifiedEvent.EventId);
             return;
         }
 
-        // 4. Validate quality — log warning if BAD or MISSING
+        // 5. Quality warnings
         foreach (var tag in unifiedEvent.Data)
         {
             if (string.Equals(tag.Quality, "BAD", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(tag.Quality, "MISSING", StringComparison.OrdinalIgnoreCase))
             {
-                _logger.LogWarning("Tag '{Tag}' has low quality indicator: '{Quality}'", tag.Tag, tag.Quality);
+                _logger.LogWarning(
+                    "Tag '{Tag}' has low quality indicator: '{Quality}'", tag.Tag, tag.Quality);
             }
         }
 
-        // 5. Parse operation.type
-        var opTypeTag = unifiedEvent.Data.FirstOrDefault(t => string.Equals(t.Tag, BusinessConstants.MqttTag.OperationType, StringComparison.OrdinalIgnoreCase));
-        if (opTypeTag == null)
-        {
+        // 6. Validate operation.type is present and known
+        var opTypeTag = unifiedEvent.Data.FirstOrDefault(t =>
+            string.Equals(t.Tag, BusinessConstants.MqttTag.OperationType, StringComparison.OrdinalIgnoreCase));
+
+        if (opTypeTag is null)
             throw new ValidationException($"Missing mandatory tag '{BusinessConstants.MqttTag.OperationType}'");
-        }
 
         var opType = opTypeTag.Value?.ToString();
         if (string.IsNullOrEmpty(opType) || !BusinessConstants.ProductionOperation.IsValid(opType))
-        {
             throw new ValidationException($"Invalid or unknown operation.type: '{opType}'");
-        }
 
-        // 6. Forward as Job creation event (Emit internal event via POSTing to Job Engine)
-        var jobEngineUrl = _configuration["JobEngineUrl"] ?? "http://localhost:5002";
-        _logger.LogInformation("Forwarding job to Job Engine at: {Url}", jobEngineUrl);
-
-        var tagsDict = unifiedEvent.Data.ToDictionary(t => t.Tag, t => t.Value?.ToString() ?? "", StringComparer.OrdinalIgnoreCase);
-        
-        // Resolve product identification
-        var productCode = tagsDict.TryGetValue(BusinessConstants.MqttTag.ProductId, out var pidVal) ? pidVal : 
-                          tagsDict.TryGetValue(BusinessConstants.MqttTag.MarkingSerial, out var serialVal) ? serialVal : 
-                          "GENERIC_PRODUCT";
-        var productSerial = tagsDict.TryGetValue(BusinessConstants.MqttTag.MarkingSerial, out var sVal) ? sVal : 
-                            tagsDict.TryGetValue(BusinessConstants.MqttTag.ProductId, out var pVal) ? pVal : null;
-
-        var createJobCommand = new
-        {
-            JobNo = unifiedEvent.EventId,
-            SourceSystem = "MQTT_ADAPTER",
-            JobType = opType,
-            ProductCode = productCode,
-            IdempotencyKey = unifiedEvent.EventId,
-            PayloadJson = payloadJson,
-            ProductSerial = productSerial,
-            Priority = 0
-        };
-
-        try
-        {
-            var response = await HttpClient.PostAsJsonAsync($"{jobEngineUrl}/api/jobs", createJobCommand, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogError("Failed to create job in Job Engine. Status={Status}, Response={Response}", 
-                    response.StatusCode, errorContent);
-                throw new Exception($"Job Engine rejected job creation: {response.StatusCode} - {errorContent}");
-            }
-
-            var createdJob = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
-            var jobId = createdJob.GetProperty("id").GetString();
-            _logger.LogInformation("Successfully registered job in Job Engine: {JobId}", jobId);
-
-            // Emit one internal event per valid inbound message: trigger processing!
-            var processResponse = await HttpClient.PostAsync($"{jobEngineUrl}/api/jobs/{jobId}/process", null, cancellationToken);
-            if (!processResponse.IsSuccessStatusCode)
-            {
-                var errorContent = await processResponse.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogError("Failed to trigger job processing in Job Engine. Status={Status}, Response={Response}", 
-                    processResponse.StatusCode, errorContent);
-                throw new Exception($"Job Engine failed to process job: {processResponse.StatusCode} - {errorContent}");
-            }
-
-            _logger.LogInformation("Successfully triggered processing for Job {JobId}", jobId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to forward command to Job Engine");
-            throw;
-        }
+        _logger.LogInformation(
+            "Command validation passed — topic={Topic} eventId={EventId} opType={OpType}. " +
+            "Outbox event will be published to RabbitMQ by the outbox poller.",
+            topic, unifiedEvent.EventId, opType);
     }
 }
