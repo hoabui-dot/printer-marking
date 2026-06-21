@@ -47,7 +47,7 @@ dotnet run
 # Run kiosk-ui frontend
 cd services/kiosk-ui/frontend
 npm install
-npm run dev  # http://localhost:5173
+npm run dev  # http://localhost:5222
 ```
 
 ## Service Ports

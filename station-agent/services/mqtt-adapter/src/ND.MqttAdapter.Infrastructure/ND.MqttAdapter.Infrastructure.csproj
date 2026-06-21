@@ -6,8 +6,8 @@
   <ItemGroup>
     <ProjectReference Include="..\ND.MqttAdapter.Application\ND.MqttAdapter.Application.csproj" />
     <ProjectReference Include="..\ND.MqttAdapter.Domain\ND.MqttAdapter.Domain.csproj" />
-    <ProjectReference Include="..\..\..\..\..\shared\ND.SharedKernel\ND.SharedKernel.csproj" />
-    <ProjectReference Include="..\..\..\..\..\shared\ND.Infrastructure\ND.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\..\shared\ND.SharedKernel\ND.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\..\..\shared\ND.Infrastructure\ND.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />

@@ -22,7 +22,14 @@ public sealed class MqttConnectionHostedService : IHostedService
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Starting MQTT connection...");
-        await _mqttClientService.ConnectAsync(cancellationToken);
+        try
+        {
+            await _mqttClientService.ConnectAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "MQTT broker not reachable on startup. Will retry automatically when the broker becomes available.");
+        }
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)

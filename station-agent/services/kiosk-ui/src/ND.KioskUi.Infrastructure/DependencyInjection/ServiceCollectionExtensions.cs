@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ND.Infrastructure.Redis;
 using ND.KioskUi.Application.Commands;
 using ND.KioskUi.Application.Interfaces;
-using ND.KioskUi.Infrastructure.Options;
+using ND.KioskUi.Application.Options;
 using ND.KioskUi.Infrastructure.Persistence;
 using ND.KioskUi.Infrastructure.Repositories;
 using ND.SharedKernel.Abstractions;

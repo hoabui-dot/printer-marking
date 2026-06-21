@@ -35,6 +35,9 @@ var host = builder.Build();
 using (var scope = host.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<MqttDbContext>();
+    var mqttDbPath = builder.Configuration["SQLITE_MQTT_PATH"] ?? "data/mqtt.db";
+    var mqttDbDir = Path.GetDirectoryName(Path.GetFullPath(mqttDbPath));
+    if (!string.IsNullOrEmpty(mqttDbDir)) Directory.CreateDirectory(mqttDbDir);
     await db.Database.EnsureCreatedAsync();
 }
 

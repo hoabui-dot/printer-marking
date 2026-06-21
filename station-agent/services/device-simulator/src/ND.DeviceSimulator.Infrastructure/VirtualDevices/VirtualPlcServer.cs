@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -20,7 +21,7 @@ namespace ND.DeviceSimulator.Infrastructure.VirtualDevices;
 /// </summary>
 public sealed class VirtualPlcServer : BackgroundService
 {
-    private const int Port = 5020;
+    private const int DefaultPort = 5020;
 
     // Coil address mapping
     private static readonly string[] CoilNames = ["START_BUTTON", "STOP_BUTTON", "SENSOR_IN", "SENSOR_OUT", "MACHINE_READY"];
@@ -28,26 +29,30 @@ public sealed class VirtualPlcServer : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISimulatorStateService _state;
     private readonly IHubContext<SimulatorHub, ISimulatorClient> _hub;
+    private readonly IConfiguration _config;
     private readonly ILogger<VirtualPlcServer> _logger;
 
     public VirtualPlcServer(
         IServiceScopeFactory scopeFactory,
         ISimulatorStateService state,
         IHubContext<SimulatorHub, ISimulatorClient> hub,
+        IConfiguration config,
         ILogger<VirtualPlcServer> logger)
     {
         _scopeFactory = scopeFactory;
         _state = state;
         _hub = hub;
+        _config = config;
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var listener = new TcpListener(IPAddress.Any, Port);
+        var port = int.TryParse(_config["Simulator:PLC_PORT"] ?? "5020", out var p) ? p : DefaultPort;
+        var listener = new TcpListener(IPAddress.Any, port);
         listener.Start();
         _state.SetPlcOnline(true);
-        _logger.LogInformation("VirtualPlcServer Modbus TCP listening on :{Port}", Port);
+        _logger.LogInformation("VirtualPlcServer Modbus TCP listening on :{Port}", port);
         await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
 
         while (!stoppingToken.IsCancellationRequested)

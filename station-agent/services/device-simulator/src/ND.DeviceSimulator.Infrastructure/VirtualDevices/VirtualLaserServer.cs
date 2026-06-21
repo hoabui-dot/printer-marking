@@ -22,7 +22,7 @@ namespace ND.DeviceSimulator.Infrastructure.VirtualDevices;
 /// </summary>
 public sealed class VirtualLaserServer : BackgroundService
 {
-    private const int Port = 8901;
+    private const int DefaultPort = 8901;
     private static readonly Random Rng = new();
 
     private readonly IServiceScopeFactory _scopeFactory;
@@ -47,10 +47,11 @@ public sealed class VirtualLaserServer : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var listener = new TcpListener(IPAddress.Any, Port);
+        var port = int.TryParse(GetConfig("LASER_PORT", "8901"), out var p) ? p : DefaultPort;
+        var listener = new TcpListener(IPAddress.Any, port);
         listener.Start();
         _state.SetLaserOnline(true);
-        _logger.LogInformation("VirtualLaserServer listening on TCP :{Port}", Port);
+        _logger.LogInformation("VirtualLaserServer listening on TCP :{Port}", port);
         await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
 
         while (!stoppingToken.IsCancellationRequested)

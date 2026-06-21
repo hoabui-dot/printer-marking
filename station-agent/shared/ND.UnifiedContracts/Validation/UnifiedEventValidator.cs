@@ -52,7 +52,7 @@ public sealed class UnifiedTagValidator : AbstractValidator<UnifiedTag>
         RuleFor(t => t.Tag).NotEmpty().WithMessage("tag name is required.");
         RuleFor(t => t.Quality)
             .NotEmpty()
-            .Must(q => q is EventQuality.Good or EventQuality.Bad or EventQuality.Uncertain)
-            .WithMessage("quality must be GOOD, BAD, or UNCERTAIN.");
+            .Must(q => q is EventQuality.Good or EventQuality.Bad or EventQuality.Uncertain or EventQuality.Missing)
+            .WithMessage("quality must be GOOD, BAD, UNCERTAIN, or MISSING.");
     }
 }

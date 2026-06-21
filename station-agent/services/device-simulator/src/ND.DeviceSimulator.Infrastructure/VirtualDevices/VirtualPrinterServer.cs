@@ -22,7 +22,7 @@ namespace ND.DeviceSimulator.Infrastructure.VirtualDevices;
 /// </summary>
 public sealed class VirtualPrinterServer : BackgroundService
 {
-    private const int Port = 9100;
+    private const int DefaultPort = 9100;
     private static readonly Random Rng = new();
 
     private readonly IServiceScopeFactory _scopeFactory;
@@ -47,10 +47,11 @@ public sealed class VirtualPrinterServer : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var listener = new TcpListener(IPAddress.Any, Port);
+        var port = int.TryParse(GetConfig("PRINTER_PORT", "9100"), out var p) ? p : DefaultPort;
+        var listener = new TcpListener(IPAddress.Any, port);
         listener.Start();
         _state.SetPrinterOnline(true);
-        _logger.LogInformation("VirtualPrinterServer listening on TCP :{Port}", Port);
+        _logger.LogInformation("VirtualPrinterServer listening on TCP :{Port}", port);
 
         await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
 

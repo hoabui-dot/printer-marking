@@ -6,8 +6,8 @@
   <ItemGroup>
     <ProjectReference Include="..\ND.PrinterAdapter.Application\ND.PrinterAdapter.Application.csproj" />
     <ProjectReference Include="..\ND.PrinterAdapter.Domain\ND.PrinterAdapter.Domain.csproj" />
-    <ProjectReference Include="..\..\..\..\..\shared\ND.SharedKernel\ND.SharedKernel.csproj" />
-    <ProjectReference Include="..\..\..\..\..\shared\ND.Infrastructure\ND.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\..\shared\ND.SharedKernel\ND.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\..\..\shared\ND.Infrastructure\ND.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />

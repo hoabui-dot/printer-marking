@@ -35,6 +35,8 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<PrinterDbContext>();
+    var dbDir = Path.GetDirectoryName(Path.GetFullPath(dbPath));
+    if (!string.IsNullOrEmpty(dbDir)) Directory.CreateDirectory(dbDir);
     await db.Database.EnsureCreatedAsync();
 }
 

@@ -1,6 +1,6 @@
 import {
   useSimulator, usePrinterJobs, useLaserCommands,
-  useVisionResults, usePlcState, useGatewayEvents, useConnections
+  useVisionResults, useGatewayEvents, useConnections
 } from './hooks/useSimulator'
 import PrinterCard from './components/PrinterCard'
 import LaserCard from './components/LaserCard'
@@ -10,9 +10,11 @@ import GatewayCard from './components/GatewayCard'
 import TimelinePanel from './components/TimelinePanel'
 import ConnectionPanel from './components/ConnectionPanel'
 import EnvPanel from './components/EnvPanel'
-import { useState } from 'react'
+import GatewayConsole from './components/GatewayConsole'
+import { useState, useEffect } from 'react'
+import type { ConfigValue } from './types'
 
-type Tab = 'devices' | 'timeline' | 'env'
+type Tab = 'devices' | 'gateway' | 'timeline' | 'env'
 
 export default function App() {
   const { status, timeline, connected } = useSimulator()
@@ -22,22 +24,51 @@ export default function App() {
   const gatewayEvents = useGatewayEvents()
   const connections = useConnections()
   const [tab, setTab] = useState<Tab>('devices')
+  const [configValues, setConfigValues] = useState<ConfigValue[]>([])
+
+  const fetchConfig = () => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(setConfigValues)
+      .catch(console.error)
+  }
+
+  useEffect(() => {
+    fetchConfig()
+  }, [])
+
+  const saveConfig = async (key: string, value: string) => {
+    try {
+      const response = await fetch(`/api/config/${key}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value })
+      })
+      if (!response.ok) {
+        throw new Error(`Failed to update config ${key}`)
+      }
+      fetchConfig()
+    } catch (error) {
+      console.error(error)
+      throw error
+    }
+  }
 
   return (
-    <div className="min-h-screen p-4">
+    <div className="min-h-screen p-4 bg-gray-950 text-gray-100">
       {/* Header */}
-      <header className="flex items-center justify-between mb-5 pb-4 border-b border-gray-800">
+      <header className="flex items-center justify-between mb-5 pb-4 border-b border-gray-850">
         <div>
-          <h1 className="text-xl font-bold text-white">Device Simulator</h1>
+          <h1 className="text-xl font-bold text-white tracking-tight">Device Simulator</h1>
           <p className="text-xs text-gray-500">Virtual factory environment — 5 devices auto-running</p>
         </div>
         <div className="flex items-center gap-3 text-xs">
-          <div className="flex items-center gap-1.5">
-            <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
-            <span className="text-gray-400">{connected ? 'SignalR Live' : 'Disconnected'}</span>
+          <div className="flex items-center gap-1.5 bg-gray-900 border border-gray-800 rounded-full px-3 py-1">
+            <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+            <span className="text-gray-400 font-mono">{connected ? 'SignalR Live' : 'Disconnected'}</span>
           </div>
           {status && (
-            <div className="flex gap-1">
+            <div className="flex gap-1.5">
               {[
                 { label: 'PRT', on: status.printer.online },
                 { label: 'LSR', on: status.laser.online },
@@ -45,8 +76,8 @@ export default function App() {
                 { label: 'PLC', on: status.plc.online },
                 { label: 'GW', on: status.gateway.connected },
               ].map(d => (
-                <span key={d.label} className={`px-1.5 py-0.5 rounded text-xs font-mono
-                  ${d.on ? 'bg-green-900 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
+                <span key={d.label} className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono tracking-wider transition-colors
+                  ${d.on ? 'bg-green-950/80 text-green-400 border border-green-900' : 'bg-gray-900 text-gray-500 border border-gray-800'}`}>
                   {d.label}
                 </span>
               ))}
@@ -64,28 +95,40 @@ export default function App() {
         {/* Main */}
         <main className="flex-1 min-w-0">
           {/* Tabs */}
-          <div className="flex gap-1 mb-4 border-b border-gray-800">
-            {(['devices', 'timeline', 'env'] as Tab[]).map(t => (
+          <div className="flex gap-1 mb-4 border-b border-gray-850">
+            {(['devices', 'gateway', 'timeline', 'env'] as Tab[]).map(t => (
               <button key={t} onClick={() => setTab(t)}
-                className={`px-4 py-1.5 text-sm rounded-t capitalize transition-colors
-                  ${tab === t ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-                {t === 'timeline' ? `Timeline (${timeline.length})` : t === 'devices' ? 'Devices' : 'Environment'}
+                className={`px-4 py-2 text-xs font-semibold rounded-t transition-all border-t border-x -mb-[1px]
+                  ${tab === t
+                    ? 'bg-gray-900 text-white border-gray-800 border-b-gray-900'
+                    : 'text-gray-500 hover:text-gray-300 border-transparent hover:bg-gray-900/50'}`}>
+                {t === 'timeline'
+                  ? `Timeline (${timeline.length})`
+                  : t === 'gateway'
+                  ? 'Factory Gateway (MQTT)'
+                  : t === 'devices'
+                  ? 'Virtual Devices'
+                  : 'Environment Config'}
               </button>
             ))}
           </div>
 
           {tab === 'devices' && status && (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-              <PrinterCard state={status.printer} jobs={printerJobs} />
-              <LaserCard state={status.laser} commands={laserCmds} />
-              <VisionCard state={status.vision} results={visionResults} />
-              <PlcCard state={status.plc} />
+              <PrinterCard state={status.printer} jobs={printerJobs} configValues={configValues} onSaveConfig={saveConfig} />
+              <LaserCard state={status.laser} commands={laserCmds} configValues={configValues} onSaveConfig={saveConfig} />
+              <VisionCard state={status.vision} results={visionResults} configValues={configValues} onSaveConfig={saveConfig} />
+              <PlcCard state={status.plc} configValues={configValues} onSaveConfig={saveConfig} />
               <GatewayCard state={status.gateway} events={gatewayEvents} />
             </div>
           )}
 
+          {tab === 'gateway' && status && (
+            <GatewayConsole state={status.gateway} events={gatewayEvents} configValues={configValues} onSaveConfig={saveConfig} />
+          )}
+
           {tab === 'devices' && !status && (
-            <div className="flex items-center justify-center h-48 text-gray-600">
+            <div className="flex items-center justify-center h-48 text-gray-500 text-sm font-medium animate-pulse">
               Connecting to virtual devices…
             </div>
           )}

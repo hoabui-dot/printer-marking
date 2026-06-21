@@ -65,7 +65,9 @@ public sealed class KioskRbacRepository : IKioskRbacRepository
     public async Task<IReadOnlyList<string>> GetUserPermissionsAsync(string userId, CancellationToken ct = default)
     {
         var roleIds = await _context.UserRoles.Where(ur => ur.UserId == userId).Select(ur => ur.RoleId).ToListAsync(ct);
-        var permissionIds = await _context.RolePermissions.Where(rp => roleIds.Contains(rp.RoleId)).Select(rp => rp.PermissionId).Distinct().ToListAsync(ct);
-        return await _context.Permissions.Where(p => permissionIds.Contains(p.Id)).Select(p => p.PermissionCode).ToListAsync(ct);
+        var rolePermIds = await _context.RolePermissions.Where(rp => roleIds.Contains(rp.RoleId)).Select(rp => rp.PermissionId).Distinct().ToListAsync(ct);
+        var directPermIds = await _context.UserPermissions.Where(up => up.UserId == userId).Select(up => up.PermissionId).ToListAsync(ct);
+        var allPermIds = rolePermIds.Union(directPermIds).Distinct().ToList();
+        return await _context.Permissions.Where(p => allPermIds.Contains(p.Id)).Select(p => p.PermissionCode).ToListAsync(ct);
     }
 }

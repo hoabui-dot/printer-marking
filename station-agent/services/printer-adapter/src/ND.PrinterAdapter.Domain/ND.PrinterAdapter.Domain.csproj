@@ -4,6 +4,6 @@
     <RootNamespace>ND.PrinterAdapter.Domain</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\..\shared\ND.SharedKernel\ND.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\..\..\shared\ND.SharedKernel\ND.SharedKernel.csproj" />
   </ItemGroup>
 </Project>

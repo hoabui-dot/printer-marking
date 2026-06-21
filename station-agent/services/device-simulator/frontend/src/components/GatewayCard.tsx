@@ -18,14 +18,25 @@ export default function GatewayCard({ state, events }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topic,
-          site: 'FACTORY-A',
-          area: 'LINE-1',
-          line: 'LINE-1',
+          site: 'NMDDuongDuong',
+          area: 'Assembly_Section',
+          line: 'Chuyen03',
           machine: 'SIMULATOR-01',
-          edgeId: 'edge-simulator',
+          edgeId: 'edge-ipc-l3-marking',
           data: [{ tag, value, quality: 'GOOD' }]
         })
       })
+    } finally {
+      setPublishing(false)
+    }
+  }
+
+  const sendJob = async (url: string) => {
+    setPublishing(true)
+    try {
+      await fetch(url, { method: 'POST' })
+    } catch (err) {
+      console.error(err)
     } finally {
       setPublishing(false)
     }
@@ -73,6 +84,28 @@ export default function GatewayCard({ state, events }: Props) {
           className="w-full bg-purple-700 hover:bg-purple-600 text-white rounded px-2 py-1 disabled:opacity-50">
           {publishing ? 'Publishing…' : 'Publish Event'}
         </button>
+      </div>
+
+      <div className="space-y-1.5 pt-2 border-t border-gray-800">
+        <div className="text-[10px] font-bold text-gray-500 tracking-wider uppercase">Pre-defined Factory Jobs</div>
+        <div className="grid grid-cols-2 gap-1.5 text-xs">
+          <button onClick={() => sendJob('/api/gateway/send-print-job')} disabled={publishing || !state.connected}
+            className="bg-indigo-700 hover:bg-indigo-600 text-white rounded px-1.5 py-1 text-center truncate disabled:opacity-50 font-medium transition-colors">
+            Send Print Job
+          </button>
+          <button onClick={() => sendJob('/api/gateway/send-mark-job')} disabled={publishing || !state.connected}
+            className="bg-emerald-700 hover:bg-emerald-600 text-white rounded px-1.5 py-1 text-center truncate disabled:opacity-50 font-medium transition-colors">
+            Send Mark Job
+          </button>
+          <button onClick={() => sendJob('/api/gateway/send-print-mark-job')} disabled={publishing || !state.connected}
+            className="bg-blue-700 hover:bg-blue-600 text-white rounded px-1.5 py-1 text-center truncate disabled:opacity-50 font-medium transition-colors">
+            Send Print+Mark
+          </button>
+          <button onClick={() => sendJob('/api/gateway/send-verify-job')} disabled={publishing || !state.connected}
+            className="bg-amber-700 hover:bg-amber-600 text-white rounded px-1.5 py-1 text-center truncate disabled:opacity-50 font-medium transition-colors">
+            Send Verify Job
+          </button>
+        </div>
       </div>
 
       {events.length > 0 && (

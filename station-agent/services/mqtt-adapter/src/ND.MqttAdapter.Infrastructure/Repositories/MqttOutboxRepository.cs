@@ -21,12 +21,21 @@ public sealed class MqttOutboxRepository : IMqttOutboxRepository
         => await _context.MqttOutboxEvents.ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<MqttOutboxEvent>> GetPendingAsync(int batchSize, CancellationToken cancellationToken = default)
-        => await _context.MqttOutboxEvents
-            .Where(e => e.Status == "PENDING" &&
-                        (e.NextRetryAt == null || string.Compare(e.NextRetryAt, DateTime.UtcNow.ToString("o"), StringComparison.Ordinal) <= 0))
+    {
+        var nowIso = DateTime.UtcNow.ToString("o");
+        // Fetch PENDING records and filter NextRetryAt in memory — EF Core SQLite
+        // cannot translate string comparison methods (CompareTo, string.Compare, etc.).
+        var pending = await _context.MqttOutboxEvents
+            .Where(e => e.Status == "PENDING")
             .OrderBy(e => e.CreatedAt)
-            .Take(batchSize)
             .ToListAsync(cancellationToken);
+
+        return pending
+            .Where(e => e.NextRetryAt == null ||
+                        string.Compare(e.NextRetryAt, nowIso, StringComparison.Ordinal) <= 0)
+            .Take(batchSize)
+            .ToList();
+    }
 
     public async Task AddAsync(MqttOutboxEvent entity, CancellationToken cancellationToken = default)
         => await _context.MqttOutboxEvents.AddAsync(entity, cancellationToken);

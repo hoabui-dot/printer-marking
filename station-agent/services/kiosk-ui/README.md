@@ -10,7 +10,7 @@ The **Kiosk UI Service** provides a real-time web dashboard and supervisor overr
    - Listens on port **5007**.
 2. **Frontend client (`frontend`)**:
    - React + Vite SPA showing real-time logs, active job progress, device heartbeats, and supervisor command buttons (reprint, relaser, force pass, force complete).
-   - Defaults to port **5173** during development.
+   - Defaults to port **5222** during development.
 
 ## Database & Schema (`kiosk.db`)
 - **`kiosk_users`** / **`kiosk_roles`** / **`kiosk_permissions`**: User identities, roles (ADMIN, SUPERVISOR, OPERATOR, QA), and granular security actions.
@@ -41,7 +41,7 @@ cd services/kiosk-ui/frontend
 npm install
 npm run dev
 ```
-Open your browser and navigate to `http://localhost:5173`.
+Open your browser and navigate to `http://localhost:5222`.
 - **Default Credentials**: `admin` / `Admin@123`
 
 ---

@@ -1,7 +1,9 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MQTTnet;
 using MQTTnet.Client;
+using ND.MqttAdapter.Application.Commands;
 using ND.MqttAdapter.Application.Interfaces;
 using ND.MqttAdapter.Infrastructure.Options;
 
@@ -15,16 +17,16 @@ public sealed class MqttClientService : IMqttPublisher, IAsyncDisposable
 {
     private readonly IMqttClient _client;
     private readonly MqttOptions _options;
-    private readonly IInboundMessageDispatcher _dispatcher;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<MqttClientService> _logger;
 
     public MqttClientService(
         IOptions<MqttOptions> options,
-        IInboundMessageDispatcher dispatcher,
+        IServiceProvider serviceProvider,
         ILogger<MqttClientService> logger)
     {
         _options = options.Value;
-        _dispatcher = dispatcher;
+        _serviceProvider = serviceProvider;
         _logger = logger;
 
         var factory = new MqttFactory();
@@ -95,11 +97,13 @@ public sealed class MqttClientService : IMqttPublisher, IAsyncDisposable
 
         try
         {
-            await _dispatcher.DispatchAsync(topic, payload, CancellationToken.None);
+            using var scope = _serviceProvider.CreateScope();
+            var handler = scope.ServiceProvider.GetRequiredService<ProcessInboundMessageHandler>();
+            await handler.HandleAsync(new ProcessInboundMessageCommand(messageId, topic, payload), CancellationToken.None);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error dispatching MQTT message on {Topic}", topic);
+            _logger.LogError(ex, "Error processing MQTT message on {Topic}", topic);
         }
     }
 

@@ -2,7 +2,7 @@
   <PropertyGroup><AssemblyName>ND.PlcAdapter.Application</AssemblyName><RootNamespace>ND.PlcAdapter.Application</RootNamespace></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ND.PlcAdapter.Domain\ND.PlcAdapter.Domain.csproj" />
-    <ProjectReference Include="..\..\..\..\..\shared\ND.SharedKernel\ND.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\..\..\shared\ND.SharedKernel\ND.SharedKernel.csproj" />
   </ItemGroup>
   <ItemGroup><PackageReference Include="Microsoft.Extensions.Logging.Abstractions" /></ItemGroup>
 </Project>

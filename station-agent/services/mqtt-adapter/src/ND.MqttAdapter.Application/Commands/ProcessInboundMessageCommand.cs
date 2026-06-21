@@ -48,11 +48,11 @@ public sealed class ProcessInboundMessageHandler
         try
         {
             await _messageRepository.AddAsync(message, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             await _dispatcher.DispatchAsync(command.Topic, command.PayloadJson, cancellationToken);
 
             message.MarkProcessed();
-            await _messageRepository.UpdateAsync(message, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(
@@ -62,8 +62,14 @@ public sealed class ProcessInboundMessageHandler
         catch (Exception ex)
         {
             message.MarkFailed(ex.Message);
-            await _messageRepository.UpdateAsync(message, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception saveEx)
+            {
+                _logger.LogError(saveEx, "Failed to save failed status for MQTT message {MessageId}", command.MessageId);
+            }
 
             _logger.LogError(ex,
                 "Failed to process MQTT message {MessageId} on {Topic}",

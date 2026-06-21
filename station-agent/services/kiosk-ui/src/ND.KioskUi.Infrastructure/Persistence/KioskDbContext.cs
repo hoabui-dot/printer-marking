@@ -13,6 +13,7 @@ public sealed class KioskDbContext : DbContext, IUnitOfWork
     public DbSet<KioskPermission> Permissions => Set<KioskPermission>();
     public DbSet<KioskUserRole> UserRoles => Set<KioskUserRole>();
     public DbSet<KioskRolePermission> RolePermissions => Set<KioskRolePermission>();
+    public DbSet<KioskUserPermission> UserPermissions => Set<KioskUserPermission>();
     public DbSet<KioskSession> Sessions => Set<KioskSession>();
     public DbSet<KioskAccessLog> AccessLogs => Set<KioskAccessLog>();
 
@@ -74,6 +75,17 @@ public sealed class KioskDbContext : DbContext, IUnitOfWork
             e.Property(x => x.RoleId).HasColumnName("role_id").IsRequired();
             e.Property(x => x.PermissionId).HasColumnName("permission_id").IsRequired();
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+        });
+
+        modelBuilder.Entity<KioskUserPermission>(e =>
+        {
+            e.ToTable("kiosk_user_permissions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.UserId).HasColumnName("user_id").IsRequired();
+            e.Property(x => x.PermissionId).HasColumnName("permission_id").IsRequired();
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+            e.HasIndex(x => new { x.UserId, x.PermissionId }).IsUnique();
         });
 
         modelBuilder.Entity<KioskSession>(e =>

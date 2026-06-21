@@ -11,7 +11,7 @@ public sealed class JobAttempt : Entity
 {
     public string JobId { get; private set; } = default!;
     public int AttemptNo { get; private set; }
-    public string TriggerType { get; private set; } = TriggerType.Auto;
+    public string TriggerType { get; private set; } = Enums.TriggerType.Auto;
     public string? TriggeredByUserId { get; private set; }
     public string ResultStatus { get; private set; } = "RUNNING";
     public string StartedAt { get; private set; } = DateTime.UtcNow.ToString("o");

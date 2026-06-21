@@ -1,20 +1,48 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
+import { AuthProvider, useAuth } from './context/AuthContext'
+import { GlobalLoading } from './components/GlobalLoading'
 
-function RequireAuth({ children }: { children: React.ReactNode }) {
-  const token = localStorage.getItem('token')
-  return token ? <>{children}</> : <Navigate to="/login" replace />
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth()
+  
+  if (loading) {
+    return <GlobalLoading />
+  }
+  
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+  
+  return <>{children}</>
+}
+
+function PublicRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth()
+  
+  if (loading) {
+    return <GlobalLoading />
+  }
+  
+  if (user) {
+    return <Navigate to="/" replace />
+  }
+  
+  return <>{children}</>
 }
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/" element={<RequireAuth><DashboardPage /></RequireAuth>} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
+          <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   )
 }
+

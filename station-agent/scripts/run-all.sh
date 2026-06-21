@@ -1,4 +1,4 @@
-#!/bin/bash
+1#!/bin/bash
 
 # Get directory where script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -35,38 +35,113 @@ fi
 echo "Starting services in background..."
 touch "$PID_FILE"
 
-# Helper function to start a service
-start_service() {
+# Helper function to start a dotnet service
+# Usage: start_dotnet_service <name> <relative-path> <port-description> [KEY=VALUE ...]
+start_dotnet_service() {
     local name=$1
     local path=$2
-    local port=$3
-    local env_vars=$4
-    
-    echo "[*] Starting $name on port $port..."
-    cd "$ROOT_DIR/$path"
-    
-    # Run dotnet run in background, redirect output to log file
-    if [ -n "$env_vars" ]; then
-        env $env_vars dotnet run > "$LOGS_DIR/$name.log" 2>&1 &
-    else
-        dotnet run > "$LOGS_DIR/$name.log" 2>&1 &
-    fi
-    
+    local port_desc=$3
+    shift 3
+    local env_pairs=("$@")
+
+    echo "[*] Starting $name on port $port_desc..."
+    local svc_dir="$ROOT_DIR/$path"
+
+    (
+        cd "$svc_dir" || exit 1
+        # Export all passed env vars in this subshell
+        for kv in "${env_pairs[@]}"; do
+            export "$kv"
+        done
+        # Wait 10s then start tailing logs (shows startup output after 10s)
+        dotnet run 2>&1 | (sleep 10 && cat > "$LOGS_DIR/$name.log") &
+        # Also keep a direct log (no delay, captures everything from start)
+        dotnet run 2>&1 > "$LOGS_DIR/$name.log" &
+        echo $!
+    ) &
     local pid=$!
     echo "$name:$pid" >> "$PID_FILE"
     echo "[+] Started $name (PID: $pid). Logs: scripts/logs/$name.log"
 }
 
-# Start all 8 services
-start_service "mqtt-adapter" "services/mqtt-adapter/src/ND.MqttAdapter.Worker" "N/A (Worker)" "ASPNETCORE_ENVIRONMENT=Development"
-start_service "job-engine" "services/job-engine/src/ND.JobEngine.Api" "5002" "ASPNETCORE_ENVIRONMENT=Development"
-start_service "printer-adapter" "services/printer-adapter/src/ND.PrinterAdapter.Api" "5003" "ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5003"
-start_service "laser-adapter" "services/laser-adapter/src/ND.LaserAdapter.Api" "5004" "ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5004"
-start_service "vision-service" "services/vision-service/src/ND.VisionService.Api" "5005" "ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5005"
-start_service "plc-adapter" "services/plc-adapter/src/ND.PlcAdapter.Api" "5006" "ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5006"
-start_service "kiosk-ui" "services/kiosk-ui/src/ND.KioskUi.Api" "5007" "ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5007"
-start_service "device-simulator" "services/device-simulator/src/ND.DeviceSimulator.Api" "5000/5008" "ASPNETCORE_ENVIRONMENT=Development"
+# Helper function to start a dotnet service (simple, reliable version)
+start_service() {
+    local name=$1
+    local path=$2
+    local port_desc=$3
+    shift 3
+    # Remaining args are KEY=VALUE environment variable pairs
 
-echo "=== All backend services started! ==="
-echo "[*] To check logs, tail files in: scripts/logs/"
-echo "[*] To stop all services, run: scripts/kill-all.sh"
+    echo "[*] Starting $name on port $port_desc..."
+    local svc_dir="$ROOT_DIR/$path"
+
+    (
+        cd "$svc_dir" || exit 1
+        for kv in "$@"; do
+            export "$kv"
+        done
+        dotnet run > "$LOGS_DIR/$name.log" 2>&1
+    ) &
+    local pid=$!
+    echo "$name:$pid" >> "$PID_FILE"
+    echo "[+] Started $name (PID: $pid). Log will appear after 10s: scripts/logs/$name.log"
+
+    # Give this service a brief moment to start binding ports
+    sleep 0.3
+}
+
+# Helper function to start a Node/NPM service
+start_node_service() {
+    local name=$1
+    local path=$2
+    local port=$3
+    local cmd=$4
+
+    echo "[*] Starting $name on port $port..."
+    (
+        cd "$ROOT_DIR/$path" || exit 1
+        eval "$cmd" > "$LOGS_DIR/$name.log" 2>&1
+    ) &
+    local pid=$!
+    echo "$name:$pid" >> "$PID_FILE"
+    echo "[+] Started $name (PID: $pid). Logs: scripts/logs/$name.log"
+}
+
+# ── Start all backend services ─────────────────────────────────────────────────
+start_service "mqtt-adapter"    "services/mqtt-adapter/src/ND.MqttAdapter.Worker"         "Worker" \
+    "ASPNETCORE_ENVIRONMENT=Development"
+
+start_service "job-engine"      "services/job-engine/src/ND.JobEngine.Api"                 "5002" \
+    "ASPNETCORE_ENVIRONMENT=Development"
+
+start_service "printer-adapter" "services/printer-adapter/src/ND.PrinterAdapter.Api"       "5003" \
+    "ASPNETCORE_ENVIRONMENT=Development" \
+    "ASPNETCORE_URLS=http://localhost:5003"
+
+start_service "laser-adapter"   "services/laser-adapter/src/ND.LaserAdapter.Api"           "5004" \
+    "ASPNETCORE_ENVIRONMENT=Development" \
+    "ASPNETCORE_URLS=http://localhost:5004"
+
+start_service "vision-service"  "services/vision-service/src/ND.VisionService.Api"         "5005" \
+    "ASPNETCORE_ENVIRONMENT=Development" \
+    "ASPNETCORE_URLS=http://localhost:5005"
+
+start_service "plc-adapter"     "services/plc-adapter/src/ND.PlcAdapter.Api"               "5006" \
+    "ASPNETCORE_ENVIRONMENT=Development" \
+    "ASPNETCORE_URLS=http://localhost:5006"
+
+# Kiosk UI backend API — port 5007 is defined in appsettings.json (Kestrel config)
+start_service "kiosk-ui"        "services/kiosk-ui/src/ND.KioskUi.Api"                    "5007" \
+    "ASPNETCORE_ENVIRONMENT=Development"
+
+# Kiosk UI React frontend — proxies to kiosk-ui API on port 5007
+start_node_service "kiosk-ui-frontend" "services/kiosk-ui/frontend" "5222" "npm run dev"
+
+echo ""
+echo "=== All services started! ==="
+echo "[*] Frontend UI:   http://localhost:5222  (Kiosk UI)"
+echo "[*] Kiosk API:     http://localhost:5007  (Backend API)"
+echo "[*] Job Engine:    http://localhost:5002"
+echo "[*] To view logs:  tail -f scripts/logs/<service>.log"
+echo "[*] To stop all:   scripts/kill-all.sh"
+

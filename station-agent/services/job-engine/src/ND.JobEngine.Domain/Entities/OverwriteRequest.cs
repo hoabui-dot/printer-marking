@@ -61,6 +61,6 @@ public sealed class OverwriteRequest : Entity
     }
 
     private static bool IsValidType(string type) =>
-        type is OverwriteType.ForcePass or OverwriteType.Reprint
-            or OverwriteType.Relaser or OverwriteType.ForceComplete;
+        type is Enums.OverwriteType.ForcePass or Enums.OverwriteType.Reprint
+            or Enums.OverwriteType.Relaser or Enums.OverwriteType.ForceComplete;
 }

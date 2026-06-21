@@ -85,6 +85,32 @@ public sealed class ProcessJobHandler
     {
         return jobType switch
         {
+            "PRINT_ONLY" =>
+            [
+                JobStep.Create(attemptId, "PRINT_LABEL", 1),
+                JobStep.Create(attemptId, "VISION_CHECK", 2)
+            ],
+            "MARK_ONLY" =>
+            [
+                JobStep.Create(attemptId, "LASER_MARK", 1),
+                JobStep.Create(attemptId, "VISION_CHECK", 2)
+            ],
+            "PRINT_AND_MARK" =>
+            [
+                JobStep.Create(attemptId, "PRINT_LABEL", 1),
+                JobStep.Create(attemptId, "LASER_MARK", 2),
+                JobStep.Create(attemptId, "VISION_CHECK", 3)
+            ],
+            "VERIFY_ONLY" =>
+            [
+                JobStep.Create(attemptId, "VISION_CHECK", 1)
+            ],
+            "REWORK" =>
+            [
+                JobStep.Create(attemptId, "PRINT_LABEL", 1),
+                JobStep.Create(attemptId, "LASER_MARK", 2),
+                JobStep.Create(attemptId, "VISION_CHECK", 3)
+            ],
             "PRINT_LABEL" =>
             [
                 JobStep.Create(attemptId, "PRINT_LABEL", 1)

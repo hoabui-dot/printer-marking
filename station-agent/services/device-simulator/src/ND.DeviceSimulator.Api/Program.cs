@@ -207,6 +207,126 @@ try
         }
     });
 
+    app.MapPost("/api/gateway/send-print-job", async (
+        VirtualFactoryGateway gateway,
+        IConfiguration config) =>
+    {
+        try
+        {
+            var data = new List<UnifiedTagRequest>
+            {
+                new("operation.type", "PRINT_ONLY"),
+                new("print.type", "LABEL_PRINT"),
+                new("product.id", "FC-WP-RO100G-B-998822"),
+                new("product.lot", "LOT-2026-06-A-001"),
+                new("product.mfg_date", "2026-06-16"),
+                new("product.exp_date", "2028-06-16")
+            };
+            var site = config["Simulator:SITE_CODE"] ?? "NMDDuongDuong";
+            var edgeId = config["Simulator:EDGE_ID"] ?? "edge-ipc-l3-marking";
+            var area = config["Simulator:AREA_CODE"] ?? "Assembly_Section";
+            var line = config["Simulator:LINE_CODE"] ?? "Chuyen03";
+            var topic = $"nd/{site}/{edgeId}/command";
+
+            var req = new GatewayPublishRequest(topic, site, area, line, "Printer-01", edgeId, data);
+            await gateway.PublishAsync(req);
+            return Results.Ok();
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    });
+
+    app.MapPost("/api/gateway/send-mark-job", async (
+        VirtualFactoryGateway gateway,
+        IConfiguration config) =>
+    {
+        try
+        {
+            var data = new List<UnifiedTagRequest>
+            {
+                new("operation.type", "MARK_ONLY"),
+                new("marking.type", "LASER_ETCHING"),
+                new("marking.serial", "SN-0001234"),
+                new("marking.lot", "2026-BATCH-A"),
+                new("marking.date_code", "260616")
+            };
+            var site = config["Simulator:SITE_CODE"] ?? "NMDDuongDuong";
+            var edgeId = config["Simulator:EDGE_ID"] ?? "edge-ipc-l3-marking";
+            var area = config["Simulator:AREA_CODE"] ?? "Assembly_Section";
+            var line = config["Simulator:LINE_CODE"] ?? "Chuyen03";
+            var topic = $"nd/{site}/{edgeId}/command";
+
+            var req = new GatewayPublishRequest(topic, site, area, line, "Laser-Marking-03", edgeId, data);
+            await gateway.PublishAsync(req);
+            return Results.Ok();
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    });
+
+    app.MapPost("/api/gateway/send-print-mark-job", async (
+        VirtualFactoryGateway gateway,
+        IConfiguration config) =>
+    {
+        try
+        {
+            var data = new List<UnifiedTagRequest>
+            {
+                new("operation.type", "PRINT_AND_MARK"),
+                new("print.type", "PRODUCT_LABEL"),
+                new("marking.type", "LASER_SERIALIZATION"),
+                new("product.id", "FC-WP-RO100G-B-998822"),
+                new("product.lot", "LOT-2026-06-A-001"),
+                new("marking.serial", "SN-0001234")
+            };
+            var site = config["Simulator:SITE_CODE"] ?? "NMDDuongDuong";
+            var edgeId = config["Simulator:EDGE_ID"] ?? "edge-ipc-l3-marking";
+            var area = config["Simulator:AREA_CODE"] ?? "Assembly_Section";
+            var line = config["Simulator:LINE_CODE"] ?? "Chuyen03";
+            var topic = $"nd/{site}/{edgeId}/command";
+
+            var req = new GatewayPublishRequest(topic, site, area, line, "Station-Combined-01", edgeId, data);
+            await gateway.PublishAsync(req);
+            return Results.Ok();
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    });
+
+    app.MapPost("/api/gateway/send-verify-job", async (
+        VirtualFactoryGateway gateway,
+        IConfiguration config) =>
+    {
+        try
+        {
+            var data = new List<UnifiedTagRequest>
+            {
+                new("operation.type", "VERIFY_ONLY"),
+                new("verify.expected_content", "FC-WP-RO100G-B-998822"),
+                new("verify.camera_id", "CAM-01")
+            };
+            var site = config["Simulator:SITE_CODE"] ?? "NMDDuongDuong";
+            var edgeId = config["Simulator:EDGE_ID"] ?? "edge-ipc-l3-marking";
+            var area = config["Simulator:AREA_CODE"] ?? "Assembly_Section";
+            var line = config["Simulator:LINE_CODE"] ?? "Chuyen03";
+            var topic = $"nd/{site}/{edgeId}/command";
+
+            var req = new GatewayPublishRequest(topic, site, area, line, "Camera-QC-01", edgeId, data);
+            await gateway.PublishAsync(req);
+            return Results.Ok();
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    });
+
     app.MapGet("/api/gateway/events", async (SimulatorDbContext db, int limit = 50) =>
     {
         var evts = await db.GatewayEvents
@@ -265,3 +385,5 @@ finally
 }
 
 return 0;
+
+public partial class Program { }

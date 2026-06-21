@@ -44,7 +44,7 @@ public sealed class ZplTcpPrinterAdapter : IPrinterAdapter
         try
         {
             using var client = new TcpClient();
-            var connectTask = client.ConnectAsync(ipAddress, port, cancellationToken);
+            var connectTask = client.ConnectAsync(ipAddress, port, cancellationToken).AsTask();
             await connectTask.WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
             return client.Connected;
         }

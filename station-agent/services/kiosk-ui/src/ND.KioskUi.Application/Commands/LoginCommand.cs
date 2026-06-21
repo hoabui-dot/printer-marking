@@ -4,7 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using ND.KioskUi.Application.Dtos;
 using ND.KioskUi.Application.Interfaces;
 using ND.KioskUi.Domain.Entities;
-using ND.KioskUi.Infrastructure.Options;
+using ND.KioskUi.Application.Options;
 using ND.SharedKernel.Abstractions;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
