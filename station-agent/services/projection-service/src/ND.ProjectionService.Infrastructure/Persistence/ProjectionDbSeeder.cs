@@ -15,7 +15,8 @@ public static class ProjectionDbSeeder
                 DeviceStatus.Create("plc-01", "PLC", isOnline: true, nowStr),
                 DeviceStatus.Create("printer-01", "PRINTER", isOnline: true, nowStr),
                 DeviceStatus.Create("laser-01", "LASER", isOnline: true, nowStr),
-                DeviceStatus.Create("camera-01", "VISION_CAMERA", isOnline: true, nowStr)
+                DeviceStatus.Create("camera-01", "VISION_CAMERA", isOnline: true, nowStr),
+                DeviceStatus.Create("gateway-01", "GATEWAY", isOnline: true, nowStr)
             };
 
             await db.DeviceStatuses.AddRangeAsync(devices);

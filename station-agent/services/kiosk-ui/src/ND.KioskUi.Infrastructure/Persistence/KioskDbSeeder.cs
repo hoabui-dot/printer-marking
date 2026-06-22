@@ -22,11 +22,7 @@ public static class KioskDbSeeder
         var permissions = new Dictionary<string, string>
         {
             { PermissionCodes.JobView, "Xem danh sách công việc" },
-            { PermissionCodes.JobRetry, "Thử lại công việc lỗi" },
-            { PermissionCodes.JobForcePass, "Bỏ qua lỗi kiểm tra camera" },
-            { PermissionCodes.JobForceComplete, "Bắt buộc hoàn thành công việc" },
-            { PermissionCodes.JobReprint, "In lại nhãn" },
-            { PermissionCodes.JobRelaser, "Khắc lại Laser" },
+            { PermissionCodes.JobReprocess, "Làm lại / Xử lý lại sản phẩm" },
             { PermissionCodes.UserManage, "Quản lý người dùng" },
             { PermissionCodes.SystemAdmin, "Toàn quyền hệ thống" }
         };

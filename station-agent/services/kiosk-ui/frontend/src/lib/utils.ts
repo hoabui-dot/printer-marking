@@ -20,13 +20,36 @@ export function translatePermission(perm: string): string {
 }
 
 /** Translate job status code to Vietnamese label */
-export function translateJobStatus(status: string): string {
+export function translateJobStatus(status: string, jobType?: string): string {
+  if (status === 'PRINTING' && jobType) {
+    const jt = jobType.toUpperCase();
+    const isPrint = jt.includes('PRINT');
+    const isLaserOrMark = jt.includes('LASER') || jt.includes('MARK') || jt.includes('PROCESS');
+    if (isPrint && isLaserOrMark) {
+      return 'Đang in và khắc';
+    }
+    if (isLaserOrMark) {
+      return 'Đang khắc';
+    }
+    if (isPrint) {
+      return 'Đang in';
+    }
+  }
   return JOB_STATUS_LABELS[status] ?? status
 }
 
 /** Translate job type code to Vietnamese label */
 export function translateJobType(type: string): string {
-  return JOB_TYPE_LABELS[type] ?? type
+  if (!type) return '—'
+  const cleanType = type.toUpperCase().trim()
+  const labels: Record<string, string> = {
+    ...JOB_TYPE_LABELS,
+    'PRINT_ONLY': 'In nhãn',
+    'MARK_ONLY': 'Khắc laser',
+    'PRINT_LABEL': 'In nhãn',
+    'LASER_MARK': 'Khắc laser'
+  }
+  return labels[cleanType] ?? type
 }
 
 /** Get Tailwind color class for job status */

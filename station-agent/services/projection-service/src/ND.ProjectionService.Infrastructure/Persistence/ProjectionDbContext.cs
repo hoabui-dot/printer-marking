@@ -11,6 +11,7 @@ public sealed class ProjectionDbContext : DbContext, IUnitOfWork
     public DbSet<ProductionView> ProductionViews => Set<ProductionView>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<DeviceStatus> DeviceStatuses => Set<DeviceStatus>();
+    public DbSet<ProductionRecord> ProductionRecords => Set<ProductionRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -57,5 +58,23 @@ public sealed class ProjectionDbContext : DbContext, IUnitOfWork
             e.Property(x => x.LastSeenAt).HasColumnName("last_seen_at").IsRequired();
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         });
+
+        modelBuilder.Entity<ProductionRecord>(e =>
+        {
+            e.ToTable("projection_production_records");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
+            e.HasIndex(x => x.JobId).IsUnique();
+            e.Property(x => x.JobNo).HasColumnName("job_no").IsRequired();
+            e.Property(x => x.ProductCode).HasColumnName("product_code").IsRequired();
+            e.Property(x => x.ProductSerial).HasColumnName("product_serial");
+            e.Property(x => x.JobType).HasColumnName("job_type").IsRequired();
+            e.Property(x => x.CurrentStatus).HasColumnName("current_status").IsRequired();
+            e.Property(x => x.StationId).HasColumnName("station_id").IsRequired();
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at").IsRequired();
+        });
     }
 }
+

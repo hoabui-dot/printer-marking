@@ -24,13 +24,16 @@ public sealed class VirtualPlcServer : BackgroundService
     private const int DefaultPort = 5020;
 
     // Coil address mapping
-    private static readonly string[] CoilNames = ["START_BUTTON", "STOP_BUTTON", "SENSOR_IN", "SENSOR_OUT", "MACHINE_READY"];
+    private static readonly string[] CoilNames = ["START_BUTTON", "STOP_BUTTON", "SENSOR_IN", "SENSOR_OUT", "MACHINE_READY", "REJECT_PRODUCT"];
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISimulatorStateService _state;
     private readonly IHubContext<SimulatorHub, ISimulatorClient> _hub;
     private readonly IConfiguration _config;
     private readonly ILogger<VirtualPlcServer> _logger;
+
+    private TcpListener? _listener;
+    private volatile bool _forceDisconnected = false;
 
     public VirtualPlcServer(
         IServiceScopeFactory scopeFactory,
@@ -46,27 +49,69 @@ public sealed class VirtualPlcServer : BackgroundService
         _logger = logger;
     }
 
+    public async Task ConnectPlcAsync(CancellationToken ct = default)
+    {
+        _forceDisconnected = false;
+        _logger.LogInformation("Virtual PLC connection enabled via API");
+    }
+
+    public async Task DisconnectPlcAsync(CancellationToken ct = default)
+    {
+        _forceDisconnected = true;
+        try
+        {
+            _listener?.Stop();
+        }
+        catch { }
+        _state.SetPlcOnline(false);
+        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+        _logger.LogInformation("Virtual PLC manually disconnected via API");
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var port = int.TryParse(_config["Simulator:PLC_PORT"] ?? "5020", out var p) ? p : DefaultPort;
-        var listener = new TcpListener(IPAddress.Any, port);
-        listener.Start();
-        _state.SetPlcOnline(true);
-        _logger.LogInformation("VirtualPlcServer Modbus TCP listening on :{Port}", port);
-        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
-
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var client = await listener.AcceptTcpClientAsync(stoppingToken);
+                if (_forceDisconnected)
+                {
+                    if (_listener != null)
+                    {
+                        _listener.Stop();
+                        _listener = null;
+                        _state.SetPlcOnline(false);
+                        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+                    }
+                    await Task.Delay(500, stoppingToken);
+                    continue;
+                }
+
+                if (_listener == null)
+                {
+                    var port = int.TryParse(_config["Simulator:PLC_PORT"] ?? "5020", out var p) ? p : DefaultPort;
+                    _listener = new TcpListener(IPAddress.Any, port);
+                    _listener.Start();
+                    _state.SetPlcOnline(true);
+                    _logger.LogInformation("VirtualPlcServer Modbus TCP listening on :{Port}", port);
+                    await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+                }
+
+                var client = await _listener.AcceptTcpClientAsync(stoppingToken);
                 _ = HandleClientAsync(client, stoppingToken);
             }
             catch (OperationCanceledException) { break; }
-            catch (Exception ex) { _logger.LogError(ex, "VirtualPlcServer accept error"); }
+            catch (Exception ex)
+            {
+                if (!_forceDisconnected)
+                {
+                    _logger.LogError(ex, "VirtualPlcServer accept error");
+                    await Task.Delay(1000, stoppingToken);
+                }
+            }
         }
 
-        listener.Stop();
+        _listener?.Stop();
         _state.SetPlcOnline(false);
     }
 
@@ -225,5 +270,36 @@ public sealed class VirtualPlcServer : BackgroundService
         await _hub.Clients.All.PlcRegisterChanged(dto);
         await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
         await AddTimelineAsync("PLC_UPDATED", "OK", $"Register {name} = {(value ? "ON" : "OFF")} (API)", ct);
+
+        if (name.Equals("REJECT_PRODUCT", StringComparison.OrdinalIgnoreCase) && value)
+        {
+            var jobId = _state.GetActiveJobId() ?? "unknown";
+            await AddTimelineAsync("PLCRejectStarted", "INFO", $"Reject started for active job {jobId}", ct);
+
+            // Background task to reset register after 1.5 seconds
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(1.5));
+
+                    _state.SetRegister("REJECT_PRODUCT", false);
+                    _state.RecordPlcEvent();
+
+                    var resetEvt = PlcRegisterEvent.Create("REJECT_PRODUCT", false, "SYSTEM");
+                    await PersistRegisterEventAsync(resetEvt, CancellationToken.None);
+
+                    var resetDto = new PlcRegisterDto("REJECT_PRODUCT", false, "SYSTEM", resetEvt.OccurredAt);
+                    await _hub.Clients.All.PlcRegisterChanged(resetDto);
+                    await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+
+                    await AddTimelineAsync("PLCRejectCompleted", "INFO", $"Reject completed for active job {jobId}", CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error in PLC REJECT_PRODUCT auto-reset background task");
+                }
+            });
+        }
     }
 }

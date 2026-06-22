@@ -111,6 +111,61 @@ app.MapGet("/api/projection/devices", async (
     return Results.Ok(dtos);
 });
 
+app.MapGet("/api/projection/records/today", async (
+    int? page,
+    int? pageSize,
+    IProductionRecordRepository repo,
+    CancellationToken ct) =>
+{
+    var p = page ?? 1;
+    var ps = pageSize ?? 10;
+    var (items, totalCount) = await repo.GetTodayAsync(p, ps, ct);
+
+    var dtos = items.Select(r => new ProductionRecordDto(
+        r.Id,
+        r.JobId,
+        r.JobNo,
+        r.ProductCode,
+        r.ProductSerial,
+        r.JobType,
+        r.CurrentStatus,
+        r.StationId,
+        r.CreatedAt,
+        r.UpdatedAt)).ToList();
+
+    return Results.Ok(new PagedResult<ProductionRecordDto>(dtos, totalCount, p, ps));
+});
+
+app.MapGet("/api/projection/records/history", async (
+    int? page,
+    int? pageSize,
+    string? status,
+    string? productCode,
+    string? workOrder,
+    string? dateFrom,
+    string? dateTo,
+    IProductionRecordRepository repo,
+    CancellationToken ct) =>
+{
+    var p = page ?? 1;
+    var ps = pageSize ?? 10;
+    var (items, totalCount) = await repo.GetHistoryAsync(p, ps, status, productCode, workOrder, dateFrom, dateTo, ct);
+
+    var dtos = items.Select(r => new ProductionRecordDto(
+        r.Id,
+        r.JobId,
+        r.JobNo,
+        r.ProductCode,
+        r.ProductSerial,
+        r.JobType,
+        r.CurrentStatus,
+        r.StationId,
+        r.CreatedAt,
+        r.UpdatedAt)).ToList();
+
+    return Results.Ok(new PagedResult<ProductionRecordDto>(dtos, totalCount, p, ps));
+});
+
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "projection-service" }));
 
 // ── SignalR Hubs ────────────────────────────────────────────────────────────

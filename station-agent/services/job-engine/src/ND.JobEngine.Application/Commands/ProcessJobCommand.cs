@@ -8,7 +8,16 @@ using ND.UnifiedContracts.Events;
 
 namespace ND.JobEngine.Application.Commands;
 
-public record ProcessJobCommand(string JobId, string TriggerType = TriggerType.Auto, string? TriggeredByUserId = null);
+public record ProcessJobCommand(
+    string JobId, 
+    string TriggerType = TriggerType.Auto, 
+    string? TriggeredByUserId = null,
+    string? ParentAttemptId = null,
+    int RetrySequence = 0,
+    string? ReasonCode = null,
+    string? ReasonDescription = null,
+    string? OverrideJobType = null
+);
 
 public sealed class ProcessJobHandler
 {
@@ -62,37 +71,74 @@ public sealed class ProcessJobHandler
         job.StartProcessing();
 
         var attemptCount = await _attemptRepository.GetAttemptCountAsync(command.JobId, cancellationToken);
-        var attempt = JobAttempt.Create(job.Id, attemptCount + 1, command.TriggerType, command.TriggeredByUserId);
+        var attempt = JobAttempt.Create(
+            job.Id, 
+            attemptCount + 1, 
+            command.TriggerType, 
+            command.TriggeredByUserId,
+            command.ParentAttemptId,
+            command.RetrySequence,
+            command.ReasonCode,
+            command.ReasonDescription);
+            
         await _attemptRepository.AddAsync(attempt, cancellationToken);
 
+        // Determine step job type (support overriding job type for manual reprints/re-marking)
+        var stepJobType = command.OverrideJobType ?? job.JobType;
+
         // Create steps based on job type
-        var steps = CreateStepsForJobType(job.JobType, attempt.Id);
+        var steps = CreateStepsForJobType(stepJobType, attempt.Id);
+        var firstStep = steps.OrderBy(s => s.StepOrder).FirstOrDefault();
+        if (firstStep is not null)
+        {
+            firstStep.Start();
+        }
+
         foreach (var step in steps)
             await _stepRepository.AddAsync(step, cancellationToken);
 
         await _jobRepository.UpdateAsync(job, cancellationToken);
 
-        var history = JobHistory.Record(job.Id, oldStatus, job.CurrentStatus, "START_PROCESSING", attempt.Id);
+        var actionName = command.TriggerType.StartsWith("Manual", StringComparison.OrdinalIgnoreCase) 
+            ? $"START_{command.TriggerType.ToUpper()}" 
+            : "START_PROCESSING";
+
+        var historyNote = string.IsNullOrEmpty(command.ReasonDescription) 
+            ? "Bắt đầu xử lý." 
+            : $"Lý do: [{command.ReasonCode}] {command.ReasonDescription}";
+
+        var history = JobHistory.Record(
+            job.Id,
+            oldStatus,
+            job.CurrentStatus,
+            actionName,
+            performedBy: command.TriggeredByUserId ?? "system",
+            attemptId: attempt.Id,
+            note: historyNote);
         await _historyRepository.AddAsync(history, cancellationToken);
 
-        var transition = JobStateTransition.Record(job.Id, oldStatus, job.CurrentStatus, "START_PROCESSING");
+        var transition = JobStateTransition.Record(job.Id, oldStatus, job.CurrentStatus, actionName);
         await _transitionRepository.AddAsync(transition, cancellationToken);
 
         // Record outbox event for job processing
         var jobEvent = JobProcessingEvent.From(
             job.Id,
             job.JobNo,
-            job.JobType,
+            stepJobType,
             job.ProductCode,
             job.ProductSerial,
             job.SourceSystem,
             attempt.AttemptNo);
 
+        var routingKey = firstStep is not null 
+            ? CompleteJobStepHandler.GetStepRoutingKey(firstStep.StepName) 
+            : JobEventRoutingKeys.Processing;
+
         var outboxEvent = JobEngineOutboxEvent.Create(
             nameof(Job),
             job.Id,
             jobEvent.EventType,
-            JobEventRoutingKeys.Processing,
+            routingKey,
             System.Text.Json.JsonSerializer.Serialize(jobEvent));
 
         await _outboxRepository.AddAsync(outboxEvent, cancellationToken);
@@ -100,8 +146,8 @@ public sealed class ProcessJobHandler
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Job {JobId} processing started. Attempt #{AttemptNo}",
-            job.Id, attempt.AttemptNo);
+            "Job {JobId} processing started with type {JobType}. Attempt #{AttemptNo}",
+            job.Id, stepJobType, attempt.AttemptNo);
     }
 
     private static List<JobStep> CreateStepsForJobType(string jobType, string attemptId)
@@ -111,28 +157,28 @@ public sealed class ProcessJobHandler
             "PRINT_ONLY" =>
             [
                 JobStep.Create(attemptId, "PRINT_LABEL", 1),
-                JobStep.Create(attemptId, "VISION_CHECK", 2)
+                JobStep.Create(attemptId, "VISION_CHECK", 2),
+                JobStep.Create(attemptId, "PLC_REJECT", 3)
             ],
             "MARK_ONLY" =>
             [
                 JobStep.Create(attemptId, "LASER_MARK", 1),
-                JobStep.Create(attemptId, "VISION_CHECK", 2)
+                JobStep.Create(attemptId, "VISION_CHECK", 2),
+                JobStep.Create(attemptId, "PLC_REJECT", 3)
             ],
             "PRINT_AND_MARK" =>
             [
                 JobStep.Create(attemptId, "PRINT_LABEL", 1),
                 JobStep.Create(attemptId, "LASER_MARK", 2),
-                JobStep.Create(attemptId, "VISION_CHECK", 3)
-            ],
-            "VERIFY_ONLY" =>
-            [
-                JobStep.Create(attemptId, "VISION_CHECK", 1)
+                JobStep.Create(attemptId, "VISION_CHECK", 3),
+                JobStep.Create(attemptId, "PLC_REJECT", 4)
             ],
             "REWORK" =>
             [
                 JobStep.Create(attemptId, "PRINT_LABEL", 1),
                 JobStep.Create(attemptId, "LASER_MARK", 2),
-                JobStep.Create(attemptId, "VISION_CHECK", 3)
+                JobStep.Create(attemptId, "VISION_CHECK", 3),
+                JobStep.Create(attemptId, "PLC_REJECT", 4)
             ],
             "PRINT_LABEL" =>
             [

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using ND.Infrastructure.Redis;
+using ND.Infrastructure.Messaging;
 using ND.KioskUi.Application.Commands;
 using ND.KioskUi.Application.Interfaces;
 using ND.KioskUi.Application.Options;
@@ -41,6 +42,10 @@ public static class ServiceCollectionExtensions
 
         // Application handlers
         services.AddScoped<LoginHandler>();
+
+        // RabbitMQ Publisher
+        services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));
+        services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 
         return services;
     }

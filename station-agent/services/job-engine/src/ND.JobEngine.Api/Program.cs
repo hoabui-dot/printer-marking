@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using ND.Infrastructure.Observability;
 using ND.JobEngine.Api.Extensions;
 using ND.JobEngine.Infrastructure.DependencyInjection;
@@ -31,6 +32,45 @@ using (var scope = app.Services.CreateScope())
     var dbDir = Path.GetDirectoryName(Path.GetFullPath(dbPath));
     if (!string.IsNullOrEmpty(dbDir)) Directory.CreateDirectory(dbDir);
     await db.Database.EnsureCreatedAsync();
+
+    // Safely add tracking/audit columns to existing sqlite database
+    using (var command = db.Database.GetDbConnection().CreateCommand())
+    {
+        await db.Database.OpenConnectionAsync();
+        
+        command.CommandText = "ALTER TABLE job_engine_job_attempts ADD COLUMN parent_attempt_id TEXT NULL;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        command.CommandText = "ALTER TABLE job_engine_job_attempts ADD COLUMN retry_sequence INTEGER DEFAULT 0;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        command.CommandText = "ALTER TABLE job_engine_job_attempts ADD COLUMN reason_code TEXT NULL;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        command.CommandText = "ALTER TABLE job_engine_job_attempts ADD COLUMN reason_description TEXT NULL;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        command.CommandText = "ALTER TABLE job_engine_jobs ADD COLUMN parent_job_id TEXT NULL;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        command.CommandText = "ALTER TABLE job_engine_jobs ADD COLUMN root_job_id TEXT NULL;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        command.CommandText = "ALTER TABLE job_engine_jobs ADD COLUMN retry_sequence INTEGER DEFAULT 0;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        command.CommandText = "ALTER TABLE job_engine_jobs ADD COLUMN execution_type TEXT NULL;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        command.CommandText = "ALTER TABLE job_engine_jobs ADD COLUMN triggered_by_user_id TEXT NULL;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        command.CommandText = "ALTER TABLE job_engine_jobs ADD COLUMN reason_code TEXT NULL;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        command.CommandText = "ALTER TABLE job_engine_jobs ADD COLUMN reason_description TEXT NULL;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+    }
 }
 
 if (app.Environment.IsDevelopment())
@@ -39,5 +79,7 @@ if (app.Environment.IsDevelopment())
 // Register endpoint groups
 app.MapJobEndpoints();
 app.MapOverwriteEndpoints();
+
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "job-engine" }));
 
 app.Run();

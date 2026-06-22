@@ -141,8 +141,8 @@
   @keyframes fadeOut       { from { opacity: 1 } to { opacity: 0 } }
   @keyframes zoomIn95      { from { transform: scale(.95) } to { transform: scale(1) } }
   @keyframes zoomOut95     { from { transform: scale(1) } to { transform: scale(.95) } }
-  @keyframes slideInFromTop  { from { transform: translate(-50%,-52%) } to { transform: translate(-50%,-50%) } }
-  @keyframes slideOutToTop   { from { transform: translate(-50%,-50%) } to { transform: translate(-50%,-52%) } }
-  @keyframes slideInFromLeft { from { transform: translate(-52%,-50%) } to { transform: translate(-50%,-50%) } }
-  @keyframes slideOutToLeft  { from { transform: translate(-50%,-50%) } to { transform: translate(-52%,-50%) } }
+  @keyframes slideInFromTop  { from { translate: -50% -52% } to { translate: -50% -50% } }
+  @keyframes slideOutToTop   { from { translate: -50% -50% } to { translate: -50% -52% } }
+  @keyframes slideInFromLeft { from { translate: -52% -50% } to { translate: -50% -50% } }
+  @keyframes slideOutToLeft  { from { translate: -50% -50% } to { translate: -52% -50% } }
 }

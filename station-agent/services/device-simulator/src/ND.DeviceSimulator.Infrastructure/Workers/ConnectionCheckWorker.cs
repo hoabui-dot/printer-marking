@@ -79,7 +79,7 @@ public sealed class ConnectionCheckWorker : BackgroundService
     {
         try
         {
-            var conn = _config.GetConnectionString("Redis") ?? "localhost:6379";
+            var conn = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING") ?? _config.GetConnectionString("Redis") ?? "localhost:6379";
             using var redis = await ConnectionMultiplexer.ConnectAsync(conn);
             await redis.GetDatabase().PingAsync();
             return ("Redis", "GREEN", null);

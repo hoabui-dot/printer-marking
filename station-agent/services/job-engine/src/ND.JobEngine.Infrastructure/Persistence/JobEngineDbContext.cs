@@ -37,6 +37,13 @@ public sealed class JobEngineDbContext : DbContext, IUnitOfWork
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at").IsRequired();
             e.Property(x => x.CompletedAt).HasColumnName("completed_at");
+            e.Property(x => x.ParentJobId).HasColumnName("parent_job_id");
+            e.Property(x => x.RootJobId).HasColumnName("root_job_id");
+            e.Property(x => x.RetrySequence).HasColumnName("retry_sequence").HasDefaultValue(0);
+            e.Property(x => x.ExecutionType).HasColumnName("execution_type").HasDefaultValue("OriginalProduction");
+            e.Property(x => x.TriggeredByUserId).HasColumnName("triggered_by_user_id");
+            e.Property(x => x.ReasonCode).HasColumnName("reason_code");
+            e.Property(x => x.ReasonDescription).HasColumnName("reason_description");
         });
 
         modelBuilder.Entity<JobAttempt>(e =>
@@ -52,6 +59,10 @@ public sealed class JobEngineDbContext : DbContext, IUnitOfWork
             e.Property(x => x.StartedAt).HasColumnName("started_at").IsRequired();
             e.Property(x => x.FinishedAt).HasColumnName("finished_at");
             e.Property(x => x.ErrorMessage).HasColumnName("error_message");
+            e.Property(x => x.ParentAttemptId).HasColumnName("parent_attempt_id");
+            e.Property(x => x.RetrySequence).HasColumnName("retry_sequence").HasDefaultValue(0);
+            e.Property(x => x.ReasonCode).HasColumnName("reason_code");
+            e.Property(x => x.ReasonDescription).HasColumnName("reason_description");
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         });
 

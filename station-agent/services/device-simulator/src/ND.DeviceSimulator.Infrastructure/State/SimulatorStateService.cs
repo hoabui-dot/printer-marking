@@ -46,7 +46,8 @@ public sealed class SimulatorStateService : ISimulatorStateService
         ["STOP_BUTTON"] = false,
         ["SENSOR_IN"] = false,
         ["SENSOR_OUT"] = false,
-        ["MACHINE_READY"] = false
+        ["MACHINE_READY"] = false,
+        ["REJECT_PRODUCT"] = false
     };
 
     // ── Gateway ───────────────────────────────────────────────────────────────
@@ -57,6 +58,9 @@ public sealed class SimulatorStateService : ISimulatorStateService
     private int _gatewayReceiveCount;
     private volatile string? _gatewayLastEventAt;
     private volatile string? _gatewayLastTopic;
+
+    private readonly ConcurrentDictionary<string, string> _scenarios = new(StringComparer.OrdinalIgnoreCase);
+    private volatile string? _activeJobId;
 
     // ── Printer ───────────────────────────────────────────────────────────────
     public void SetPrinterOnline(bool online) => _printerOnline = online;
@@ -89,6 +93,8 @@ public sealed class SimulatorStateService : ISimulatorStateService
         _laserLastResult, _laserLastCommandAt, LaserPort);
 
     // ── Vision ────────────────────────────────────────────────────────────────
+    public void SetVisionOnline(bool online) => _visionOnline = online;
+    
     public void SetVisionConfig(int passRate, int failureRate)
     {
         _visionPassRate = Math.Clamp(passRate, 0, 100);
@@ -147,6 +153,27 @@ public sealed class SimulatorStateService : ISimulatorStateService
     public GatewayStateDto GetGatewayState() => new(
         _gatewayConnected, _gatewayBrokerHost, _gatewayBrokerPort,
         _gatewayPublishCount, _gatewayReceiveCount, _gatewayLastEventAt, _gatewayLastTopic);
+
+    // ── Scenarios & Active Job ────────────────────────────────────────────────
+    public void SetJobScenario(string jobId, string scenario)
+    {
+        _scenarios[jobId] = scenario;
+    }
+
+    public string? GetJobScenario(string jobId)
+    {
+        return _scenarios.TryGetValue(jobId, out var scenario) ? scenario : null;
+    }
+
+    public void SetActiveJobId(string jobId)
+    {
+        _activeJobId = jobId;
+    }
+
+    public string? GetActiveJobId()
+    {
+        return _activeJobId;
+    }
 
     // ── Snapshot ──────────────────────────────────────────────────────────────
     public SimulatorStatusDto GetStatus() => new(

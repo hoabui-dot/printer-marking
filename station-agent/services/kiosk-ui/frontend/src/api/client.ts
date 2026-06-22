@@ -39,7 +39,9 @@ export const rbacApi = {
   deleteUser: (id: string) => client.delete(`/rbac/users/${id}`),
   getPermissions: () => client.get<any[]>('/rbac/permissions'),
   updateUserPermissions: (userId: string, permissionCodes: string[]) =>
-    client.post(`/rbac/users/${userId}/permissions`, { permissionCodes })
+    client.post(`/rbac/users/${userId}/permissions`, { permissionCodes }),
+  resetPassword: (userId: string, data: { password?: string; reason: string }) =>
+    client.post(`/rbac/users/${userId}/reset-password`, data)
 }
 
 export const jobsApi = {
@@ -48,10 +50,24 @@ export const jobsApi = {
   getById: (id: string) => client.get(`/jobs/${id}`),
   getHistory: (id: string) => client.get(`/jobs/${id}/history`),
   getAttempts: (id: string) => client.get(`/jobs/${id}/attempts`),
+  getAttemptSteps: (attemptId: string) => client.get(`/jobs/attempts/${attemptId}/steps`),
 }
 
 export const overwriteApi = {
   getPending: () => client.get('/overwrite-requests/pending'),
   create: (jobId: string, overwriteType: string, reason: string) =>
     client.post('/overwrite-requests', { jobId, overwriteType, reason }),
+}
+
+export const commandsApi = {
+  manualOverride: (data: { 
+    jobId: string; 
+    jobNo: string; 
+    productCode: string; 
+    parentAttemptId: string; 
+    reasonCode: string; 
+    reasonDescription: string; 
+    overrideType: string; 
+  }) =>
+    client.post<{ success: boolean; eventId: string }>('/commands/manual-override', data)
 }

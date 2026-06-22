@@ -241,6 +241,345 @@ public sealed record LaserMarkedEvent
 }
 
 /// <summary>
+/// Published by the Kiosk UI API when an operator triggers a Manual Override action.
+/// Consuming services (e.g. Job Engine) decide how to process this command.
+/// RabbitMQ routing key: <c>command.manual-override</c>
+/// </summary>
+public sealed record ManualOverrideRequestedEvent
+{
+    [JsonPropertyName("event_type")]
+    public string EventType { get; init; } = "ManualOverrideRequested";
+
+    [JsonPropertyName("event_id")]
+    public required string EventId { get; init; }
+
+    [JsonPropertyName("station_id")]
+    public required string StationId { get; init; }
+
+    [JsonPropertyName("job_id")]
+    public string? JobId { get; init; }
+
+    [JsonPropertyName("work_order")]
+    public string? WorkOrder { get; init; }
+
+    [JsonPropertyName("product_code")]
+    public string? ProductCode { get; init; }
+
+    [JsonPropertyName("operator")]
+    public required string Operator { get; init; }
+
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
+
+    [JsonPropertyName("timestamp")]
+    public required string Timestamp { get; init; }
+
+    public static ManualOverrideRequestedEvent Create(
+        string stationId,
+        string operatorUserId,
+        string? jobId = null,
+        string? workOrder = null,
+        string? productCode = null,
+        string? reason = null)
+    {
+        return new ManualOverrideRequestedEvent
+        {
+            EventId = $"evt-override-{Guid.NewGuid():N}",
+            StationId = stationId,
+            JobId = jobId,
+            WorkOrder = workOrder,
+            ProductCode = productCode,
+            Operator = operatorUserId,
+            Reason = reason,
+            Timestamp = DateTimeOffset.UtcNow.ToString("o")
+        };
+    }
+}
+
+/// <summary>
+/// Event generated when a manual reprint is requested from Kiosk UI.
+/// Routing key: command.manual-reprint
+/// </summary>
+public sealed record ManualReprintRequestedEvent
+{
+    [JsonPropertyName("event_type")]
+    public string EventType { get; init; } = "ManualReprintRequested";
+
+    [JsonPropertyName("event_id")]
+    public required string EventId { get; init; }
+
+    [JsonPropertyName("station_id")]
+    public required string StationId { get; init; }
+
+    [JsonPropertyName("originalExecutionId")]
+    public required string OriginalExecutionId { get; init; }
+
+    [JsonPropertyName("job_id")]
+    public string JobId => OriginalExecutionId;
+
+    [JsonPropertyName("job_no")]
+    public required string JobNo { get; init; }
+
+    [JsonPropertyName("product_code")]
+    public required string ProductCode { get; init; }
+
+    [JsonPropertyName("parent_attempt_id")]
+    public required string ParentAttemptId { get; init; }
+
+    [JsonPropertyName("requested_by")]
+    public required string RequestedBy { get; init; }
+
+    [JsonPropertyName("reason_code")]
+    public required string ReasonCode { get; init; }
+
+    [JsonPropertyName("comment")]
+    public string? Comment { get; init; }
+
+    [JsonPropertyName("reason_description")]
+    public string? ReasonDescription => Comment;
+
+    [JsonPropertyName("requested_at")]
+    public required string RequestedAt { get; init; }
+
+    public static ManualReprintRequestedEvent Create(
+        string stationId,
+        string jobId,
+        string jobNo,
+        string productCode,
+        string parentAttemptId,
+        string requestedBy,
+        string reasonCode,
+        string? reasonDescription = null)
+    {
+        return new ManualReprintRequestedEvent
+        {
+            EventId = $"evt-manual-reprint-{Guid.NewGuid():N}",
+            StationId = stationId,
+            OriginalExecutionId = jobId,
+            JobNo = jobNo,
+            ProductCode = productCode,
+            ParentAttemptId = parentAttemptId,
+            RequestedBy = requestedBy,
+            ReasonCode = reasonCode,
+            Comment = reasonDescription,
+            RequestedAt = DateTimeOffset.UtcNow.ToString("o")
+        };
+    }
+}
+
+/// <summary>
+/// Event generated when a manual re-marking is requested from Kiosk UI.
+/// Routing key: command.manual-remarking
+/// </summary>
+public sealed record ManualRemarkingRequestedEvent
+{
+    [JsonPropertyName("event_type")]
+    public string EventType { get; init; } = "ManualRemarkingRequested";
+
+    [JsonPropertyName("event_id")]
+    public required string EventId { get; init; }
+
+    [JsonPropertyName("station_id")]
+    public required string StationId { get; init; }
+
+    [JsonPropertyName("originalExecutionId")]
+    public required string OriginalExecutionId { get; init; }
+
+    [JsonPropertyName("job_id")]
+    public string JobId => OriginalExecutionId;
+
+    [JsonPropertyName("job_no")]
+    public required string JobNo { get; init; }
+
+    [JsonPropertyName("product_code")]
+    public required string ProductCode { get; init; }
+
+    [JsonPropertyName("parent_attempt_id")]
+    public required string ParentAttemptId { get; init; }
+
+    [JsonPropertyName("requested_by")]
+    public required string RequestedBy { get; init; }
+
+    [JsonPropertyName("reason_code")]
+    public required string ReasonCode { get; init; }
+
+    [JsonPropertyName("comment")]
+    public string? Comment { get; init; }
+
+    [JsonPropertyName("reason_description")]
+    public string? ReasonDescription => Comment;
+
+    [JsonPropertyName("requested_at")]
+    public required string RequestedAt { get; init; }
+
+    public static ManualRemarkingRequestedEvent Create(
+        string stationId,
+        string jobId,
+        string jobNo,
+        string productCode,
+        string parentAttemptId,
+        string requestedBy,
+        string reasonCode,
+        string? reasonDescription = null)
+    {
+        return new ManualRemarkingRequestedEvent
+        {
+            EventId = $"evt-manual-remarking-{Guid.NewGuid():N}",
+            StationId = stationId,
+            OriginalExecutionId = jobId,
+            JobNo = jobNo,
+            ProductCode = productCode,
+            ParentAttemptId = parentAttemptId,
+            RequestedBy = requestedBy,
+            ReasonCode = reasonCode,
+            Comment = reasonDescription,
+            RequestedAt = DateTimeOffset.UtcNow.ToString("o")
+        };
+    }
+}
+
+/// <summary>
+/// Event generated when a manual reprocessing (re-run print + marking) is requested from Kiosk UI.
+/// Routing key: command.manual-reprocess
+/// </summary>
+public sealed record ManualReprocessingRequestedEvent
+{
+    [JsonPropertyName("event_type")]
+    public string EventType { get; init; } = "ManualReprocessingRequested";
+
+    [JsonPropertyName("event_id")]
+    public required string EventId { get; init; }
+
+    [JsonPropertyName("station_id")]
+    public required string StationId { get; init; }
+
+    [JsonPropertyName("originalExecutionId")]
+    public required string OriginalExecutionId { get; init; }
+
+    [JsonPropertyName("job_id")]
+    public string JobId => OriginalExecutionId;
+
+    [JsonPropertyName("job_no")]
+    public required string JobNo { get; init; }
+
+    [JsonPropertyName("product_code")]
+    public required string ProductCode { get; init; }
+
+    [JsonPropertyName("parent_attempt_id")]
+    public required string ParentAttemptId { get; init; }
+
+    [JsonPropertyName("requested_by")]
+    public required string RequestedBy { get; init; }
+
+    [JsonPropertyName("reason_code")]
+    public required string ReasonCode { get; init; }
+
+    [JsonPropertyName("comment")]
+    public string? Comment { get; init; }
+
+    [JsonPropertyName("reason_description")]
+    public string? ReasonDescription => Comment;
+
+    [JsonPropertyName("requested_at")]
+    public required string RequestedAt { get; init; }
+
+    public static ManualReprocessingRequestedEvent Create(
+        string stationId,
+        string jobId,
+        string jobNo,
+        string productCode,
+        string parentAttemptId,
+        string requestedBy,
+        string reasonCode,
+        string? reasonDescription = null)
+    {
+        return new ManualReprocessingRequestedEvent
+        {
+            EventId = $"evt-manual-reprocess-{Guid.NewGuid():N}",
+            StationId = stationId,
+            OriginalExecutionId = jobId,
+            JobNo = jobNo,
+            ProductCode = productCode,
+            ParentAttemptId = parentAttemptId,
+            RequestedBy = requestedBy,
+            ReasonCode = reasonCode,
+            Comment = reasonDescription,
+            RequestedAt = DateTimeOffset.UtcNow.ToString("o")
+        };
+    }
+}
+
+/// <summary>
+/// Event generated when a manual reprint and laser marking is requested from Kiosk UI.
+/// </summary>
+public sealed record ManualReprintAndRemarkingRequestedEvent
+{
+    [JsonPropertyName("event_type")]
+    public string EventType { get; init; } = "ManualReprintAndRemarkingRequested";
+
+    [JsonPropertyName("event_id")]
+    public required string EventId { get; init; }
+
+    [JsonPropertyName("station_id")]
+    public required string StationId { get; init; }
+
+    [JsonPropertyName("originalExecutionId")]
+    public required string OriginalExecutionId { get; init; }
+
+    [JsonPropertyName("job_id")]
+    public string JobId => OriginalExecutionId;
+
+    [JsonPropertyName("job_no")]
+    public required string JobNo { get; init; }
+
+    [JsonPropertyName("product_code")]
+    public required string ProductCode { get; init; }
+
+    [JsonPropertyName("parent_attempt_id")]
+    public required string ParentAttemptId { get; init; }
+
+    [JsonPropertyName("requested_by")]
+    public required string RequestedBy { get; init; }
+
+    [JsonPropertyName("reason_code")]
+    public required string ReasonCode { get; init; }
+
+    [JsonPropertyName("comment")]
+    public string? Comment { get; init; }
+
+    [JsonPropertyName("reason_description")]
+    public string? ReasonDescription => Comment;
+
+    [JsonPropertyName("requested_at")]
+    public required string RequestedAt { get; init; }
+
+    public static ManualReprintAndRemarkingRequestedEvent Create(
+        string stationId,
+        string jobId,
+        string jobNo,
+        string productCode,
+        string parentAttemptId,
+        string requestedBy,
+        string reasonCode,
+        string? reasonDescription = null)
+    {
+        return new ManualReprintAndRemarkingRequestedEvent
+        {
+            EventId = $"evt-manual-reprint-remark-{Guid.NewGuid():N}",
+            StationId = stationId,
+            OriginalExecutionId = jobId,
+            JobNo = jobNo,
+            ProductCode = productCode,
+            ParentAttemptId = parentAttemptId,
+            RequestedBy = requestedBy,
+            ReasonCode = reasonCode,
+            Comment = reasonDescription,
+            RequestedAt = DateTimeOffset.UtcNow.ToString("o")
+        };
+    }
+}
+
+/// <summary>
 /// Routing key constants for Job domain events.
 /// </summary>
 public static class JobEventRoutingKeys
@@ -251,4 +590,8 @@ public static class JobEventRoutingKeys
     public const string Failed = "job.failed";
     public const string PrinterPrinted = "printer.printed";
     public const string LaserMarked = "laser.marked";
+    public const string ManualOverride = "command.manual-override";
+    public const string ManualReprint = "command.manual-reprint";
+    public const string ManualRemarking = "command.manual-remarking";
+    public const string ManualReprocess = "command.manual-reprocess";
 }

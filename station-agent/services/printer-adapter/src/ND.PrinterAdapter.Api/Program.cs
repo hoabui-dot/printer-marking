@@ -50,8 +50,8 @@ using (var scope = app.Services.CreateScope())
     await db.Database.EnsureCreatedAsync();
 
     // Seed default printer (printer-01)
-    var printerHost = app.Configuration["Printer:Host"] ?? "localhost";
-    var printerPort = int.TryParse(app.Configuration["Printer:Port"], out var p) ? p : 9100;
+    var printerHost = Environment.GetEnvironmentVariable("PRINTER_HOST") ?? app.Configuration["Printer:Host"] ?? "localhost";
+    var printerPort = int.TryParse(Environment.GetEnvironmentVariable("PRINTER_PORT") ?? app.Configuration["Printer:Port"], out var p) ? p : 9100;
     await PrinterDbSeeder.SeedAsync(db, printerHost, printerPort);
 }
 

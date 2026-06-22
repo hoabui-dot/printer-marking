@@ -22,7 +22,7 @@ public sealed class JobProcessingConsumer : BackgroundService
 
     private const string Exchange = "station.events";
     private const string Queue = "printer-adapter.job-events";
-    private const string Pattern = "job.processing";
+    private const string Pattern = "command.printer.print";
 
     private static readonly JsonSerializerOptions JsonSerializerOptions = new()
     {

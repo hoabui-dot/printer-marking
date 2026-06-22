@@ -1,5 +1,9 @@
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /repo
+
+# Copy Directory props
+COPY Directory.Build.props ./
+COPY Directory.Packages.props ./
 
 # Copy shared projects
 COPY shared/ shared/
@@ -17,16 +21,16 @@ RUN dotnet publish src/ND.DeviceSimulator.Api/ND.DeviceSimulator.Api.csproj \
     -c Release -o /app --no-restore || dotnet publish src/ND.DeviceSimulator.Api/ND.DeviceSimulator.Api.csproj -c Release -o /app
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-RUN adduser --disabled-password --gecos "" appuser && \
-    mkdir -p /data /app/logs && \
-    chown -R appuser:appuser /data /app
+USER root
+RUN mkdir -p /data /app/logs && \
+    chown -R app:app /data /app
 
-COPY --from=build /app .
+COPY --chown=app:app --from=build /app .
 
-USER appuser
+USER app
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
 ENTRYPOINT ["dotnet", "ND.DeviceSimulator.Api.dll"]

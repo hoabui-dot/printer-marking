@@ -1,6 +1,7 @@
 using ND.JobEngine.Application.Dtos;
 using ND.JobEngine.Application.Interfaces;
 using ND.JobEngine.Domain.Exceptions;
+using ND.JobEngine.Domain.Entities;
 
 namespace ND.JobEngine.Application.Queries;
 
@@ -55,19 +56,77 @@ public sealed class GetJobQueryHandler
     public async Task<IReadOnlyList<JobHistoryDto>> HandleGetHistoryAsync(
         GetJobHistoryQuery query, CancellationToken cancellationToken = default)
     {
-        var history = await _historyRepository.GetByJobIdAsync(query.JobId, cancellationToken);
-        return history.Select(h => new JobHistoryDto(
-            h.Id, h.JobId, h.AttemptId, h.OldStatus, h.NewStatus,
-            h.ActionName, h.PerformedBy, h.Note, h.CreatedAt)).ToList();
+        var targetJob = await _jobRepository.GetByIdAsync(query.JobId, cancellationToken);
+        if (targetJob is null) return new List<JobHistoryDto>();
+
+        var rootJobId = targetJob.RootJobId ?? targetJob.Id;
+
+        var allJobs = await _jobRepository.GetAllAsync(cancellationToken);
+        var familyJobIds = allJobs
+            .Where(j => j.RootJobId == rootJobId || j.Id == rootJobId)
+            .Select(j => j.Id)
+            .ToList();
+
+        var allHistory = new List<JobHistory>();
+        foreach (var jobId in familyJobIds)
+        {
+            var history = await _historyRepository.GetByJobIdAsync(jobId, cancellationToken);
+            allHistory.AddRange(history);
+        }
+
+        return allHistory
+            .OrderBy(h => h.CreatedAt)
+            .Select(h => new JobHistoryDto(
+                h.Id, h.JobId, h.AttemptId, h.OldStatus, h.NewStatus,
+                h.ActionName, h.PerformedBy, h.Note, h.CreatedAt)).ToList();
     }
 
     public async Task<IReadOnlyList<JobAttemptDto>> HandleGetAttemptsAsync(
         GetJobAttemptsQuery query, CancellationToken cancellationToken = default)
     {
-        var attempts = await _attemptRepository.GetByJobIdAsync(query.JobId, cancellationToken);
-        return attempts.Select(a => new JobAttemptDto(
-            a.Id, a.JobId, a.AttemptNo, a.TriggerType, a.TriggeredByUserId,
-            a.ResultStatus, a.StartedAt, a.FinishedAt, a.ErrorMessage)).ToList();
+        var targetJob = await _jobRepository.GetByIdAsync(query.JobId, cancellationToken);
+        if (targetJob is null) return new List<JobAttemptDto>();
+
+        var rootJobId = targetJob.RootJobId ?? targetJob.Id;
+
+        var allJobs = await _jobRepository.GetAllAsync(cancellationToken);
+        var familyJobs = allJobs
+            .Where(j => j.RootJobId == rootJobId || j.Id == rootJobId)
+            .OrderBy(j => j.CreatedAt)
+            .ToList();
+
+        var familyJobIds = familyJobs.Select(j => j.Id).ToList();
+
+        var allAttempts = new List<JobAttempt>();
+        foreach (var jobId in familyJobIds)
+        {
+            var attempts = await _attemptRepository.GetByJobIdAsync(jobId, cancellationToken);
+            allAttempts.AddRange(attempts);
+        }
+
+        var sortedAttempts = allAttempts.OrderBy(a => a.StartedAt).ToList();
+
+        var dtos = new List<JobAttemptDto>();
+        for (int i = 0; i < sortedAttempts.Count; i++)
+        {
+            var a = sortedAttempts[i];
+            dtos.Add(new JobAttemptDto(
+                a.Id, 
+                a.JobId, 
+                i + 1, 
+                a.TriggerType, 
+                a.TriggeredByUserId,
+                a.ResultStatus, 
+                a.StartedAt, 
+                a.FinishedAt, 
+                a.ErrorMessage,
+                a.ParentAttemptId, 
+                a.RetrySequence, 
+                a.ReasonCode, 
+                a.ReasonDescription));
+        }
+
+        return dtos;
     }
 
     public async Task<IReadOnlyList<OverwriteRequestDto>> HandleGetPendingOverwritesAsync(
@@ -82,5 +141,7 @@ public sealed class GetJobQueryHandler
     private static JobDto MapJobToDto(Domain.Entities.Job job) => new(
         job.Id, job.JobNo, job.SourceSystem, job.JobType,
         job.CurrentStatus, job.ProductCode, job.ProductSerial,
-        job.Priority, job.CreatedAt, job.CompletedAt);
+        job.Priority, job.CreatedAt, job.CompletedAt,
+        job.ParentJobId, job.RootJobId, job.RetrySequence, job.ExecutionType,
+        job.TriggeredByUserId, job.ReasonCode, job.ReasonDescription);
 }

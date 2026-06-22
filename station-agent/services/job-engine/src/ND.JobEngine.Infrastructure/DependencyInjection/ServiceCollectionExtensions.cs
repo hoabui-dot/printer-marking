@@ -59,6 +59,9 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<JobEngineOutboxProcessorWorker>();
         services.AddHostedService<PrinterPrintedConsumer>();
         services.AddHostedService<LaserMarkedConsumer>();
+        services.AddHostedService<ManualOverrideConsumer>();
+        services.AddHostedService<VisionVerificationConsumer>();
+        services.AddHostedService<PlcRejectConsumer>();
 
         return services;
     }

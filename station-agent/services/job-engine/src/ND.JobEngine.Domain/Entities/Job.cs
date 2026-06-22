@@ -20,6 +20,14 @@ public sealed class Job : AuditableEntity
     public int Priority { get; private set; } = 0;
     public string IdempotencyKey { get; private set; } = default!;
     public string? CompletedAt { get; private set; }
+    
+    public string? ParentJobId { get; private set; }
+    public string? RootJobId { get; private set; }
+    public int RetrySequence { get; private set; } = 0;
+    public string? ExecutionType { get; private set; } = "OriginalProduction";
+    public string? TriggeredByUserId { get; private set; }
+    public string? ReasonCode { get; private set; }
+    public string? ReasonDescription { get; private set; }
 
     private Job() { }
 
@@ -31,7 +39,14 @@ public sealed class Job : AuditableEntity
         string idempotencyKey,
         string payloadJson,
         string? productSerial = null,
-        int priority = 0)
+        int priority = 0,
+        string? parentJobId = null,
+        string? rootJobId = null,
+        int retrySequence = 0,
+        string? executionType = "OriginalProduction",
+        string? triggeredByUserId = null,
+        string? reasonCode = null,
+        string? reasonDescription = null)
     {
         return new Job
         {
@@ -43,7 +58,14 @@ public sealed class Job : AuditableEntity
             IdempotencyKey = idempotencyKey,
             PayloadJson = payloadJson,
             Priority = priority,
-            CurrentStatus = JobStatus.Created
+            CurrentStatus = JobStatus.Created,
+            ParentJobId = parentJobId,
+            RootJobId = rootJobId,
+            RetrySequence = retrySequence,
+            ExecutionType = executionType,
+            TriggeredByUserId = triggeredByUserId,
+            ReasonCode = reasonCode,
+            ReasonDescription = reasonDescription
         };
     }
 

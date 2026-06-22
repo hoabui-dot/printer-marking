@@ -98,98 +98,196 @@ public sealed class CompleteJobStepHandler
         var stepHistory = JobHistory.Record(job.Id, job.CurrentStatus, job.CurrentStatus, $"STEP_{command.StepName}_FINISHED", performedBy: "system", attemptId: activeAttempt.Id, note: historyNote);
         await _historyRepository.AddAsync(stepHistory, cancellationToken);
 
-        var allStepsCompleted = steps.All(s => s.Status == StepStatus.Completed || s.Status == StepStatus.Skipped);
-        var anyStepFailed = steps.Any(s => s.Status == StepStatus.Failed);
-
-        if (!anyStepFailed)
+        if (command.Success)
         {
-            // Auto-complete all remaining non-automated steps (all steps other than PRINT_LABEL)
-            var remainingPendingSteps = steps
-                .Where(s => s.Status == StepStatus.Pending && !s.StepName.Equals("PRINT_LABEL", StringComparison.OrdinalIgnoreCase))
-                .OrderBy(s => s.StepOrder)
-                .ToList();
-
-            foreach (var pendingStep in remainingPendingSteps)
+            // If the completed step was VISION_CHECK, we skip PLC_REJECT
+            if (command.StepName.Equals("VISION_CHECK", StringComparison.OrdinalIgnoreCase))
             {
-                _logger.LogInformation("Auto-completing simulated step {StepName} for job {JobId}.", pendingStep.StepName, command.JobId);
-                pendingStep.Complete();
-                await _stepRepository.UpdateAsync(pendingStep, cancellationToken);
-
-                var nextHistory = JobHistory.Record(job.Id, job.CurrentStatus, job.CurrentStatus, $"STEP_{pendingStep.StepName}_FINISHED", performedBy: "system", attemptId: activeAttempt.Id, note: "Simulated step auto-completed");
-                await _historyRepository.AddAsync(nextHistory, cancellationToken);
+                var plcRejectStep = steps.FirstOrDefault(s => s.StepName.Equals("PLC_REJECT", StringComparison.OrdinalIgnoreCase));
+                if (plcRejectStep is not null && plcRejectStep.Status == StepStatus.Pending)
+                {
+                    plcRejectStep.Skip();
+                    await _stepRepository.UpdateAsync(plcRejectStep, cancellationToken);
+                    var skipHistory = JobHistory.Record(job.Id, job.CurrentStatus, job.CurrentStatus, "STEP_PLC_REJECT_SKIPPED", performedBy: "system", attemptId: activeAttempt.Id, note: "Vision check passed, PLC reject skipped.");
+                    await _historyRepository.AddAsync(skipHistory, cancellationToken);
+                }
             }
 
-            // Re-evaluate completion flags
-            allStepsCompleted = steps.All(s => s.Status == StepStatus.Completed || s.Status == StepStatus.Skipped);
-            anyStepFailed = steps.Any(s => s.Status == StepStatus.Failed);
+            // Find next pending step
+            var nextStep = steps
+                .Where(s => s.Status == StepStatus.Pending)
+                .OrderBy(s => s.StepOrder)
+                .FirstOrDefault();
+
+            if (nextStep is not null)
+            {
+                nextStep.Start();
+                await _stepRepository.UpdateAsync(nextStep, cancellationToken);
+
+                var startHistory = JobHistory.Record(job.Id, job.CurrentStatus, job.CurrentStatus, $"STEP_{nextStep.StepName}_STARTED", performedBy: "system", attemptId: activeAttempt.Id, note: $"Bắt đầu bước {nextStep.StepName}");
+                await _historyRepository.AddAsync(startHistory, cancellationToken);
+
+                var jobEvent = JobProcessingEvent.From(
+                    job.Id,
+                    job.JobNo,
+                    job.JobType,
+                    job.ProductCode,
+                    job.ProductSerial,
+                    job.SourceSystem,
+                    activeAttempt.AttemptNo);
+
+                var nextRoutingKey = GetStepRoutingKey(nextStep.StepName);
+                var outboxEvent = JobEngineOutboxEvent.Create(
+                    nameof(Job),
+                    job.Id,
+                    jobEvent.EventType,
+                    nextRoutingKey,
+                    System.Text.Json.JsonSerializer.Serialize(jobEvent));
+
+                await _outboxRepository.AddAsync(outboxEvent, cancellationToken);
+            }
+            else
+            {
+                // No pending steps left. Check if there was a failed step (specifically VISION_CHECK)
+                var hasFailedStep = steps.Any(s => s.Status == StepStatus.Failed);
+                if (hasFailedStep)
+                {
+                    await FailJobAndAttemptAsync(job, activeAttempt, command.ErrorMessage, steps, cancellationToken);
+                }
+                else
+                {
+                    var oldStatus = job.CurrentStatus;
+                    job.Complete();
+                    activeAttempt.Succeed();
+
+                    await _jobRepository.UpdateAsync(job, cancellationToken);
+                    await _attemptRepository.UpdateAsync(activeAttempt, cancellationToken);
+
+                    var jobHistory = JobHistory.Record(job.Id, oldStatus, job.CurrentStatus, "JOB_COMPLETED", performedBy: "system", attemptId: activeAttempt.Id);
+                    await _historyRepository.AddAsync(jobHistory, cancellationToken);
+
+                    var transition = JobStateTransition.Record(job.Id, oldStatus, job.CurrentStatus, "JOB_COMPLETED");
+                    await _transitionRepository.AddAsync(transition, cancellationToken);
+
+                    var jobEvent = JobCompletedEvent.From(
+                        job.Id,
+                        job.JobNo,
+                        job.JobType,
+                        job.ProductCode,
+                        job.ProductSerial,
+                        job.SourceSystem);
+
+                    var outboxEvent = JobEngineOutboxEvent.Create(
+                        nameof(Job),
+                        job.Id,
+                        jobEvent.EventType,
+                        JobEventRoutingKeys.Completed,
+                        System.Text.Json.JsonSerializer.Serialize(jobEvent));
+
+                    await _outboxRepository.AddAsync(outboxEvent, cancellationToken);
+                }
+            }
         }
-
-        if (anyStepFailed)
+        else
         {
-            var oldStatus = job.CurrentStatus;
-            job.Fail();
-            activeAttempt.Fail(command.ErrorMessage ?? "A step failed");
+            if (command.StepName.Equals("VISION_CHECK", StringComparison.OrdinalIgnoreCase))
+            {
+                var plcRejectStep = steps.FirstOrDefault(s => s.StepName.Equals("PLC_REJECT", StringComparison.OrdinalIgnoreCase));
+                if (plcRejectStep is not null && plcRejectStep.Status == StepStatus.Pending)
+                {
+                    plcRejectStep.Start();
+                    await _stepRepository.UpdateAsync(plcRejectStep, cancellationToken);
 
-            await _jobRepository.UpdateAsync(job, cancellationToken);
-            await _attemptRepository.UpdateAsync(activeAttempt, cancellationToken);
+                    var startHistory = JobHistory.Record(job.Id, job.CurrentStatus, job.CurrentStatus, "STEP_PLC_REJECT_STARTED", performedBy: "system", attemptId: activeAttempt.Id, note: "Bắt đầu bước PLC_REJECT do Vision check lỗi");
+                    await _historyRepository.AddAsync(startHistory, cancellationToken);
 
-            var jobHistory = JobHistory.Record(job.Id, oldStatus, job.CurrentStatus, "JOB_FAILED", performedBy: "system", attemptId: activeAttempt.Id);
-            await _historyRepository.AddAsync(jobHistory, cancellationToken);
+                    var jobEvent = JobProcessingEvent.From(
+                        job.Id,
+                        job.JobNo,
+                        job.JobType,
+                        job.ProductCode,
+                        job.ProductSerial,
+                        job.SourceSystem,
+                        activeAttempt.AttemptNo);
 
-            var transition = JobStateTransition.Record(job.Id, oldStatus, job.CurrentStatus, "JOB_FAILED");
-            await _transitionRepository.AddAsync(transition, cancellationToken);
+                    var outboxEvent = JobEngineOutboxEvent.Create(
+                        nameof(Job),
+                        job.Id,
+                        jobEvent.EventType,
+                        "command.plc.reject",
+                        System.Text.Json.JsonSerializer.Serialize(jobEvent));
 
-            var jobEvent = JobFailedEvent.From(
-                job.Id,
-                job.JobNo,
-                job.JobType,
-                job.ProductCode,
-                job.ProductSerial,
-                job.SourceSystem,
-                command.ErrorMessage);
-
-            var outboxEvent = JobEngineOutboxEvent.Create(
-                nameof(Job),
-                job.Id,
-                jobEvent.EventType,
-                JobEventRoutingKeys.Failed,
-                System.Text.Json.JsonSerializer.Serialize(jobEvent));
-
-            await _outboxRepository.AddAsync(outboxEvent, cancellationToken);
-        }
-        else if (allStepsCompleted)
-        {
-            var oldStatus = job.CurrentStatus;
-            job.Complete();
-            activeAttempt.Succeed();
-
-            await _jobRepository.UpdateAsync(job, cancellationToken);
-            await _attemptRepository.UpdateAsync(activeAttempt, cancellationToken);
-
-            var jobHistory = JobHistory.Record(job.Id, oldStatus, job.CurrentStatus, "JOB_COMPLETED", performedBy: "system", attemptId: activeAttempt.Id);
-            await _historyRepository.AddAsync(jobHistory, cancellationToken);
-
-            var transition = JobStateTransition.Record(job.Id, oldStatus, job.CurrentStatus, "JOB_COMPLETED");
-            await _transitionRepository.AddAsync(transition, cancellationToken);
-
-            var jobEvent = JobCompletedEvent.From(
-                job.Id,
-                job.JobNo,
-                job.JobType,
-                job.ProductCode,
-                job.ProductSerial,
-                job.SourceSystem);
-
-            var outboxEvent = JobEngineOutboxEvent.Create(
-                nameof(Job),
-                job.Id,
-                jobEvent.EventType,
-                JobEventRoutingKeys.Completed,
-                System.Text.Json.JsonSerializer.Serialize(jobEvent));
-
-            await _outboxRepository.AddAsync(outboxEvent, cancellationToken);
+                    await _outboxRepository.AddAsync(outboxEvent, cancellationToken);
+                }
+                else
+                {
+                    await FailJobAndAttemptAsync(job, activeAttempt, command.ErrorMessage, steps, cancellationToken);
+                }
+            }
+            else
+            {
+                await FailJobAndAttemptAsync(job, activeAttempt, command.ErrorMessage, steps, cancellationToken);
+            }
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    public static string GetStepRoutingKey(string stepName)
+    {
+        return stepName.ToUpperInvariant() switch
+        {
+            "PRINT_LABEL" => "command.printer.print",
+            "LASER_MARK" => "command.laser.mark",
+            "VISION_CHECK" => "command.vision.check",
+            "PLC_REJECT" => "command.plc.reject",
+            _ => "job.processing"
+        };
+    }
+
+    private async Task FailJobAndAttemptAsync(
+        Job job,
+        JobAttempt activeAttempt,
+        string? errorMessage,
+        IEnumerable<JobStep> steps,
+        CancellationToken cancellationToken)
+    {
+        var visionCheckStep = steps.FirstOrDefault(s => s.StepName.Equals("VISION_CHECK", StringComparison.OrdinalIgnoreCase));
+        var finalError = errorMessage;
+        if (visionCheckStep is not null && !string.IsNullOrEmpty(visionCheckStep.ErrorMessage))
+        {
+            finalError = visionCheckStep.ErrorMessage;
+        }
+
+        var oldStatus = job.CurrentStatus;
+        job.Fail();
+        activeAttempt.Fail(finalError ?? "A step failed");
+
+        await _jobRepository.UpdateAsync(job, cancellationToken);
+        await _attemptRepository.UpdateAsync(activeAttempt, cancellationToken);
+
+        var jobHistory = JobHistory.Record(job.Id, oldStatus, job.CurrentStatus, "JOB_FAILED", performedBy: "system", attemptId: activeAttempt.Id);
+        await _historyRepository.AddAsync(jobHistory, cancellationToken);
+
+        var transition = JobStateTransition.Record(job.Id, oldStatus, job.CurrentStatus, "JOB_FAILED");
+        await _transitionRepository.AddAsync(transition, cancellationToken);
+
+        var jobEvent = JobFailedEvent.From(
+            job.Id,
+            job.JobNo,
+            job.JobType,
+            job.ProductCode,
+            job.ProductSerial,
+            job.SourceSystem,
+            finalError);
+
+        var outboxEvent = JobEngineOutboxEvent.Create(
+            nameof(Job),
+            job.Id,
+            jobEvent.EventType,
+            JobEventRoutingKeys.Failed,
+            System.Text.Json.JsonSerializer.Serialize(jobEvent));
+
+        await _outboxRepository.AddAsync(outboxEvent, cancellationToken);
     }
 }

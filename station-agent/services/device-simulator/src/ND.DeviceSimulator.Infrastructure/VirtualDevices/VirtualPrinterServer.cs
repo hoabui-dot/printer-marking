@@ -31,6 +31,9 @@ public sealed class VirtualPrinterServer : BackgroundService
     private readonly IConfiguration _config;
     private readonly ILogger<VirtualPrinterServer> _logger;
 
+    private TcpListener? _listener;
+    private volatile bool _forceDisconnected = false;
+
     public VirtualPrinterServer(
         IServiceScopeFactory scopeFactory,
         ISimulatorStateService state,
@@ -45,31 +48,69 @@ public sealed class VirtualPrinterServer : BackgroundService
         _logger = logger;
     }
 
+    public async Task ConnectPrinterAsync(CancellationToken ct = default)
+    {
+        _forceDisconnected = false;
+        _logger.LogInformation("Virtual Printer connection enabled via API");
+    }
+
+    public async Task DisconnectPrinterAsync(CancellationToken ct = default)
+    {
+        _forceDisconnected = true;
+        try
+        {
+            _listener?.Stop();
+        }
+        catch { }
+        _state.SetPrinterOnline(false);
+        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+        _logger.LogInformation("Virtual Printer manually disconnected via API");
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var port = int.TryParse(GetConfig("PRINTER_PORT", "9100"), out var p) ? p : DefaultPort;
-        var listener = new TcpListener(IPAddress.Any, port);
-        listener.Start();
-        _state.SetPrinterOnline(true);
-        _logger.LogInformation("VirtualPrinterServer listening on TCP :{Port}", port);
-
-        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
-
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var client = await listener.AcceptTcpClientAsync(stoppingToken);
+                if (_forceDisconnected)
+                {
+                    if (_listener != null)
+                    {
+                        _listener.Stop();
+                        _listener = null;
+                        _state.SetPrinterOnline(false);
+                        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+                    }
+                    await Task.Delay(500, stoppingToken);
+                    continue;
+                }
+
+                if (_listener == null)
+                {
+                    var port = int.TryParse(GetConfig("PRINTER_PORT", "9100"), out var p) ? p : DefaultPort;
+                    _listener = new TcpListener(IPAddress.Any, port);
+                    _listener.Start();
+                    _state.SetPrinterOnline(true);
+                    _logger.LogInformation("VirtualPrinterServer listening on TCP :{Port}", port);
+                    await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+                }
+
+                var client = await _listener.AcceptTcpClientAsync(stoppingToken);
                 _ = HandleClientAsync(client, stoppingToken);
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "VirtualPrinterServer accept error");
+                if (!_forceDisconnected)
+                {
+                    _logger.LogError(ex, "VirtualPrinterServer accept error");
+                    await Task.Delay(1000, stoppingToken);
+                }
             }
         }
 
-        listener.Stop();
+        _listener?.Stop();
         _state.SetPrinterOnline(false);
         _logger.LogInformation("VirtualPrinterServer stopped");
     }
@@ -104,6 +145,15 @@ public sealed class VirtualPrinterServer : BackgroundService
 
                 zplContent = sb.ToString();
                 sw.Stop();
+
+                if (!string.IsNullOrEmpty(zplContent))
+                {
+                    var jobNo = ExtractJobNoFromZpl(zplContent);
+                    if (!string.IsNullOrEmpty(jobNo))
+                    {
+                        _state.SetActiveJobId(jobNo);
+                    }
+                }
 
                 var delayMs = int.TryParse(GetConfig("PRINTER_DELAY_MS", "800"), out var d) ? d : 800;
                 await Task.Delay(delayMs, ct);
@@ -177,4 +227,26 @@ public sealed class VirtualPrinterServer : BackgroundService
 
     private string GetConfig(string key, string @default)
         => _config[$"Simulator:{key}"] ?? @default;
+
+    private static string? ExtractJobNoFromZpl(string? zpl)
+    {
+        if (string.IsNullOrEmpty(zpl)) return null;
+        var index = zpl.IndexOf("Job: ", StringComparison.OrdinalIgnoreCase);
+        if (index == -1)
+        {
+            index = zpl.IndexOf("JobNo: ", StringComparison.OrdinalIgnoreCase);
+            if (index == -1) return null;
+            var sub = zpl[(index + 7)..];
+            var fsIndex = sub.IndexOf("^FS", StringComparison.OrdinalIgnoreCase);
+            if (fsIndex != -1) sub = sub[..fsIndex];
+            return sub.Trim();
+        }
+        else
+        {
+            var sub = zpl[(index + 5)..];
+            var fsIndex = sub.IndexOf("^FS", StringComparison.OrdinalIgnoreCase);
+            if (fsIndex != -1) sub = sub[..fsIndex];
+            return sub.Trim();
+        }
+    }
 }

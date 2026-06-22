@@ -49,8 +49,8 @@ using (var scope = app.Services.CreateScope())
     await db.Database.EnsureCreatedAsync();
 
     // Seed default laser device
-    var laserHost = app.Configuration["Laser:Host"] ?? "localhost";
-    var laserPort = app.Configuration["Laser:Port"] ?? "8901";
+    var laserHost = Environment.GetEnvironmentVariable("LASER_HOST") ?? app.Configuration["Laser:Host"] ?? "localhost";
+    var laserPort = Environment.GetEnvironmentVariable("LASER_PORT") ?? app.Configuration["Laser:Port"] ?? "8901";
     await LaserDbSeeder.SeedAsync(db, $"{laserHost}:{laserPort}");
 }
 

@@ -33,7 +33,7 @@ public sealed class JobMarkingConsumer : BackgroundService
 
     private const string Exchange = "station.events";
     private const string Queue = "laser-adapter.job-events";
-    private const string Pattern = "job.processing";
+    private const string Pattern = "command.laser.mark";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

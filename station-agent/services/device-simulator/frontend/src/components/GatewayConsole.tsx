@@ -12,6 +12,7 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
   const [publishing, setPublishing] = useState<string | null>(null)
   const [publishStatus, setPublishStatus] = useState<{ [key: string]: { status: 'SUCCESS' | 'FAILED'; error?: string; time: string } }>({})
   const [expandedPayload, setExpandedPayload] = useState<string | null>(null)
+  const [selectedJobForModal, setSelectedJobForModal] = useState<{ url: string, label: string } | null>(null)
 
   const site = configValues.find(c => c.key === 'SITE_CODE')?.value ?? 'NMDDuongDuong'
   const area = configValues.find(c => c.key === 'AREA_CODE')?.value ?? 'Assembly_Section'
@@ -36,10 +37,14 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
     }
   }
 
-  const triggerJob = async (url: string, label: string) => {
+  const triggerJob = async (url: string, label: string, scenario?: string) => {
     setPublishing(label)
     try {
-      const response = await fetch(url, { method: 'POST' })
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenario })
+      })
       const nowStr = new Date().toLocaleTimeString()
       if (response.ok) {
         setPublishStatus(prev => ({ ...prev, [label]: { status: 'SUCCESS', time: nowStr } }))
@@ -57,6 +62,14 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
       }))
     } finally {
       setPublishing(null)
+    }
+  }
+
+  const onTriggerClick = (url: string, label: string) => {
+    if (label === 'Print Job') {
+      triggerJob(url, label, undefined)
+    } else {
+      setSelectedJobForModal({ url, label })
     }
   }
 
@@ -110,20 +123,6 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
           { tag: 'marking.serial', value: 'SN-0001234', quality: 'GOOD' }
         ]
       }
-    },
-    {
-      label: 'Verify Job',
-      url: '/api/gateway/send-verify-job',
-      op: 'VERIFY_ONLY',
-      desc: 'Quality check vision inspection scan only',
-      payload: {
-        site, area, line, machine: 'Camera-QC-01', edge_id: edgeId,
-        data: [
-          { tag: 'operation.type', value: 'VERIFY_ONLY', quality: 'GOOD' },
-          { tag: 'verify.expected_content', value: 'FC-WP-RO100G-B-998822', quality: 'GOOD' },
-          { tag: 'verify.camera_id', value: 'CAM-01', quality: 'GOOD' }
-        ]
-      }
     }
   ]
 
@@ -145,6 +144,19 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
               <div>Broker Port: <span className="font-mono text-gray-200">{state.brokerPort || 1883}</span></div>
               <div>Subscribed Topic: <span className="font-mono text-purple-400">nd/+/+/command</span></div>
             </div>
+            <button
+              onClick={async () => {
+                const endpoint = state.connected ? '/api/gateway/disconnect' : '/api/gateway/connect';
+                await fetch(endpoint, { method: 'POST' });
+              }}
+              className={`w-full mt-3 rounded py-1 text-xs font-semibold text-white transition-colors duration-200 ${
+                state.connected
+                  ? 'bg-red-700 hover:bg-red-600'
+                  : 'bg-green-700 hover:bg-green-600'
+              }`}
+            >
+              {state.connected ? 'Disconnect Broker' : 'Connect Broker'}
+            </button>
           </div>
           <div className="grid grid-cols-2 gap-2 mt-4 text-[10px]">
             <div className="bg-gray-800 rounded p-1.5 text-center">
@@ -168,22 +180,22 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
             <div>
               <label className="block text-gray-400 mb-1">Site Code (SITE_CODE)</label>
               <input value={draftSite} onChange={e => setDraftSite(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1 text-gray-200" />
+                className="w-full bg-gray-850 border border-gray-750 rounded px-2.5 py-1 text-gray-200" />
             </div>
             <div>
               <label className="block text-gray-400 mb-1">Area Code (AREA_CODE)</label>
               <input value={draftArea} onChange={e => setDraftArea(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1 text-gray-200" />
+                className="w-full bg-gray-850 border border-gray-750 rounded px-2.5 py-1 text-gray-200" />
             </div>
             <div>
               <label className="block text-gray-400 mb-1">Line Code (LINE_CODE)</label>
               <input value={draftLine} onChange={e => setDraftLine(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1 text-gray-200" />
+                className="w-full bg-gray-850 border border-gray-750 rounded px-2.5 py-1 text-gray-200" />
             </div>
             <div>
               <label className="block text-gray-400 mb-1">Edge ID (EDGE_ID)</label>
               <input value={draftEdgeId} onChange={e => setDraftEdgeId(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1 text-gray-200 font-mono" />
+                className="w-full bg-gray-850 border border-gray-750 rounded px-2.5 py-1 text-gray-200 font-mono" />
             </div>
           </div>
           <button onClick={handleSaveConfig} disabled={savingConfig}
@@ -219,7 +231,7 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
               )}
 
               <div className="flex gap-2">
-                <button onClick={() => triggerJob(job.url, job.label)} disabled={publishing !== null || !state.connected}
+                <button onClick={() => onTriggerClick(job.url, job.label)} disabled={publishing !== null || !state.connected}
                   className="flex-1 bg-purple-700 hover:bg-purple-600 text-white rounded py-1.5 text-xs font-semibold disabled:opacity-50 transition-colors">
                   {publishing === job.label ? 'Publishing MQTT...' : `Trigger ${job.label}`}
                 </button>
@@ -238,6 +250,71 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
           ))}
         </div>
       </div>
+
+      {/* Vision Verification Scenario Modal */}
+      {selectedJobForModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-lg max-w-md w-full p-6 space-y-4 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+              <h3 className="text-base font-semibold text-white">Vision Verification Scenario</h3>
+              <button onClick={() => setSelectedJobForModal(null)} className="text-gray-400 hover:text-white transition-colors text-sm">✕</button>
+            </div>
+            <p className="text-xs text-gray-455">
+              Select a vision verification outcome for <strong>{selectedJobForModal.label}</strong>. This dictates how the simulated vision camera inspects the product.
+            </p>
+            <div className="space-y-2">
+              <button
+                onClick={() => {
+                  triggerJob(selectedJobForModal.url, selectedJobForModal.label, 'success')
+                  setSelectedJobForModal(null)
+                }}
+                className="w-full text-left bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500 rounded p-3 transition-all duration-200"
+              >
+                <div className="text-xs font-semibold text-green-400">Verification Success (PASS)</div>
+                <div className="text-[10px] text-gray-500 mt-0.5">Camera inspects the label successfully. High confidence score.</div>
+              </button>
+              <button
+                onClick={() => {
+                  triggerJob(selectedJobForModal.url, selectedJobForModal.label, 'fail_qr_mismatch')
+                  setSelectedJobForModal(null)
+                }}
+                className="w-full text-left bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-orange-500 rounded p-3 transition-all duration-200"
+              >
+                <div className="text-xs font-semibold text-orange-400">Verification Failed - QR Code mismatch</div>
+                <div className="text-[10px] text-gray-500 mt-0.5">QR code on the label does not match product registration database.</div>
+              </button>
+              <button
+                onClick={() => {
+                  triggerJob(selectedJobForModal.url, selectedJobForModal.label, 'fail_unreadable')
+                  setSelectedJobForModal(null)
+                }}
+                className="w-full text-left bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-red-500 rounded p-3 transition-all duration-200"
+              >
+                <div className="text-xs font-semibold text-red-400">Verification Failed - Unreadable marking</div>
+                <div className="text-[10px] text-gray-500 mt-0.5">Low contrast or blurry marking, camera cannot decode.</div>
+              </button>
+              <button
+                onClick={() => {
+                  triggerJob(selectedJobForModal.url, selectedJobForModal.label, 'fail_missing')
+                  setSelectedJobForModal(null)
+                }}
+                className="w-full text-left bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-red-500 rounded p-3 transition-all duration-200"
+              >
+                <div className="text-xs font-semibold text-red-400">Verification Failed - Missing marking</div>
+                <div className="text-[10px] text-gray-500 mt-0.5">Etching template is completely missing from packaging.</div>
+              </button>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setSelectedJobForModal(null)}
+                className="bg-gray-800 hover:bg-gray-750 border border-gray-700 text-gray-300 rounded px-4 py-1.5 text-xs font-semibold transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Gateway MQTT Events Console Log */}
       <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-3">

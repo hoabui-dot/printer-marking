@@ -11,6 +11,7 @@
     <!-- Pin SQLitePCLRaw to 2.1.11 to fix GHSA-2m69-gcr7-jv3q (high severity vuln in 2.1.10) -->
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.11" />
     <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.11" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="9.0.7" />
   </ItemGroup>
 
   <ItemGroup Label="Redis">

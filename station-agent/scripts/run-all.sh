@@ -112,7 +112,9 @@ start_service "mqtt-adapter"    "services/mqtt-adapter/src/ND.MqttAdapter.Worker
     "ASPNETCORE_ENVIRONMENT=Development"
 
 start_service "job-engine"      "services/job-engine/src/ND.JobEngine.Api"                 "5002" \
-    "ASPNETCORE_ENVIRONMENT=Development"
+    "ASPNETCORE_ENVIRONMENT=Development" \
+    "SIMULATOR_HOST=localhost" \
+    "SIMULATOR_PORT=5000"
 
 start_service "printer-adapter" "services/printer-adapter/src/ND.PrinterAdapter.Api"       "5003" \
     "ASPNETCORE_ENVIRONMENT=Development" \

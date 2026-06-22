@@ -39,31 +39,65 @@ public sealed class VirtualVisionService
 
     public async Task<VisionResultDto> VerifyAsync(string jobId, int delayMs, CancellationToken ct = default)
     {
+        var vState = _state.GetVisionState();
+        if (!vState.Online)
+        {
+            throw new InvalidOperationException("Vision camera is offline/disconnected.");
+        }
+
         var sw = System.Diagnostics.Stopwatch.StartNew();
         await Task.Delay(delayMs, ct);
         sw.Stop();
         var duration = (int)sw.ElapsedMilliseconds;
 
-        var vState = _state.GetVisionState();
-        var hardFail = Rng.Next(100) < vState.FailureRate;
-        var pass = !hardFail && Rng.Next(100) < vState.PassRate;
-
         VisionResult entity;
-        if (hardFail)
+        var scenario = _state.GetJobScenario(jobId);
+        if (!string.IsNullOrEmpty(scenario))
         {
-            entity = VisionResult.Create(jobId, "FAIL", 0.0, "UNREADABLE", null, duration);
-        }
-        else if (pass)
-        {
-            var confidence = 0.90 + Rng.NextDouble() * 0.09;
-            var ocrText = $"FC-{Rng.Next(10000, 99999)}";
-            entity = VisionResult.Create(jobId, "PASS", Math.Round(confidence, 3), null, ocrText, duration);
+            _logger.LogInformation("Vision verification for Job {JobId} using scenario {Scenario}", jobId, scenario);
+            if (scenario.Equals("success", StringComparison.OrdinalIgnoreCase))
+            {
+                var confidence = 0.90 + Rng.NextDouble() * 0.09;
+                entity = VisionResult.Create(jobId, "PASS", Math.Round(confidence, 3), null, "FC-2026-001", duration);
+            }
+            else if (scenario.Equals("fail_qr_mismatch", StringComparison.OrdinalIgnoreCase))
+            {
+                entity = VisionResult.Create(jobId, "FAIL", 0.95, "QR Code mismatch", "FC-2026-007", duration);
+            }
+            else if (scenario.Equals("fail_unreadable", StringComparison.OrdinalIgnoreCase))
+            {
+                entity = VisionResult.Create(jobId, "FAIL", 0.42, "Unreadable marking", null, duration);
+            }
+            else if (scenario.Equals("fail_missing", StringComparison.OrdinalIgnoreCase))
+            {
+                entity = VisionResult.Create(jobId, "FAIL", 0.0, "Missing marking", null, duration);
+            }
+            else
+            {
+                entity = VisionResult.Create(jobId, "FAIL", 0.0, "Unknown scenario defect", null, duration);
+            }
         }
         else
         {
-            var defect = DefectCodes[Rng.Next(DefectCodes.Length)];
-            var confidence = Rng.NextDouble() * 0.5;
-            entity = VisionResult.Create(jobId, "FAIL", Math.Round(confidence, 3), defect, null, duration);
+            var hardFail = Rng.Next(100) < vState.FailureRate;
+            var pass = !hardFail && Rng.Next(100) < vState.PassRate;
+
+            if (hardFail)
+            {
+                entity = VisionResult.Create(jobId, "FAIL", 0.0, "UNREADABLE", null, duration);
+            }
+            else if (pass)
+            {
+                var confidence = 0.90 + Rng.NextDouble() * 0.09;
+                var ocrText = $"FC-{Rng.Next(10000, 99999)}";
+                entity = VisionResult.Create(jobId, "PASS", Math.Round(confidence, 3), null, ocrText, duration);
+            }
+            else
+            {
+                var defect = DefectCodes[Rng.Next(DefectCodes.Length)];
+                var confidence = Rng.NextDouble() * 0.5;
+                entity = VisionResult.Create(jobId, "FAIL", Math.Round(confidence, 3), defect, null, duration);
+            }
         }
 
         _state.RecordVisionResult(entity.Result);

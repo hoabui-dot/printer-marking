@@ -7,24 +7,24 @@ COPY services/kiosk-ui/frontend/ ./
 RUN npm run build
 
 # Stage 2: Build .NET API
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS api-build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS api-build
 WORKDIR /src
+COPY Directory.Build.props ./
+COPY Directory.Packages.props ./
 COPY station-agent.sln ./
 COPY shared/ shared/
 COPY services/kiosk-ui/ services/kiosk-ui/
 
 # Copy built frontend into wwwroot
-COPY --from=frontend-build /frontend/dist services/kiosk-ui/src/ND.KioskUi.Api/wwwroot/
+COPY --from=frontend-build /src/ND.KioskUi.Api/wwwroot/ services/kiosk-ui/src/ND.KioskUi.Api/wwwroot/
 
 RUN dotnet restore services/kiosk-ui/src/ND.KioskUi.Api/ND.KioskUi.Api.csproj
 RUN dotnet publish services/kiosk-ui/src/ND.KioskUi.Api/ND.KioskUi.Api.csproj -c Release -o /app/publish --no-restore
-
 # Stage 3: Runtime
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
-RUN adduser --disabled-password --gecos '' appuser && chown -R appuser /app
-USER appuser
-COPY --from=api-build /app/publish .
+USER app
+COPY --chown=app:app --from=api-build /app/publish .
 VOLUME ["/data", "/logs"]
 EXPOSE 5007
 ENV ASPNETCORE_URLS=http://+:5007

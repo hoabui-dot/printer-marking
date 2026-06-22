@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\ND.KioskUi.Application\ND.KioskUi.Application.csproj" />
     <ProjectReference Include="..\ND.KioskUi.Infrastructure\ND.KioskUi.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\..\shared\ND.UnifiedContracts\ND.UnifiedContracts.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />

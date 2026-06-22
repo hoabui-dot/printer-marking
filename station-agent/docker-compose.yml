@@ -45,6 +45,8 @@ services:
   # 1. MQTT Adapter
   # ─────────────────────────────────────────────
   mqtt-adapter:
+    platform: linux/amd64
+    image: vanhoadotbui2628/mqtt-adapter:latest
     build:
       context: .
       dockerfile: services/mqtt-adapter/docker/Dockerfile
@@ -81,6 +83,8 @@ services:
   # 2. Job Engine
   # ─────────────────────────────────────────────
   job-engine:
+    platform: linux/amd64
+    image: vanhoadotbui2628/job-engine:latest
     build:
       context: .
       dockerfile: services/job-engine/docker/Dockerfile
@@ -103,6 +107,8 @@ services:
       - RabbitMq__Password=${RABBITMQ_PASS:-guest}
       - RabbitMq__VirtualHost=/
       - RabbitMq__DefaultExchange=station.events
+      - SIMULATOR_HOST=device-simulator
+      - SIMULATOR_PORT=8080
       - ASPNETCORE_ENVIRONMENT=Production
     volumes:
       - ./sqlite-databases:/data
@@ -119,6 +125,8 @@ services:
   # 3. Printer Adapter
   # ─────────────────────────────────────────────
   printer-adapter:
+    platform: linux/amd64
+    image: vanhoadotbui2628/printer-adapter:latest
     build:
       context: .
       dockerfile: services/printer-adapter/docker/Dockerfile
@@ -156,6 +164,8 @@ services:
   # 4. Laser Adapter
   # ─────────────────────────────────────────────
   laser-adapter:
+    platform: linux/amd64
+    image: vanhoadotbui2628/laser-adapter:latest
     build:
       context: .
       dockerfile: services/laser-adapter/docker/Dockerfile
@@ -181,6 +191,8 @@ services:
   # 5. Vision Service
   # ─────────────────────────────────────────────
   vision-service:
+    platform: linux/amd64
+    image: vanhoadotbui2628/vision-service:latest
     build:
       context: .
       dockerfile: services/vision-service/docker/Dockerfile
@@ -208,6 +220,8 @@ services:
   # 6. PLC Adapter
   # ─────────────────────────────────────────────
   plc-adapter:
+    platform: linux/amd64
+    image: vanhoadotbui2628/plc-adapter:latest
     build:
       context: .
       dockerfile: services/plc-adapter/docker/Dockerfile
@@ -233,6 +247,8 @@ services:
   # 7. Kiosk UI
   # ─────────────────────────────────────────────
   kiosk-ui:
+    platform: linux/amd64
+    image: vanhoadotbui2628/kiosk-ui:latest
     build:
       context: .
       dockerfile: services/kiosk-ui/docker/Dockerfile
@@ -262,6 +278,8 @@ services:
   # 8. Device Simulator
   # ─────────────────────────────────────────────
   device-simulator:
+    platform: linux/amd64
+    image: vanhoadotbui2628/device-simulator:latest
     build:
       context: .
       dockerfile: services/device-simulator/Dockerfile
@@ -291,6 +309,8 @@ services:
   # 9. Projection Service
   # ─────────────────────────────────────────────
   projection-service:
+    platform: linux/amd64
+    image: vanhoadotbui2628/projection-service:latest
     build:
       context: .
       dockerfile: services/projection-service/docker/Dockerfile
@@ -311,6 +331,7 @@ services:
       - RabbitMq__VirtualHost=/
       - RabbitMq__DefaultExchange=station.events
       - ASPNETCORE_ENVIRONMENT=Production
+      - SIMULATOR_URL=http://device-simulator:8080
     volumes:
       - ./sqlite-databases:/data
       - projection-logs:/logs

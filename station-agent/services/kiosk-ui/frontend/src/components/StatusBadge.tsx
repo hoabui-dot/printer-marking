@@ -3,6 +3,7 @@ import { translateJobStatus, getStatusColor } from '@/lib/utils'
 
 export interface StatusBadgeProps {
   status: string
+  jobType?: string
   className?: string
 }
 
@@ -10,7 +11,7 @@ export interface StatusBadgeProps {
  * Renders a coloured pill badge for job statuses.
  * Colour classes come from JOB_STATUS_COLORS in constants/jobs.ts.
  */
-export function StatusBadge({ status, className }: StatusBadgeProps) {
+export function StatusBadge({ status, jobType, className }: StatusBadgeProps) {
   const bgClass = getStatusColor(status)
   return (
     <span
@@ -20,7 +21,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
         className
       )}
     >
-      {translateJobStatus(status)}
+      {translateJobStatus(status, jobType)}
     </span>
   )
 }

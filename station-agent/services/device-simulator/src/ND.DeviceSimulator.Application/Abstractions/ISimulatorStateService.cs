@@ -19,6 +19,7 @@ public interface ISimulatorStateService
     LaserStateDto GetLaserState();
 
     // ── Vision ────────────────────────────────────────────────────────────────
+    void SetVisionOnline(bool online);
     void SetVisionConfig(int passRate, int failureRate);
     void RecordVisionResult(string result);
     VisionStateDto GetVisionState();
@@ -35,6 +36,12 @@ public interface ISimulatorStateService
     void RecordGatewayPublish(string topic);
     void RecordGatewayReceive(string topic);
     GatewayStateDto GetGatewayState();
+
+    // ── Scenarios & Active Job ────────────────────────────────────────────────
+    void SetJobScenario(string jobId, string scenario);
+    string? GetJobScenario(string jobId);
+    void SetActiveJobId(string jobId);
+    string? GetActiveJobId();
 
     // ── Snapshot ──────────────────────────────────────────────────────────────
     SimulatorStatusDto GetStatus();

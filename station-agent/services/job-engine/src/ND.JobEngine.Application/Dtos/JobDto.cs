@@ -10,7 +10,14 @@ public record JobDto(
     string? ProductSerial,
     int Priority,
     string CreatedAt,
-    string? CompletedAt
+    string? CompletedAt,
+    string? ParentJobId = null,
+    string? RootJobId = null,
+    int RetrySequence = 0,
+    string? ExecutionType = "OriginalProduction",
+    string? TriggeredByUserId = null,
+    string? ReasonCode = null,
+    string? ReasonDescription = null
 );
 
 public record JobAttemptDto(
@@ -22,7 +29,23 @@ public record JobAttemptDto(
     string ResultStatus,
     string StartedAt,
     string? FinishedAt,
-    string? ErrorMessage
+    string? ErrorMessage,
+    string? ParentAttemptId = null,
+    int RetrySequence = 0,
+    string? ReasonCode = null,
+    string? ReasonDescription = null
+);
+
+public record JobStepDto(
+    string Id,
+    string AttemptId,
+    string StepName,
+    int StepOrder,
+    string Status,
+    string? StartedAt,
+    string? FinishedAt,
+    string? ErrorMessage,
+    string? ResultJson
 );
 
 public record JobHistoryDto(

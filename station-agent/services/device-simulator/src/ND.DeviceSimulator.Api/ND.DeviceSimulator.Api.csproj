@@ -7,6 +7,7 @@
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../ND.DeviceSimulator.Infrastructure/ND.DeviceSimulator.Infrastructure.csproj" />

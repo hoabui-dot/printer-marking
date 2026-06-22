@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using ND.Infrastructure.Messaging;
 using ND.ProjectionService.Application.Interfaces;
+using ND.ProjectionService.Infrastructure.BackgroundServices;
 using ND.ProjectionService.Infrastructure.Messaging;
 using ND.ProjectionService.Infrastructure.Persistence;
 using ND.ProjectionService.Infrastructure.Repositories;
@@ -26,14 +27,19 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IProductionViewRepository, ProductionViewRepository>();
         services.AddScoped<IActivityLogRepository, ActivityLogRepository>();
         services.AddScoped<IDeviceStatusRepository, DeviceStatusRepository>();
+        services.AddScoped<IProductionRecordRepository, ProductionRecordRepository>();
 
         // RabbitMQ Publisher & Consumer
         services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));
         services.AddSingleton<IRabbitMqConsumer, RabbitMqConsumer>();
         services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 
+        // HttpClient for polling
+        services.AddHttpClient();
+
         // Hosted Services
         services.AddHostedService<ProjectionEventConsumer>();
+        services.AddHostedService<DeviceStatusPoller>();
 
         return services;
     }

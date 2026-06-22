@@ -6,14 +6,14 @@ import PrinterCard from './components/PrinterCard'
 import LaserCard from './components/LaserCard'
 import VisionCard from './components/VisionCard'
 import PlcCard from './components/PlcCard'
-import TimelinePanel from './components/TimelinePanel'
+import JobsPanel from './components/JobsPanel'
 import ConnectionPanel from './components/ConnectionPanel'
 import EnvPanel from './components/EnvPanel'
 import GatewayConsole from './components/GatewayConsole'
 import { useState, useEffect } from 'react'
 import type { ConfigValue } from './types'
 
-type Tab = 'devices' | 'gateway' | 'timeline' | 'env'
+type Tab = 'devices' | 'gateway' | 'jobs' | 'env'
 
 export default function App() {
   const { status, timeline, connected } = useSimulator()
@@ -95,14 +95,14 @@ export default function App() {
         <main className="flex-1 min-w-0">
           {/* Tabs */}
           <div className="flex gap-1 mb-4 border-b border-gray-850">
-            {(['devices', 'gateway', 'timeline', 'env'] as Tab[]).map(t => (
+            {(['devices', 'gateway', 'jobs', 'env'] as Tab[]).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className={`px-4 py-2 text-xs font-semibold rounded-t transition-all border-t border-x -mb-[1px]
                   ${tab === t
                     ? 'bg-gray-900 text-white border-gray-800 border-b-gray-900'
                     : 'text-gray-500 hover:text-gray-300 border-transparent hover:bg-gray-900/50'}`}>
-                {t === 'timeline'
-                  ? `Timeline (${timeline.length})`
+                {t === 'jobs'
+                  ? `Lịch sử gia công`
                   : t === 'gateway'
                   ? 'Factory Gateway (MQTT)'
                   : t === 'devices'
@@ -131,12 +131,9 @@ export default function App() {
             </div>
           )}
 
-          {tab === 'timeline' && (
+          {tab === 'jobs' && (
             <div>
-              <div className="text-xs text-gray-500 mb-3">
-                Live event stream from all virtual devices — showing last {timeline.length} events
-              </div>
-              <TimelinePanel events={timeline} />
+              <JobsPanel />
             </div>
           )}
 

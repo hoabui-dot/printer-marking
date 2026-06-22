@@ -30,24 +30,39 @@ export interface DeviceStatus {
   lastSeenAt: string
 }
 
+export interface ProductionRecord {
+  id: string
+  jobId: string
+  jobNo: string
+  productCode: string
+  productSerial?: string
+  jobType: string
+  currentStatus: string
+  stationId: string
+  createdAt: string
+  updatedAt: string
+}
+
 export function useDashboard(stationId: string) {
   const [production, setProduction] = useState<ProductionView | null>(null)
   const [activities, setActivities] = useState<ActivityLog[]>([])
   const [devices, setDevices] = useState<DeviceStatus[]>([])
+  const [todayRecords, setTodayRecords] = useState<ProductionRecord[]>([])
   const [isConnected, setIsConnected] = useState(false)
 
   // Resolve absolute API / Hub URLs for the projection service running on port 5009
   const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  const baseUrl = isDev ? 'http://localhost:5009' : `${window.location.protocol}//${window.location.hostname}:5009`;
+  const baseUrl = import.meta.env.VITE_PROJECTION_URL || (isDev ? 'http://localhost:5009' : `${window.location.protocol}//${window.location.hostname}:5009`);
 
   useEffect(() => {
     // 1. Initial REST fetch from projection service
     const fetchInitialData = async () => {
       try {
-        const [prodRes, actRes, devRes] = await Promise.all([
+        const [prodRes, actRes, devRes, todayRecsRes] = await Promise.all([
           axios.get<ProductionView>(`${baseUrl}/api/projection/production?stationId=${stationId}`).catch(() => null),
           axios.get<ActivityLog[]>(`${baseUrl}/api/projection/activities?limit=10`).catch(() => ({ data: [] })),
-          axios.get<DeviceStatus[]>(`${baseUrl}/api/projection/devices`).catch(() => ({ data: [] }))
+          axios.get<DeviceStatus[]>(`${baseUrl}/api/projection/devices`).catch(() => ({ data: [] })),
+          axios.get<{ items: ProductionRecord[], totalCount: number }>(`${baseUrl}/api/projection/records/today?page=1&pageSize=100`).catch(() => ({ data: { items: [], totalCount: 0 } }))
         ])
 
         if (prodRes && prodRes.data) {
@@ -58,6 +73,9 @@ export function useDashboard(stationId: string) {
         }
         if (devRes && devRes.data) {
           setDevices(devRes.data)
+        }
+        if (todayRecsRes && todayRecsRes.data?.items) {
+          setTodayRecords(todayRecsRes.data.items)
         }
       } catch (err) {
         console.error('Error fetching initial projection data:', err)
@@ -85,6 +103,28 @@ export function useDashboard(stationId: string) {
       })
     })
 
+    conn.on('OnProductionRecordUpdate', (data: ProductionRecord) => {
+      setTodayRecords((prev) => {
+        const exists = prev.some((r) => r.id === data.id)
+        if (exists) {
+          return prev.map((r) => (r.id === data.id ? data : r))
+        } else {
+          return [data, ...prev]
+        }
+      })
+    })
+
+    conn.on('OnDeviceStatusUpdate', (data: DeviceStatus) => {
+      setDevices((prev) => {
+        const exists = prev.some((d) => d.deviceId === data.deviceId)
+        if (exists) {
+          return prev.map((d) => (d.deviceId === data.deviceId ? data : d))
+        } else {
+          return [...prev, data]
+        }
+      })
+    })
+
     conn.start()
       .then(async () => {
         setIsConnected(true)
@@ -100,5 +140,5 @@ export function useDashboard(stationId: string) {
     }
   }, [stationId, baseUrl])
 
-  return { isConnected, production, activities, devices }
+  return { isConnected, production, activities, devices, todayRecords }
 }

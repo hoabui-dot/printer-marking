@@ -32,6 +32,7 @@ public sealed class VirtualFactoryGateway : BackgroundService
     private readonly ILogger<VirtualFactoryGateway> _logger;
 
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+    private volatile bool _forceDisconnected = false;
 
     public VirtualFactoryGateway(
         IServiceScopeFactory scopeFactory,
@@ -47,12 +48,36 @@ public sealed class VirtualFactoryGateway : BackgroundService
         _logger = logger;
     }
 
+    public async Task DisconnectGatewayAsync(CancellationToken ct = default)
+    {
+        _forceDisconnected = true;
+        if (_mqttClient != null)
+        {
+            await _mqttClient.DisconnectAsync(cancellationToken: ct);
+        }
+        _state.SetGatewayConnected(false);
+        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+        _logger.LogInformation("Factory Gateway MQTT manually disconnected via API");
+    }
+
+    public async Task ConnectGatewayAsync(CancellationToken ct = default)
+    {
+        _forceDisconnected = false;
+        _logger.LogInformation("Factory Gateway MQTT connection enabled via API");
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
+                if (_forceDisconnected)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
+                    continue;
+                }
+
                 await ConnectAsync(stoppingToken);
                 await RunSchedulerAsync(stoppingToken);
             }
@@ -72,8 +97,8 @@ public sealed class VirtualFactoryGateway : BackgroundService
 
     private async Task ConnectAsync(CancellationToken ct)
     {
-        var host = _config["Simulator:MQTT_HOST"] ?? "localhost";
-        var port = int.TryParse(_config["Simulator:MQTT_PORT"] ?? "1883", out var p) ? p : 1883;
+        var host = Environment.GetEnvironmentVariable("SIMULATOR_MQTT_HOST") ?? Environment.GetEnvironmentVariable("MQTT_HOST") ?? _config["Simulator:MQTT_HOST"] ?? "localhost";
+        var port = int.TryParse(Environment.GetEnvironmentVariable("SIMULATOR_MQTT_PORT") ?? Environment.GetEnvironmentVariable("MQTT_PORT") ?? _config["Simulator:MQTT_PORT"] ?? "1883", out var p) ? p : 1883;
         var user = _config["Simulator:MQTT_USERNAME"] ?? "";
         var pass = _config["Simulator:MQTT_PASSWORD"] ?? "";
         var subscribeTopic = _config["Simulator:MQTT_SUBSCRIBE_TOPIC"] ?? "factory/commands/#";
@@ -132,13 +157,14 @@ public sealed class VirtualFactoryGateway : BackgroundService
         }
     }
 
-    public async Task PublishAsync(GatewayPublishRequest request, CancellationToken ct = default)
+    public async Task<string> PublishAsync(GatewayPublishRequest request, CancellationToken ct = default)
     {
         if (_mqttClient?.IsConnected != true)
             throw new InvalidOperationException("Gateway not connected to MQTT broker");
 
         var tags = request.Data.Select(d => new UnifiedTag { Tag = d.Tag, Value = d.Value, Quality = d.Quality }).ToList();
-        var evt = UnifiedEvent.Create(request.Site, request.Area, request.Line, request.Machine, request.EdgeId, tags);
+        var eventId = $"evt-sim-{Guid.NewGuid():N}";
+        var evt = UnifiedEvent.Create(request.Site, request.Area, request.Line, request.Machine, request.EdgeId, tags, eventId);
         var json = JsonSerializer.Serialize(evt, JsonOpts);
 
         await _mqttClient.PublishAsync(new MqttApplicationMessageBuilder()
@@ -150,7 +176,8 @@ public sealed class VirtualFactoryGateway : BackgroundService
         await RecordAndBroadcastAsync("PUBLISH", request.Topic, json, ct);
         await AddTimelineAsync("GATEWAY_PUBLISHED", "OK", $"Published to {request.Topic}", ct);
 
-        _logger.LogInformation("Gateway published to {Topic}", request.Topic);
+        _logger.LogInformation("Gateway published to {Topic} with event id {EventId}", request.Topic, eventId);
+        return eventId;
     }
 
     private async Task PublishHeartbeatAsync(CancellationToken ct)

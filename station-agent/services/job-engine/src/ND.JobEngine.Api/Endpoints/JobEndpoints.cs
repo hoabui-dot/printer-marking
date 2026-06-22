@@ -1,5 +1,7 @@
 using ND.JobEngine.Application.Commands;
 using ND.JobEngine.Application.Queries;
+using ND.JobEngine.Application.Interfaces;
+using ND.JobEngine.Application.Dtos;
 
 namespace ND.JobEngine.Api.Endpoints;
 
@@ -43,6 +45,15 @@ public static class JobEndpointExtensions
         {
             var result = await handler.HandleGetAttemptsAsync(new GetJobAttemptsQuery(id), ct);
             return Results.Ok(result);
+        });
+
+        group.MapGet("/attempts/{attemptId}/steps", async (string attemptId, IJobStepRepository repo, CancellationToken ct) =>
+        {
+            var steps = await repo.GetByAttemptIdAsync(attemptId, ct);
+            var dtos = steps.Select(s => new JobStepDto(
+                s.Id, s.AttemptId, s.StepName, s.StepOrder, s.Status,
+                s.StartedAt, s.FinishedAt, s.ErrorMessage, s.ResultJson)).ToList();
+            return Results.Ok(dtos);
         });
 
         group.MapPost("/", async (CreateJobCommand command, CreateJobHandler handler, CancellationToken ct) =>

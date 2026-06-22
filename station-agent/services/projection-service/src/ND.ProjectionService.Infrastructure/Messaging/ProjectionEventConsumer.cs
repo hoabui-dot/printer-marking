@@ -67,12 +67,50 @@ public sealed class ProjectionEventConsumer : BackgroundService
             onMessage: (routingKey, json) => HandleJobEventAsync(routingKey, json, stoppingToken),
             cancellationToken: stoppingToken);
 
-        // 2. Consume MQTT inbound events
+        // 2. Consume printer printed events
+        await _consumer.StartConsumingAsync(
+            exchange: Exchange,
+            queue: JobQueue,
+            routingKeyPattern: "printer.printed",
+            onMessage: (routingKey, json) => HandleJobEventAsync(routingKey, json, stoppingToken),
+            cancellationToken: stoppingToken);
+
+        // 3. Consume laser marked events
+        await _consumer.StartConsumingAsync(
+            exchange: Exchange,
+            queue: JobQueue,
+            routingKeyPattern: "laser.marked",
+            onMessage: (routingKey, json) => HandleJobEventAsync(routingKey, json, stoppingToken),
+            cancellationToken: stoppingToken);
+
+        // 4. Consume MQTT inbound events
         await _consumer.StartConsumingAsync(
             exchange: Exchange,
             queue: MqttQueue,
             routingKeyPattern: MqttPattern,
             onMessage: (routingKey, json) => HandleMqttEventAsync(routingKey, json, stoppingToken),
+            cancellationToken: stoppingToken);
+
+        // 5. Consume manual requested events (reprint, re-marking, reprocess)
+        await _consumer.StartConsumingAsync(
+            exchange: Exchange,
+            queue: "projection-service.manual-reprint-events",
+            routingKeyPattern: JobEventRoutingKeys.ManualReprint,
+            onMessage: (routingKey, json) => HandleManualOverrideRequestedEventAsync(routingKey, json, stoppingToken),
+            cancellationToken: stoppingToken);
+
+        await _consumer.StartConsumingAsync(
+            exchange: Exchange,
+            queue: "projection-service.manual-remarking-events",
+            routingKeyPattern: JobEventRoutingKeys.ManualRemarking,
+            onMessage: (routingKey, json) => HandleManualOverrideRequestedEventAsync(routingKey, json, stoppingToken),
+            cancellationToken: stoppingToken);
+
+        await _consumer.StartConsumingAsync(
+            exchange: Exchange,
+            queue: "projection-service.manual-reprocess-events",
+            routingKeyPattern: JobEventRoutingKeys.ManualReprocess,
+            onMessage: (routingKey, json) => HandleManualOverrideRequestedEventAsync(routingKey, json, stoppingToken),
             cancellationToken: stoppingToken);
 
         // Keep service alive
@@ -87,11 +125,13 @@ public sealed class ProjectionEventConsumer : BackgroundService
         {
             using var scope = _scopeFactory.CreateScope();
             var productionRepo = scope.ServiceProvider.GetRequiredService<IProductionViewRepository>();
+            var recordRepo = scope.ServiceProvider.GetRequiredService<IProductionRecordRepository>();
             var activityRepo = scope.ServiceProvider.GetRequiredService<IActivityLogRepository>();
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
             ProductionView? view = null;
             ActivityLog? log = null;
+            ProductionRecord? productionRecordToPush = null;
 
             if (routingKey.Equals("job.created", StringComparison.OrdinalIgnoreCase))
             {
@@ -118,6 +158,33 @@ public sealed class ProjectionEventConsumer : BackgroundService
                         "QUEUED",
                         $"Công việc {evt.JobNo} đã được tạo và đưa vào hàng đợi.",
                         evt.Timestamp);
+
+                    // ProductionRecord logic
+                    var record = await recordRepo.GetByJobIdAsync(evt.JobId, cancellationToken);
+                    if (record == null)
+                    {
+                        record = (await recordRepo.GetAllAsync(cancellationToken))
+                            .FirstOrDefault(r => r.JobNo == evt.JobNo);
+                    }
+
+                    if (record != null)
+                    {
+                        record.UpdateDetails(evt.JobId, evt.JobNo, evt.ProductCode, evt.ProductSerial, "QUEUED");
+                        await recordRepo.UpdateAsync(record, cancellationToken);
+                    }
+                    else
+                    {
+                        record = ProductionRecord.Create(
+                            evt.JobId,
+                            evt.JobNo,
+                            evt.ProductCode,
+                            evt.ProductSerial,
+                            evt.JobType,
+                            _stationId,
+                            "QUEUED");
+                        await recordRepo.AddAsync(record, cancellationToken);
+                    }
+                    productionRecordToPush = record;
                 }
             }
             else if (routingKey.Equals("job.processing", StringComparison.OrdinalIgnoreCase))
@@ -128,8 +195,13 @@ public sealed class ProjectionEventConsumer : BackgroundService
                     view = await productionRepo.GetByStationIdAsync(_stationId, cancellationToken);
                     if (view != null)
                     {
-                        view.UpdateStatus("PROCESSING");
+                        view.Update(evt.JobId, evt.JobNo, evt.ProductCode, evt.ProductSerial, "PROCESSING");
                         await productionRepo.UpdateAsync(view, cancellationToken);
+                    }
+                    else
+                    {
+                        view = ProductionView.Create(_stationId, evt.JobId, evt.JobNo, evt.ProductCode, evt.ProductSerial, "PROCESSING");
+                        await productionRepo.AddAsync(view, cancellationToken);
                     }
 
                     log = ActivityLog.Create(
@@ -140,6 +212,42 @@ public sealed class ProjectionEventConsumer : BackgroundService
                         "PROCESSING",
                         $"Công việc {evt.JobNo} bắt đầu xử lý (lần thử #{evt.AttemptNo}).",
                         evt.Timestamp);
+
+                    var record = await recordRepo.GetByJobIdAsync(evt.JobId, cancellationToken);
+                    if (record != null)
+                    {
+                        record.UpdateStatus("PROCESSING");
+                        await recordRepo.UpdateAsync(record, cancellationToken);
+                        productionRecordToPush = record;
+                    }
+                }
+            }
+            else if (routingKey.Equals("printer.printed", StringComparison.OrdinalIgnoreCase))
+            {
+                var evt = JsonSerializer.Deserialize<PrinterPrintedEvent>(payloadJson, JsonSerializerOptions);
+                if (evt != null)
+                {
+                    var record = await recordRepo.GetByJobIdAsync(evt.JobId, cancellationToken);
+                    if (record != null)
+                    {
+                        record.UpdateStatus("PRINTING");
+                        await recordRepo.UpdateAsync(record, cancellationToken);
+                        productionRecordToPush = record;
+                    }
+                }
+            }
+            else if (routingKey.Equals("laser.marked", StringComparison.OrdinalIgnoreCase))
+            {
+                var evt = JsonSerializer.Deserialize<LaserMarkedEvent>(payloadJson, JsonSerializerOptions);
+                if (evt != null)
+                {
+                    var record = await recordRepo.GetByJobIdAsync(evt.JobId, cancellationToken);
+                    if (record != null)
+                    {
+                        record.UpdateStatus("PRINTING");
+                        await recordRepo.UpdateAsync(record, cancellationToken);
+                        productionRecordToPush = record;
+                    }
                 }
             }
             else if (routingKey.Equals("job.completed", StringComparison.OrdinalIgnoreCase))
@@ -162,6 +270,14 @@ public sealed class ProjectionEventConsumer : BackgroundService
                         "COMPLETED",
                         $"Công việc {evt.JobNo} đã hoàn thành thành công.",
                         evt.Timestamp);
+
+                    var record = await recordRepo.GetByJobIdAsync(evt.JobId, cancellationToken);
+                    if (record != null)
+                    {
+                        record.UpdateStatus("COMPLETED");
+                        await recordRepo.UpdateAsync(record, cancellationToken);
+                        productionRecordToPush = record;
+                    }
                 }
             }
             else if (routingKey.Equals("job.failed", StringComparison.OrdinalIgnoreCase))
@@ -184,6 +300,14 @@ public sealed class ProjectionEventConsumer : BackgroundService
                         "FAILED",
                         $"Công việc {evt.JobNo} thất bại: {evt.ErrorMessage ?? "Lỗi không xác định"}.",
                         evt.Timestamp);
+
+                    var record = await recordRepo.GetByJobIdAsync(evt.JobId, cancellationToken);
+                    if (record != null)
+                    {
+                        record.UpdateStatus("FAILED");
+                        await recordRepo.UpdateAsync(record, cancellationToken);
+                        productionRecordToPush = record;
+                    }
                 }
             }
 
@@ -209,6 +333,24 @@ public sealed class ProjectionEventConsumer : BackgroundService
                 await _hubContext.Clients.Group(_stationId).SendAsync("OnActivityUpdate", logDto, cancellationToken);
                 _logger.LogInformation("Pushed activity update to group: {StationId}", _stationId);
             }
+
+            if (productionRecordToPush != null)
+            {
+                var recordDto = new ProductionRecordDto(
+                    productionRecordToPush.Id,
+                    productionRecordToPush.JobId,
+                    productionRecordToPush.JobNo,
+                    productionRecordToPush.ProductCode,
+                    productionRecordToPush.ProductSerial,
+                    productionRecordToPush.JobType,
+                    productionRecordToPush.CurrentStatus,
+                    productionRecordToPush.StationId,
+                    productionRecordToPush.CreatedAt,
+                    productionRecordToPush.UpdatedAt);
+
+                await _hubContext.Clients.Group(_stationId).SendAsync("OnProductionRecordUpdate", recordDto, cancellationToken);
+                _logger.LogInformation("Pushed production record update to group: {StationId}", _stationId);
+            }
         }
         catch (Exception ex)
         {
@@ -225,6 +367,7 @@ public sealed class ProjectionEventConsumer : BackgroundService
         {
             using var scope = _scopeFactory.CreateScope();
             var activityRepo = scope.ServiceProvider.GetRequiredService<IActivityLogRepository>();
+            var recordRepo = scope.ServiceProvider.GetRequiredService<IProductionRecordRepository>();
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
             var unifiedEvent = JsonSerializer.Deserialize<UnifiedEvent>(payloadJson, JsonSerializerOptions);
@@ -239,6 +382,13 @@ public sealed class ProjectionEventConsumer : BackgroundService
                     ? pid
                     : tagsDict.TryGetValue(BusinessConstants.MqttTag.MarkingSerial, out var ms) ? ms : "GENERIC";
 
+                var productSerial = tagsDict.TryGetValue(BusinessConstants.MqttTag.MarkingSerial, out var serial)
+                    ? serial
+                    : tagsDict.TryGetValue(BusinessConstants.MqttTag.ProductId, out var pidFallback) ? pidFallback : null;
+
+                var opType = tagsDict.TryGetValue(BusinessConstants.MqttTag.OperationType, out var ot)
+                    ? ot : "DEFAULT";
+
                 var log = ActivityLog.Create(
                     "MqttMessageReceived",
                     jobId: "",
@@ -251,17 +401,149 @@ public sealed class ProjectionEventConsumer : BackgroundService
                 await activityRepo.AddAsync(log, cancellationToken);
                 await activityRepo.TrimExcessAsync(10, cancellationToken);
 
+                // ProductionRecord
+                var record = (await recordRepo.GetAllAsync(cancellationToken))
+                    .FirstOrDefault(r => r.JobNo == unifiedEvent.EventId);
+
+                if (record == null)
+                {
+                    record = ProductionRecord.Create(
+                        jobId: unifiedEvent.EventId, // Use EventId as temporary JobId
+                        jobNo: unifiedEvent.EventId,
+                        productCode: productCode,
+                        productSerial: productSerial,
+                        jobType: opType,
+                        stationId: _stationId,
+                        status: "RECEIVED");
+                    await recordRepo.AddAsync(record, cancellationToken);
+                }
+                else
+                {
+                    record.UpdateDetails(record.JobId, unifiedEvent.EventId, productCode, productSerial, "RECEIVED");
+                    await recordRepo.UpdateAsync(record, cancellationToken);
+                }
+
                 await unitOfWork.SaveChangesAsync(cancellationToken);
 
                 // SignalR Push
                 var logDto = new ActivityLogDto(log.Id, log.EventType, log.JobId, log.JobNo, log.ProductCode, log.Status, log.Message, log.OccurredAt);
                 await _hubContext.Clients.Group(_stationId).SendAsync("OnActivityUpdate", logDto, cancellationToken);
                 _logger.LogInformation("Pushed raw MQTT receive activity update to group: {StationId}", _stationId);
+
+                var recordDto = new ProductionRecordDto(
+                    record.Id,
+                    record.JobId,
+                    record.JobNo,
+                    record.ProductCode,
+                    record.ProductSerial,
+                    record.JobType,
+                    record.CurrentStatus,
+                    record.StationId,
+                    record.CreatedAt,
+                    record.UpdatedAt);
+                await _hubContext.Clients.Group(_stationId).SendAsync("OnProductionRecordUpdate", recordDto, cancellationToken);
+                _logger.LogInformation("Pushed production record update from MQTT to group: {StationId}", _stationId);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to handle MQTT event: {RoutingKey}", routingKey);
+            throw; // Will Nack
+        }
+    }
+
+    private async Task HandleManualOverrideRequestedEventAsync(string routingKey, string payloadJson, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Projection Service received manual override request: {RoutingKey}", routingKey);
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var activityRepo = scope.ServiceProvider.GetRequiredService<IActivityLogRepository>();
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+            string eventType = "ManualOverrideRequested";
+            string jobId = "";
+            string jobNo = "";
+            string productCode = "";
+            string requestedBy = "";
+            string reasonCode = "";
+            string reasonDescription = "";
+            string message = "";
+            string timestamp = "";
+
+            if (routingKey.Equals(JobEventRoutingKeys.ManualReprint, StringComparison.OrdinalIgnoreCase))
+            {
+                var evt = JsonSerializer.Deserialize<ManualReprintRequestedEvent>(payloadJson, JsonSerializerOptions);
+                if (evt != null)
+                {
+                    eventType = evt.EventType;
+                    jobId = evt.JobId;
+                    jobNo = evt.JobNo;
+                    productCode = evt.ProductCode;
+                    requestedBy = evt.RequestedBy;
+                    reasonCode = evt.ReasonCode;
+                    reasonDescription = evt.ReasonDescription ?? "";
+                    timestamp = evt.RequestedAt;
+                    message = $"Yêu cầu in lại nhãn bởi {requestedBy}. Lý do: [{reasonCode}] {reasonDescription}";
+                }
+            }
+            else if (routingKey.Equals(JobEventRoutingKeys.ManualRemarking, StringComparison.OrdinalIgnoreCase))
+            {
+                var evt = JsonSerializer.Deserialize<ManualRemarkingRequestedEvent>(payloadJson, JsonSerializerOptions);
+                if (evt != null)
+                {
+                    eventType = evt.EventType;
+                    jobId = evt.JobId;
+                    jobNo = evt.JobNo;
+                    productCode = evt.ProductCode;
+                    requestedBy = evt.RequestedBy;
+                    reasonCode = evt.ReasonCode;
+                    reasonDescription = evt.ReasonDescription ?? "";
+                    timestamp = evt.RequestedAt;
+                    message = $"Yêu cầu khắc lại laser bởi {requestedBy}. Lý do: [{reasonCode}] {reasonDescription}";
+                }
+            }
+            else if (routingKey.Equals(JobEventRoutingKeys.ManualReprocess, StringComparison.OrdinalIgnoreCase))
+            {
+                var evt = JsonSerializer.Deserialize<ManualReprocessingRequestedEvent>(payloadJson, JsonSerializerOptions);
+                if (evt != null)
+                {
+                    eventType = evt.EventType;
+                    jobId = evt.JobId;
+                    jobNo = evt.JobNo;
+                    productCode = evt.ProductCode;
+                    requestedBy = evt.RequestedBy;
+                    reasonCode = evt.ReasonCode;
+                    reasonDescription = evt.ReasonDescription ?? "";
+                    timestamp = evt.RequestedAt;
+                    message = $"Yêu cầu làm lại quy trình bởi {requestedBy}. Lý do: [{reasonCode}] {reasonDescription}";
+                }
+            }
+
+            if (string.IsNullOrEmpty(jobId)) return;
+
+            var log = ActivityLog.Create(
+                eventType,
+                jobId,
+                jobNo,
+                productCode,
+                "REQUESTED",
+                message,
+                timestamp);
+
+            await activityRepo.AddAsync(log, cancellationToken);
+            await activityRepo.TrimExcessAsync(10, cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+
+            // Push real-time update to UI SignalR
+            var logDto = new ActivityLogDto(log.Id, log.EventType, log.JobId, log.JobNo, log.ProductCode, log.Status, log.Message, log.OccurredAt);
+            await _hubContext.Clients.Group(_stationId).SendAsync("OnActivityUpdate", logDto, cancellationToken);
+            _logger.LogInformation("Pushed manual override request activity update to group: {StationId}", _stationId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to handle manual override event: {RoutingKey}", routingKey);
             throw; // Will Nack
         }
     }

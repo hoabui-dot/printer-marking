@@ -31,6 +31,9 @@ public sealed class VirtualLaserServer : BackgroundService
     private readonly IConfiguration _config;
     private readonly ILogger<VirtualLaserServer> _logger;
 
+    private TcpListener? _listener;
+    private volatile bool _forceDisconnected = false;
+
     public VirtualLaserServer(
         IServiceScopeFactory scopeFactory,
         ISimulatorStateService state,
@@ -45,27 +48,69 @@ public sealed class VirtualLaserServer : BackgroundService
         _logger = logger;
     }
 
+    public async Task ConnectLaserAsync(CancellationToken ct = default)
+    {
+        _forceDisconnected = false;
+        _logger.LogInformation("Virtual Laser connection enabled via API");
+    }
+
+    public async Task DisconnectLaserAsync(CancellationToken ct = default)
+    {
+        _forceDisconnected = true;
+        try
+        {
+            _listener?.Stop();
+        }
+        catch { }
+        _state.SetLaserOnline(false);
+        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+        _logger.LogInformation("Virtual Laser manually disconnected via API");
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var port = int.TryParse(GetConfig("LASER_PORT", "8901"), out var p) ? p : DefaultPort;
-        var listener = new TcpListener(IPAddress.Any, port);
-        listener.Start();
-        _state.SetLaserOnline(true);
-        _logger.LogInformation("VirtualLaserServer listening on TCP :{Port}", port);
-        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
-
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var client = await listener.AcceptTcpClientAsync(stoppingToken);
+                if (_forceDisconnected)
+                {
+                    if (_listener != null)
+                    {
+                        _listener.Stop();
+                        _listener = null;
+                        _state.SetLaserOnline(false);
+                        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+                    }
+                    await Task.Delay(500, stoppingToken);
+                    continue;
+                }
+
+                if (_listener == null)
+                {
+                    var port = int.TryParse(GetConfig("LASER_PORT", "8901"), out var p) ? p : DefaultPort;
+                    _listener = new TcpListener(IPAddress.Any, port);
+                    _listener.Start();
+                    _state.SetLaserOnline(true);
+                    _logger.LogInformation("VirtualLaserServer listening on TCP :{Port}", port);
+                    await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+                }
+
+                var client = await _listener.AcceptTcpClientAsync(stoppingToken);
                 _ = HandleClientAsync(client, stoppingToken);
             }
             catch (OperationCanceledException) { break; }
-            catch (Exception ex) { _logger.LogError(ex, "VirtualLaserServer accept error"); }
+            catch (Exception ex)
+            {
+                if (!_forceDisconnected)
+                {
+                    _logger.LogError(ex, "VirtualLaserServer accept error");
+                    await Task.Delay(1000, stoppingToken);
+                }
+            }
         }
 
-        listener.Stop();
+        _listener?.Stop();
         _state.SetLaserOnline(false);
     }
 
@@ -82,6 +127,12 @@ public sealed class VirtualLaserServer : BackgroundService
             {
                 var rawCommand = line.Trim();
                 if (string.IsNullOrEmpty(rawCommand)) continue;
+
+                var jobNo = ExtractJobNoFromLaserCommand(rawCommand);
+                if (!string.IsNullOrEmpty(jobNo))
+                {
+                    _state.SetActiveJobId(jobNo);
+                }
 
                 _logger.LogDebug("Laser command received: {Cmd}", rawCommand);
 
@@ -151,4 +202,15 @@ public sealed class VirtualLaserServer : BackgroundService
 
     private string GetConfig(string key, string @default)
         => _config[$"Simulator:{key}"] ?? @default;
+
+    private static string? ExtractJobNoFromLaserCommand(string? command)
+    {
+        if (string.IsNullOrEmpty(command)) return null;
+        var jobNoIndex = command.IndexOf("JobNo:", StringComparison.OrdinalIgnoreCase);
+        if (jobNoIndex == -1) return null;
+        var sub = command[(jobNoIndex + 6)..];
+        var semiIndex = sub.IndexOf(';');
+        if (semiIndex != -1) sub = sub[..semiIndex];
+        return sub.Trim();
+    }
 }
