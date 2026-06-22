@@ -50,9 +50,9 @@ export const JOB_TYPE_LABELS: Record<string, string> = {
 export const JOB_STATUS_COLORS: Record<string, string> = {
   [JOB_STATUSES.COMPLETED]: 'bg-green-600',
   [JOB_STATUSES.FAILED]: 'bg-red-600',
-  [JOB_STATUSES.PROCESSING]: 'bg-indigo-600',
+  [JOB_STATUSES.PROCESSING]: 'bg-brand',
   [JOB_STATUSES.WAIT_REWORK]: 'bg-amber-600',
-  [JOB_STATUSES.QUEUED]: 'bg-violet-600',
+  [JOB_STATUSES.QUEUED]: 'bg-slate-600',
   [JOB_STATUSES.CREATED]: 'bg-slate-500',
   [JOB_STATUSES.CANCELLED]: 'bg-slate-600',
   [JOB_STATUSES.RECEIVED]: 'bg-sky-600',

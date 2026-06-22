@@ -10,15 +10,24 @@ public static class KioskDbSeeder
 {
     public static async Task SeedAsync(KioskDbContext context)
     {
-        if (context.Roles.Any()) return;  // Already seeded
+        // 1. Roles
+        var adminRole = await context.Roles.FirstOrDefaultAsync(r => r.RoleCode == "SUPER_ADMIN");
+        if (adminRole == null)
+        {
+            adminRole = KioskRole.Create("SUPER_ADMIN", "Quản trị hệ thống");
+            await context.Roles.AddAsync(adminRole);
+        }
 
-        // Roles
-        var adminRole = KioskRole.Create("SUPER_ADMIN", "Quản trị hệ thống");
-        var memberRole = KioskRole.Create("MEMBER", "Nhân viên vận hành");
+        var memberRole = await context.Roles.FirstOrDefaultAsync(r => r.RoleCode == "MEMBER");
+        if (memberRole == null)
+        {
+            memberRole = KioskRole.Create("MEMBER", "Nhân viên vận hành");
+            await context.Roles.AddAsync(memberRole);
+        }
 
-        await context.Roles.AddRangeAsync(adminRole, memberRole);
+        await context.SaveChangesAsync();
 
-        // Permissions
+        // 2. Permissions
         var permissions = new Dictionary<string, string>
         {
             { PermissionCodes.JobView, "Xem danh sách công việc" },
@@ -27,31 +36,53 @@ public static class KioskDbSeeder
             { PermissionCodes.SystemAdmin, "Toàn quyền hệ thống" }
         };
 
-        var permissionEntities = permissions.Select(p => KioskPermission.Create(p.Key, p.Value)).ToList();
-        await context.Permissions.AddRangeAsync(permissionEntities);
-
+        foreach (var p in permissions)
+        {
+            var exists = await context.Permissions.AnyAsync(pe => pe.PermissionCode == p.Key);
+            if (!exists)
+            {
+                await context.Permissions.AddAsync(KioskPermission.Create(p.Key, p.Value));
+            }
+        }
         await context.SaveChangesAsync();
 
-        // Role-Permission mappings
+        var permissionEntities = await context.Permissions.ToListAsync();
         var permMap = permissionEntities.ToDictionary(p => p.PermissionCode, p => p.Id);
 
+        // 3. Role-Permission mappings
         // SUPER_ADMIN gets all permissions
         foreach (var perm in permissionEntities)
-            await context.RolePermissions.AddAsync(KioskRolePermission.Create(adminRole.Id, perm.Id));
+        {
+            var exists = await context.RolePermissions.AnyAsync(rp => rp.RoleId == adminRole.Id && rp.PermissionId == perm.Id);
+            if (!exists)
+            {
+                await context.RolePermissions.AddAsync(KioskRolePermission.Create(adminRole.Id, perm.Id));
+            }
+        }
 
         // MEMBER gets JOB_VIEW by default
-        if (permMap.TryGetValue(PermissionCodes.JobView, out var pidJobView))
-            await context.RolePermissions.AddAsync(KioskRolePermission.Create(memberRole.Id, pidJobView));
+        if (permMap.TryGetValue(PermissionCodes.JobView, out var pidJobViewMember))
+        {
+            var exists = await context.RolePermissions.AnyAsync(rp => rp.RoleId == memberRole.Id && rp.PermissionId == pidJobViewMember);
+            if (!exists)
+            {
+                await context.RolePermissions.AddAsync(KioskRolePermission.Create(memberRole.Id, pidJobViewMember));
+            }
+        }
 
         await context.SaveChangesAsync();
 
-        // Default admin123 user
-        var adminUser = KioskUser.Create("admin123", "Quản trị hệ thống", BCrypt.Net.BCrypt.HashPassword("admin123"));
-        await context.Users.AddAsync(adminUser);
-        await context.SaveChangesAsync();
+        // 4. Default admin123 user
+        var adminUser = await context.Users.FirstOrDefaultAsync(u => u.Username == "admin123");
+        if (adminUser == null)
+        {
+            adminUser = KioskUser.Create("admin123", "Quản trị hệ thống", BCrypt.Net.BCrypt.HashPassword("admin123"));
+            await context.Users.AddAsync(adminUser);
+            await context.SaveChangesAsync();
 
-        // Assign SUPER_ADMIN role to admin123
-        await context.UserRoles.AddAsync(KioskUserRole.Create(adminUser.Id, adminRole.Id, "system"));
-        await context.SaveChangesAsync();
+            // Assign SUPER_ADMIN role to admin123
+            await context.UserRoles.AddAsync(KioskUserRole.Create(adminUser.Id, adminRole.Id, "system"));
+            await context.SaveChangesAsync();
+        }
     }
 }

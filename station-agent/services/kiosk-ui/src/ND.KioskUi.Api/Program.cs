@@ -321,6 +321,7 @@ app.MapGet("/api/rbac/users", async (KioskDbContext db, HttpContext ctx, Cancell
             username = user.Username,
             fullName = user.FullName,
             isActive = user.IsActive,
+            updatedAt = user.UpdatedAt,
             roles,
             directPermissions,
             allPermissions
@@ -351,6 +352,27 @@ app.MapPost("/api/rbac/users", async (CreateUserRequest req, KioskDbContext db, 
     await db.UserRoles.AddAsync(userRole, ct);
     await db.SaveChangesAsync(ct);
 
+    // Audit user creation
+    var adminId = ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    var authHeader = ctx.Request.Headers.Authorization.ToString();
+    var token = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) 
+        ? authHeader.Substring(7).Trim() 
+        : "";
+    var session = await db.Sessions.FirstOrDefaultAsync(s => s.Token == token && s.IsActive, ct);
+    var sessionId = session?.Id ?? "none";
+
+    await WriteAuditLogAsync(
+        db,
+        adminId ?? "system",
+        sessionId,
+        "USER_CREATED",
+        "USER",
+        user.Id,
+        "SUCCESS",
+        $"Tạo tài khoản mới: {user.Username} ({role.RoleCode})",
+        oldValue: "",
+        newValue: user.Username);
+
     return Results.Ok(new { id = user.Id, username = user.Username, fullName = user.FullName });
 }).RequireAuthorization();
 
@@ -365,6 +387,8 @@ app.MapDelete("/api/rbac/users/{id}", async (string id, KioskDbContext db, HttpC
     if (user.Username == "admin123")
         return Results.BadRequest(new { error = "Cannot delete the default super admin user" });
 
+    var deletedUsername = user.Username;
+
     db.Users.Remove(user);
     var uroles = await db.UserRoles.Where(ur => ur.UserId == id).ToListAsync(ct);
     db.UserRoles.RemoveRange(uroles);
@@ -372,7 +396,115 @@ app.MapDelete("/api/rbac/users/{id}", async (string id, KioskDbContext db, HttpC
     db.UserPermissions.RemoveRange(uperms);
 
     await db.SaveChangesAsync(ct);
+
+    // Audit user deletion
+    var adminId = ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    var authHeader = ctx.Request.Headers.Authorization.ToString();
+    var token = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) 
+        ? authHeader.Substring(7).Trim() 
+        : "";
+    var session = await db.Sessions.FirstOrDefaultAsync(s => s.Token == token && s.IsActive, ct);
+    var sessionId = session?.Id ?? "none";
+
+    await WriteAuditLogAsync(
+        db,
+        adminId ?? "system",
+        sessionId,
+        "USER_DELETED",
+        "USER",
+        id,
+        "SUCCESS",
+        $"Xóa tài khoản: {deletedUsername}",
+        oldValue: deletedUsername,
+        newValue: "");
+
     return Results.Ok();
+}).RequireAuthorization();
+
+app.MapPost("/api/rbac/users/{userId}/toggle-active", async (string userId, KioskDbContext db, HttpContext ctx, CancellationToken ct) =>
+{
+    var isSuper = ctx.User.HasClaim(c => c.Type == "permission" && c.Value == "SYSTEM_ADMIN");
+    if (!isSuper) return Results.Forbid();
+
+    var user = await db.Users.FindAsync([userId], ct);
+    if (user is null) return Results.NotFound();
+
+    if (user.Username == "admin123")
+        return Results.BadRequest(new { error = "Cannot modify the default super admin user" });
+
+    var oldVal = user.IsActive ? "ACTIVE" : "DISABLED";
+    if (user.IsActive)
+    {
+        user.Deactivate();
+    }
+    else
+    {
+        user.Activate();
+    }
+    await db.SaveChangesAsync(ct);
+
+    var newVal = user.IsActive ? "ACTIVE" : "DISABLED";
+    var action = user.IsActive ? "USER_ENABLED" : "USER_DISABLED";
+    var desc = user.IsActive ? "Kích hoạt lại tài khoản" : "Vô hiệu hóa tài khoản";
+
+    // Audit action
+    var adminId = ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    var authHeader = ctx.Request.Headers.Authorization.ToString();
+    var token = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) 
+        ? authHeader.Substring(7).Trim() 
+        : "";
+    var session = await db.Sessions.FirstOrDefaultAsync(s => s.Token == token && s.IsActive, ct);
+    var sessionId = session?.Id ?? "none";
+
+    await WriteAuditLogAsync(
+        db,
+        adminId ?? "system",
+        sessionId,
+        action,
+        "USER",
+        userId,
+        "SUCCESS",
+        $"{desc}: {user.Username}",
+        oldValue: oldVal,
+        newValue: newVal);
+
+    return Results.Ok(new { id = user.Id, username = user.Username, isActive = user.IsActive });
+}).RequireAuthorization();
+
+app.MapGet("/api/rbac/users/{userId}/audit-logs", async (string userId, KioskDbContext db, HttpContext ctx, CancellationToken ct) =>
+{
+    var isSuper = ctx.User.HasClaim(c => c.Type == "permission" && c.Value == "SYSTEM_ADMIN");
+    if (!isSuper) return Results.Forbid();
+
+    var logs = await db.AccessLogs
+        .Where(l => l.UserId == userId || (l.TargetType == "USER" && l.TargetId == userId))
+        .OrderByDescending(l => l.PerformedAt)
+        .ToListAsync(ct);
+
+    var result = logs.Select(l => {
+        object? detail = null;
+        if (!string.IsNullOrEmpty(l.DetailJson))
+        {
+            try
+            {
+                detail = System.Text.Json.JsonSerializer.Deserialize<object>(l.DetailJson);
+            }
+            catch {}
+        }
+        return new
+        {
+            id = l.Id,
+            userId = l.UserId,
+            actionName = l.ActionName,
+            targetType = l.TargetType,
+            targetId = l.TargetId,
+            result = l.Result,
+            performedAt = l.PerformedAt,
+            detail
+        };
+    }).ToList();
+
+    return Results.Ok(result);
 }).RequireAuthorization();
 
 app.MapPost("/api/rbac/users/{userId}/reset-password", async (

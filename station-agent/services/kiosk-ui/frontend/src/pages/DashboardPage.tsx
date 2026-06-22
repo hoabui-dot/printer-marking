@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useDashboard, ProductionRecord } from '@/hooks/useDashboard'
 import { useProductionRecords } from '@/hooks/useProductionRecords'
@@ -12,7 +13,8 @@ import {
   Users, LayoutDashboard, Key, Trash2, Plus,
   CheckCircle2, ShieldAlert, LogOut, UserCheck, Wifi, WifiOff,
   Flame, Cpu, Printer as PrinterIcon, Zap, Camera, Clock,
-  Filter, RefreshCw, History, Database
+  Filter, RefreshCw, History, Database,
+  Shield, User, UserX, MoreVertical
 } from 'lucide-react'
 
 // Common Components
@@ -160,6 +162,16 @@ export default function DashboardPage() {
   const [rbacError, setRbacError] = useState('')
   const [rbacSuccess, setRbacSuccess] = useState('')
 
+  // Action dropdown states
+  const [activeDropdownUserId, setActiveDropdownUserId] = useState<string | null>(null)
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null)
+  const [userToToggleActive, setUserToToggleActive] = useState<any | null>(null)
+
+  // Audit log timeline states
+  const [auditLogUser, setAuditLogUser] = useState<any | null>(null)
+  const [auditLogs, setAuditLogs] = useState<any[]>([])
+  const [isAuditLogsLoading, setIsAuditLogsLoading] = useState(false)
+
   // Password reset states
   const [resetPwdUser, setResetPwdUser] = useState<any | null>(null)
   const [newPasswordVal, setNewPasswordVal] = useState('')
@@ -239,6 +251,62 @@ export default function DashboardPage() {
     if (tab === 'rbac') fetchRbacData()
     if (tab === 'history' && canViewJobs) fetchHistory(historyPage, historyPageSize, historyFilters)
   }, [tab, currentUser, historyPage, historyFilters])
+
+  // Click outside handler for actions dropdown
+  useEffect(() => {
+    if (!activeDropdownUserId) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.user-actions-dropdown') && !target.closest('.portal-dropdown-content')) {
+        setActiveDropdownUserId(null);
+        setDropdownPosition(null);
+      }
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => document.removeEventListener('click', handleOutsideClick);
+  }, [activeDropdownUserId]);
+
+  // Close actions dropdown on page scroll or viewport resize
+  useEffect(() => {
+    if (!activeDropdownUserId) return;
+    const handleScrollOrResize = () => {
+      setActiveDropdownUserId(null);
+      setDropdownPosition(null);
+    };
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+    return () => {
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [activeDropdownUserId]);
+
+  const showAuditLogs = async (user: any) => {
+    setAuditLogUser(user)
+    setIsAuditLogsLoading(true)
+    try {
+      const res = await rbacApi.getUserAuditLogs(user.id)
+      setAuditLogs(res.data || [])
+    } catch (err) {
+      console.error('Failed to load audit logs', err)
+      setRbacError('Không thể tải nhật ký kiểm toán cho người dùng này.')
+    } finally {
+      setIsAuditLogsLoading(false)
+    }
+  }
+
+  const handleConfirmToggleActive = async () => {
+    if (!userToToggleActive) return
+    const { id: userId, username, isActive } = userToToggleActive
+    setUserToToggleActive(null); setRbacError(''); setRbacSuccess('')
+    try {
+      await rbacApi.toggleActive(userId)
+      setRbacSuccess(`${isActive ? 'Vô hiệu hóa' : 'Kích hoạt'} tài khoản "${username}" thành công.`)
+      fetchRbacData()
+    } catch (err: any) {
+      setRbacError(err.response?.data?.error || 'Cập nhật trạng thái tài khoản thất bại.')
+    }
+  }
 
   /* ── handlers ─────────────────────────────────────────── */
   const handleLogout = () => {
@@ -997,64 +1065,94 @@ export default function DashboardPage() {
                         <TableHead className="text-sm">Họ và tên</TableHead>
                         <TableHead className="text-sm">Vai trò</TableHead>
                         <TableHead className="text-sm">Quyền hạn</TableHead>
+                        <TableHead className="text-sm">Cập nhật lần cuối</TableHead>
                         <TableHead className="pr-4 text-right text-sm">Thao tác</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {users.map((u) => (
-                        <TableRow key={u.id}>
-                          <TableCell className="pl-4 font-bold text-sm">{u.username}</TableCell>
-                          <TableCell className="text-muted-fg text-sm">{u.fullName}</TableCell>
-                          <TableCell>
-                            <Badge variant={u.roles.includes('SUPER_ADMIN') ? 'admin' : 'member'} className="text-sm">
-                              {u.roles.map(translateRole).join(', ')}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1 max-w-[220px]">
+                      {users.map((u) => {
+                        const dateStr = u.updatedAt
+                          ? new Date(u.updatedAt).toLocaleString('vi-VN', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : '-'
+
+                        return (
+                          <TableRow key={u.id} className={!u.isActive ? 'opacity-60 bg-surface-2/10' : ''}>
+                            <TableCell className="pl-4 font-bold text-sm">
+                              <div className="flex items-center gap-2">
+                                <span>{u.username}</span>
+                                {!u.isActive && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-red-500/10 text-red-400 border border-red-500/20 uppercase tracking-wider">
+                                    Tạm khóa
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-muted-fg text-sm">{u.fullName}</TableCell>
+                            <TableCell>
                               {u.roles.includes('SUPER_ADMIN') ? (
-                                <span className="text-sm font-semibold text-indigo-500">
-                                  Tất cả (Mặc định)
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-orange-500/10 text-orange-500 border border-orange-500/20 uppercase tracking-wide">
+                                  <Shield className="h-3.5 w-3.5" />
+                                  Admin hệ thống
                                 </span>
                               ) : (
-                                <>
-                                  {u.directPermissions.length === 0 && (
-                                    <span className="text-sm italic text-subtle-fg">Xem công việc (Mặc định)</span>
-                                  )}
-                                  {u.directPermissions.map((p: string) => (
-                                    <PermissionBadge key={p} permission={p} className="text-xs" />
-                                  ))}
-                                </>
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-zinc-800 text-zinc-300 border border-zinc-700 uppercase tracking-wide">
+                                  <User className="h-3.5 w-3.5" />
+                                  Nhân viên
+                                </span>
                               )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="pr-4 text-right">
-                            <div className="flex gap-2 justify-end">
-                              {!u.roles.includes('SUPER_ADMIN') && (
-                                <>
-                                  <Button variant="outline" size="sm" onClick={() => startEditPermissions(u)}
-                                    className="h-8 gap-1 text-sm"
-                                  >
-                                    <Key className="h-3 w-3" /> Phân quyền
-                                  </Button>
-                                  <Button variant="outline" size="sm" onClick={() => startResetPassword(u)}
-                                    className="h-8 gap-1 text-sm text-amber-500 hover:text-amber-600 hover:bg-amber-500/10 border-amber-500/20"
-                                  >
-                                    <Key className="h-3 w-3" /> Đặt lại MK
-                                  </Button>
-                                </>
-                              )}
-                              {u.username !== PROTECTED_ADMIN_USERNAME && (
-                                <Button variant="destructive" size="sm" onClick={() => setUserToDelete(u)}
-                                  className="h-8 gap-1 text-sm"
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap gap-1 max-w-[220px]">
+                                {u.roles.includes('SUPER_ADMIN') ? (
+                                  <span className="text-xs font-bold text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">
+                                    Toàn quyền hệ thống
+                                  </span>
+                                ) : (
+                                  <>
+                                    {u.directPermissions.length === 0 && (
+                                      <span className="text-xs italic text-subtle-fg">Xem công việc (Mặc định)</span>
+                                    )}
+                                    {u.directPermissions.map((p: string) => (
+                                      <PermissionBadge key={p} permission={p} className="text-xs" />
+                                    ))}
+                                  </>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-muted-fg text-sm">{dateStr}</TableCell>
+                            <TableCell className="pr-4 text-right">
+                              <div className="relative inline-block text-left user-actions-dropdown">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (activeDropdownUserId === u.id) {
+                                      setActiveDropdownUserId(null);
+                                      setDropdownPosition(null);
+                                    } else {
+                                      setActiveDropdownUserId(u.id);
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      setDropdownPosition({
+                                        top: rect.bottom + window.scrollY + 6,
+                                        left: rect.right + window.scrollX - 208,
+                                      });
+                                    }
+                                  }}
+                                  className="inline-flex items-center justify-center h-10 w-10 rounded-lg hover:bg-surface-3 text-muted-fg hover:text-foreground transition-colors cursor-pointer border border-border-strong focus:outline-none focus:ring-2 focus:ring-primary"
+                                  aria-label={`Actions for ${u.username}`}
                                 >
-                                  <Trash2 className="h-3 w-3" /> Xóa
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                                  <MoreVertical className="h-5 w-5" />
+                                </button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
                     </TableBody>
                   </TableEl>
                 </div>
@@ -1640,7 +1738,7 @@ export default function DashboardPage() {
         <DialogContent className="w-[95vw] sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg">
-              <Key className="h-5 w-5 text-indigo-500" />
+              <Key className="h-5 w-5 text-primary" />
               Phân quyền trực tiếp
             </DialogTitle>
             <DialogDescription className="text-sm">
@@ -1649,32 +1747,57 @@ export default function DashboardPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-2 py-2 max-h-[55vh] overflow-y-auto pr-1">
-            {availablePermissions.map((p) => {
-              const isChecked = userPermDraft.includes(p.code)
+          <div className="space-y-4 py-2 max-h-[55vh] overflow-y-auto pr-1">
+            {[
+              {
+                title: 'Vận hành sản xuất',
+                codes: ['JOB_VIEW', 'JOB_REPROCESS']
+              },
+              {
+                title: 'Quản trị',
+                codes: ['USER_MANAGE']
+              },
+              {
+                title: 'Hệ thống',
+                codes: ['SYSTEM_ADMIN']
+              }
+            ].map((group) => {
+              const groupPerms = availablePermissions.filter(p => group.codes.includes(p.code));
+              if (groupPerms.length === 0) return null;
+              
               return (
-                <div
-                  key={p.code}
-                  onClick={() => handleTogglePermDraft(p.code)}
-                  className={[
-                    'flex items-start gap-3 rounded-lg border p-3 transition-colors cursor-pointer',
-                    isChecked
-                      ? 'border-primary/50 bg-indigo-500/5'
-                      : 'border-border hover:bg-surface-2',
-                  ].join(' ')}
-                >
-                  <Checkbox
-                    id={`perm-${p.code}`}
-                    checked={isChecked}
-                    onCheckedChange={() => { }}
-                    className="mt-0.5"
-                  />
-                  <div className="space-y-0.5">
-                    <p className="text-base font-semibold leading-none">{translatePermission(p.code)}</p>
-                    <p className="text-sm text-muted-fg">{p.description}</p>
+                <div key={group.title} className="space-y-2 border-b border-border pb-3 last:border-0 last:pb-0">
+                  <h4 className="text-xs font-bold text-primary uppercase tracking-wider">{group.title}</h4>
+                  <div className="space-y-2">
+                    {groupPerms.map((p) => {
+                      const isChecked = userPermDraft.includes(p.code);
+                      return (
+                        <div
+                          key={p.code}
+                          onClick={() => handleTogglePermDraft(p.code)}
+                          className={[
+                            'flex items-start gap-3 rounded-lg border p-3 transition-colors cursor-pointer',
+                            isChecked
+                              ? 'border-primary/50 bg-primary/5'
+                              : 'border-border hover:bg-surface-2',
+                          ].join(' ')}
+                        >
+                          <Checkbox
+                            id={`perm-${p.code}`}
+                            checked={isChecked}
+                            onCheckedChange={() => { }}
+                            className="mt-0.5"
+                          />
+                          <div className="space-y-0.5">
+                            <p className="text-base font-semibold leading-none">{translatePermission(p.code)}</p>
+                            <p className="text-sm text-muted-fg">{p.description}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-              )
+              );
             })}
           </div>
 
@@ -1692,8 +1815,25 @@ export default function DashboardPage() {
         open={!!userToDelete}
         title="Xác nhận xóa người dùng"
         description={`Bạn có chắc chắn muốn xóa tài khoản "${userToDelete?.username}"? Hành động này không thể hoàn tác.`}
+        confirmText="Xóa tài khoản"
+        confirmVariant="destructive"
         onConfirm={handleConfirmDeleteUser}
         onCancel={() => setUserToDelete(null)}
+      />
+
+      {/* ── CONFIRM: Toggle user active state ────────────── */}
+      <ConfirmDialog
+        open={!!userToToggleActive}
+        title={userToToggleActive?.isActive ? "Xác nhận vô hiệu hóa tài khoản" : "Xác nhận kích hoạt tài khoản"}
+        description={
+          userToToggleActive?.isActive
+            ? `Bạn có chắc chắn muốn vô hiệu hóa tài khoản "${userToToggleActive?.username}"? Người dùng này sẽ không thể đăng nhập vào kiosk.`
+            : `Bạn có chắc chắn muốn kích hoạt lại tài khoản "${userToToggleActive?.username}"?`
+        }
+        confirmText={userToToggleActive?.isActive ? "Vô hiệu hóa" : "Kích hoạt"}
+        confirmVariant={userToToggleActive?.isActive ? "destructive" : "success"}
+        onConfirm={handleConfirmToggleActive}
+        onCancel={() => setUserToToggleActive(null)}
       />
 
       {/* ── DIALOG: Reset Operator Password ────────── */}
@@ -1766,6 +1906,8 @@ export default function DashboardPage() {
         open={resetPwdConfirmOpen}
         title="Xác nhận đặt lại mật khẩu"
         description="Bạn sắp thay đổi mật khẩu của tài khoản này. Hành động này sẽ được ghi nhận vào nhật ký hệ thống. Bạn có muốn tiếp tục?"
+        confirmText="Đặt lại"
+        confirmVariant="success"
         onConfirm={handleConfirmResetPassword}
         onCancel={() => setResetPwdConfirmOpen(false)}
       />
@@ -1775,6 +1917,8 @@ export default function DashboardPage() {
         open={permConfirmOpen}
         title="Xác nhận cập nhật phân quyền"
         description="Bạn sắp thay đổi quyền trực tiếp của người dùng này. Hành động này sẽ được ghi nhận vào nhật ký hệ thống. Bạn có muốn tiếp tục?"
+        confirmText="Cập nhật"
+        confirmVariant="primary"
         onConfirm={handleConfirmSavePermissions}
         onCancel={() => setPermConfirmOpen(false)}
       />
@@ -1784,9 +1928,207 @@ export default function DashboardPage() {
         open={overrideConfirmOpen}
         title={overrideConfirmData?.title || 'Xác nhận hành động'}
         description={overrideConfirmData?.description || ''}
+        confirmText="Xác nhận"
+        confirmVariant="primary"
         onConfirm={handleConfirmTriggerReprint}
         onCancel={() => setOverrideConfirmOpen(false)}
       />
+
+      {/* ── DIALOG: Audit History Timeline ──────────────── */}
+      <Dialog open={!!auditLogUser} onOpenChange={(open) => { if (!open) setAuditLogUser(null) }}>
+        <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto bg-card border-border text-foreground">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <History className="h-5 w-5 text-primary" />
+              Lịch sử kiểm toán của {auditLogUser?.username}
+            </DialogTitle>
+            <DialogDescription className="text-sm">
+              Nhật ký các hoạt động bảo mật, đăng nhập, phân quyền, và các thao tác ghi đè thủ công của tài khoản này.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2 max-h-[60vh] overflow-y-auto pr-1">
+            {isAuditLogsLoading ? (
+              <div className="flex flex-col items-center justify-center py-10 text-muted-fg animate-pulse">
+                Đang tải nhật ký kiểm toán...
+              </div>
+            ) : auditLogs.length === 0 ? (
+              <div className="text-center py-10 text-muted-fg">
+                Không tìm thấy nhật ký kiểm toán nào cho người dùng này.
+              </div>
+            ) : (
+              <div className="relative pl-6 border-l-2 border-border-strong space-y-6 ml-3">
+                {auditLogs.map((log) => {
+                  const date = new Date(log.performedAt);
+                  const dateStr = date.toLocaleDateString('vi-VN');
+                  const timeStr = date.toLocaleTimeString('vi-VN');
+                  
+                  const isSuccess = log.result?.toUpperCase() === 'SUCCESS';
+                  const isFailed = log.result?.toUpperCase() === 'FAILED' || log.result?.toUpperCase() === 'DENIED';
+                  
+                  const detail = log.detail || {};
+                  const reasonText = detail.Reason || detail.reason || log.actionName || '';
+                  const oldValue = detail.OldValue || detail.oldValue;
+                  const newValue = detail.NewValue || detail.newValue;
+                  
+                  // Style based on action type
+                  let badgeColor = 'bg-primary/10 text-primary border-primary/20';
+                  if (log.actionName?.includes('DENIED') || log.actionName?.includes('FAILED')) {
+                    badgeColor = 'bg-red-500/10 text-red-400 border-red-500/20';
+                  } else if (log.actionName?.includes('SUCCESS') || log.actionName?.includes('ENABLED') || log.actionName?.includes('CREATED')) {
+                    badgeColor = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                  }
+
+                  return (
+                    <div key={log.id} className="relative group">
+                      {/* Timeline dot */}
+                      <span className={[
+                        'absolute -left-[31px] top-1.5 flex h-4 w-4 items-center justify-center rounded-full border bg-background transition-colors',
+                        isSuccess ? 'border-emerald-500 text-emerald-500' : isFailed ? 'border-red-500 text-red-500' : 'border-border'
+                      ].join(' ')}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${isSuccess ? 'bg-emerald-500' : isFailed ? 'bg-red-500' : 'bg-muted-fg'}`} />
+                      </span>
+                      
+                      <div className="bg-surface-2 hover:bg-surface-3 border border-border rounded-lg p-4 transition-colors space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${badgeColor}`}>
+                            {log.actionName}
+                          </span>
+                          <span className="text-xs text-muted-fg font-medium">
+                            {timeStr} - {dateStr}
+                          </span>
+                        </div>
+                        
+                        <p className="text-sm font-semibold text-foreground leading-relaxed">
+                          {reasonText}
+                        </p>
+                        
+                        {(oldValue !== undefined || newValue !== undefined) && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-border/50 text-xs">
+                            {oldValue !== undefined && oldValue !== '' && (
+                              <div>
+                                <span className="text-muted-fg font-medium block">Giá trị cũ:</span>
+                                <span className="font-mono bg-surface-3 px-1.5 py-0.5 rounded border border-border inline-block mt-0.5 max-w-full truncate">
+                                  {oldValue}
+                                </span>
+                              </div>
+                            )}
+                            {newValue !== undefined && newValue !== '' && (
+                              <div>
+                                <span className="text-muted-fg font-medium block">Giá trị mới:</span>
+                                <span className="font-mono bg-surface-3 px-1.5 py-0.5 rounded border border-border inline-block mt-0.5 max-w-full truncate text-primary font-bold">
+                                  {newValue}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-border">
+            <Button variant="outline" className="w-full text-sm font-bold" onClick={() => setAuditLogUser(null)}>
+              Đóng
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── PORTAL: User Actions Menu ───────────────────── */}
+      {activeDropdownUserId && dropdownPosition && (() => {
+        const u = users.find(user => user.id === activeDropdownUserId);
+        if (!u) return null;
+        return createPortal(
+          <div
+            className="absolute w-52 rounded-lg bg-surface-2 border border-border shadow-xl z-9999 p-1 divide-y divide-border text-left portal-dropdown-content"
+            style={{
+              top: `${dropdownPosition.top}px`,
+              left: `${dropdownPosition.left}px`,
+            }}
+          >
+            <div className="py-1">
+              <button
+                onClick={() => {
+                  setActiveDropdownUserId(null);
+                  setDropdownPosition(null);
+                  startEditPermissions(u);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-surface-3 hover:text-primary rounded-md transition-colors cursor-pointer text-left font-medium"
+              >
+                <ShieldAlert className="h-4 w-4 text-primary" />
+                <span>Phân quyền</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveDropdownUserId(null);
+                  setDropdownPosition(null);
+                  startResetPassword(u);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-surface-3 hover:text-primary rounded-md transition-colors cursor-pointer text-left font-medium"
+              >
+                <Key className="h-4 w-4 text-amber-500" />
+                <span>Đặt lại mật khẩu</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveDropdownUserId(null);
+                  setDropdownPosition(null);
+                  showAuditLogs(u);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-surface-3 hover:text-primary rounded-md transition-colors cursor-pointer text-left font-medium"
+              >
+                <History className="h-4 w-4 text-primary" />
+                <span>Lịch sử kiểm toán</span>
+              </button>
+            </div>
+
+            {u.username !== PROTECTED_ADMIN_USERNAME && (
+              <div className="py-1">
+                <button
+                  onClick={() => {
+                    setActiveDropdownUserId(null);
+                    setDropdownPosition(null);
+                    setUserToToggleActive(u);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-surface-3 rounded-md transition-colors cursor-pointer text-left font-medium"
+                >
+                  {u.isActive ? (
+                    <>
+                      <UserX className="h-4 w-4 text-red-400" />
+                      <span className="text-red-400">Vô hiệu hóa</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserCheck className="h-4 w-4 text-emerald-400" />
+                      <span className="text-emerald-400">Kích hoạt</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveDropdownUserId(null);
+                    setDropdownPosition(null);
+                    setUserToDelete(u);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-500 hover:bg-red-500/10 font-bold rounded-md transition-colors cursor-pointer text-left"
+                >
+                  <Trash2 className="h-4 w-4 text-red-500" />
+                  <span>Xóa tài khoản</span>
+                </button>
+              </div>
+            )}
+          </div>,
+          document.body
+        );
+      })()}
     </div>
   )
 }

@@ -41,7 +41,9 @@ export const rbacApi = {
   updateUserPermissions: (userId: string, permissionCodes: string[]) =>
     client.post(`/rbac/users/${userId}/permissions`, { permissionCodes }),
   resetPassword: (userId: string, data: { password?: string; reason: string }) =>
-    client.post(`/rbac/users/${userId}/reset-password`, data)
+    client.post(`/rbac/users/${userId}/reset-password`, data),
+  toggleActive: (userId: string) => client.post(`/rbac/users/${userId}/toggle-active`),
+  getUserAuditLogs: (userId: string) => client.get<any[]>(`/rbac/users/${userId}/audit-logs`)
 }
 
 export const jobsApi = {

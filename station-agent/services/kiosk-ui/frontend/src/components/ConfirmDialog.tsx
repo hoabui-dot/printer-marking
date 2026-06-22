@@ -15,6 +15,9 @@ export interface ConfirmDialogProps {
   description: string
   onConfirm: () => void
   onCancel: () => void
+  confirmText?: string
+  cancelText?: string
+  confirmVariant?: 'destructive' | 'primary' | 'success'
 }
 
 export function ConfirmDialog({
@@ -23,7 +26,16 @@ export function ConfirmDialog({
   description,
   onConfirm,
   onCancel,
+  confirmText = 'Xác nhận',
+  cancelText = 'Hủy bỏ',
+  confirmVariant = 'destructive',
 }: ConfirmDialogProps) {
+  const btnClass = confirmVariant === 'destructive'
+    ? 'bg-red-600 hover:bg-red-700 text-white font-bold'
+    : confirmVariant === 'success'
+    ? 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold'
+    : 'bg-primary hover:bg-brand-dark text-white font-bold'
+
   return (
     <AlertDialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onCancel() }}>
       <AlertDialogContent>
@@ -32,9 +44,9 @@ export function ConfirmDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onCancel}>Hủy bỏ</AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm} className="bg-red-600 hover:bg-red-700 text-white">
-            Xác nhận
+          <AlertDialogCancel onClick={onCancel}>{cancelText}</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm} className={btnClass}>
+            {confirmText}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
