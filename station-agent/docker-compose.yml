@@ -10,7 +10,7 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes --requirepass "${REDIS_PASSWORD:-changeme}"
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis-data:/data
     networks:
@@ -26,8 +26,8 @@ services:
     container_name: station-rabbitmq
     restart: unless-stopped
     ports:
-      - "5672:5672"
-      - "15672:15672"   # Management UI
+      - "5673:5672"
+      - "15673:15672"   # Management UI
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
@@ -66,7 +66,7 @@ services:
       - Mqtt__UseTls=${MQTT_USE_TLS:-false}
       - Mqtt__Username=${MQTT_USERNAME:-}
       - Mqtt__Password=${MQTT_PASSWORD:-}
-      - Mqtt__SubscribeTopics__0=station/${STATION_ID:-STATION-01}/job/create
+      - Mqtt__SubscribeTopics__0=nd/+/+/command
       - RabbitMq__Host=rabbitmq
       - RabbitMq__Port=5672
       - RabbitMq__Username=${RABBITMQ_USER:-guest}
@@ -174,12 +174,20 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     ports:
       - "5004:5004"
     environment:
       - STATION_ID=${STATION_ID:-STATION-01}
       - REDIS_CONNECTION_STRING=redis:6379,password=${REDIS_PASSWORD:-changeme}
       - SQLITE_LASER_PATH=/data/laser.db
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Port=5672
+      - RabbitMq__Username=${RABBITMQ_USER:-guest}
+      - RabbitMq__Password=${RABBITMQ_PASS:-guest}
+      - RabbitMq__VirtualHost=/
+      - RabbitMq__DefaultExchange=station.events
       - ASPNETCORE_ENVIRONMENT=Production
     volumes:
       - ./sqlite-databases:/data
@@ -257,6 +265,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     ports:
       - "5007:5007"
     environment:
@@ -268,6 +278,15 @@ services:
       - Jwt__Audience=${JWT_AUDIENCE:-nd-kiosk}
       - Jwt__ExpiryMinutes=${JWT_EXPIRY_MINUTES:-480}
       - ASPNETCORE_ENVIRONMENT=Production
+      - JOB_ENGINE_HOST=${JOB_ENGINE_HOST:-job-engine}
+      - JOB_ENGINE_PORT=${JOB_ENGINE_PORT:-5002}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5007,http://192.168.1.87:5007,http://localhost:5222,http://192.168.1.87:5222,http://localhost:3000}
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Port=5672
+      - RabbitMq__Username=${RABBITMQ_USER:-guest}
+      - RabbitMq__Password=${RABBITMQ_PASS:-guest}
+      - RabbitMq__VirtualHost=/
+      - RabbitMq__DefaultExchange=station.events
     volumes:
       - ./sqlite-databases:/data
       - kiosk-logs:/logs
@@ -294,6 +313,8 @@ services:
       - ConnectionStrings__Sqlite=Data Source=/data/device-simulator.db
       - ConnectionStrings__Redis=redis:6379,password=${REDIS_PASSWORD:-changeme}
       - ASPNETCORE_ENVIRONMENT=Production
+      - SIMULATOR_MQTT_HOST=${MQTT_BROKER_HOST:-mosquitto}
+      - SIMULATOR_MQTT_PORT=${MQTT_BROKER_PORT:-1883}
     volumes:
       - ./sqlite-databases:/data
       - device-simulator-logs:/app/logs
@@ -343,6 +364,23 @@ services:
       timeout: 5s
       retries: 3
 
+  # ─────────────────────────────────────────────
+  # MQTT Broker (eclipse-mosquitto)
+  # ─────────────────────────────────────────────
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: station-mqtt-broker
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+    entrypoint: >
+      sh -c "mkdir -p /mosquitto/config && echo 'listener 1883 0.0.0.0' > /mosquitto/config/mosquitto.conf && echo 'allow_anonymous true' >> /mosquitto/config/mosquitto.conf && exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf"
+    networks:
+      - station-net
+
 # ─────────────────────────────────────────────
 # Volumes
 # ─────────────────────────────────────────────
@@ -359,6 +397,8 @@ volumes:
   kiosk-logs:
   device-simulator-logs:
   projection-logs:
+  mosquitto-data:
+  mosquitto-log:
 
 # ─────────────────────────────────────────────
 # Networks
