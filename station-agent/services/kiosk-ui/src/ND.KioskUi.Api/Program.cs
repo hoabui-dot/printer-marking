@@ -15,6 +15,7 @@ using ND.KioskUi.Infrastructure.DependencyInjection;
 using ND.KioskUi.Application.Options;
 using ND.KioskUi.Infrastructure.Persistence;
 using Serilog;
+using Yarp.ReverseProxy.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -78,6 +79,37 @@ builder.Services.AddCors(opts =>
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
+
+// Reverse Proxy to Projection Service
+var projectionServiceUrl = Environment.GetEnvironmentVariable("PROJECTION_SERVICE_URL") ?? "http://localhost:5009";
+builder.Services.AddReverseProxy()
+    .LoadFromMemory(
+        new[]
+        {
+            new RouteConfig
+            {
+                RouteId = "projection-api",
+                ClusterId = "projection-cluster",
+                Match = new RouteMatch { Path = "/api/projection/{**catch-all}" }
+            },
+            new RouteConfig
+            {
+                RouteId = "projection-hub",
+                ClusterId = "projection-cluster",
+                Match = new RouteMatch { Path = "/hubs/production/{**catch-all}" }
+            }
+        },
+        new[]
+        {
+            new ClusterConfig
+            {
+                ClusterId = "projection-cluster",
+                Destinations = new Dictionary<string, DestinationConfig>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { "destination1", new DestinationConfig { Address = projectionServiceUrl } }
+                }
+            }
+        });
 
 var app = builder.Build();
 
@@ -265,6 +297,8 @@ if (app.Environment.IsDevelopment())
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapReverseProxy();
 
 // Endpoints
 app.MapPost("/api/auth/login", async (

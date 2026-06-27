@@ -96,6 +96,7 @@ try
         p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
     builder.Services.AddOpenApi();
+    builder.Services.AddHttpClient();
 
     var app = builder.Build();
 
@@ -817,6 +818,95 @@ try
     {
         var conns = await db.SystemConnections.ToListAsync();
         return Results.Ok(conns.Select(c => new ConnectionStatusDto(c.ConnectionName, c.Status, c.Detail, c.CheckedAt)));
+    });
+
+    // ── Test Console Reset ───────────────────────────────────────────────────
+    // Resets all virtual devices to online state for a clean test run
+    app.MapPost("/api/test/reset", async (
+        VirtualPrinterServer printer,
+        VirtualLaserServer laser,
+        VirtualFactoryGateway gateway,
+        ISimulatorStateService state,
+        Microsoft.AspNetCore.SignalR.IHubContext<ND.DeviceSimulator.Infrastructure.Hubs.SimulatorHub, ND.DeviceSimulator.Application.Abstractions.ISimulatorClient> hub) =>
+    {
+        try
+        {
+            await printer.ConnectPrinterAsync();
+            await laser.ConnectLaserAsync();
+            state.SetVisionOnline(true);
+
+            // Ensure gateway is connected
+            if (!state.GetStatus().Gateway.Connected)
+            {
+                await gateway.ConnectGatewayAsync();
+            }
+
+            await hub.Clients.All.SimulatorStatusUpdated(state.GetStatus());
+            return Results.Ok(new { status = "reset", message = "All devices restored to online state" });
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    });
+
+    // ── Kiosk UI Service Proxy for Auth & RBAC ────────────────────────────────
+    var kioskUrl = builder.Configuration["KIOSK_URL"] ?? "http://kiosk-ui:5007";
+
+    async Task ProxyToKioskAsync(HttpContext context, string targetUrl, HttpClient client)
+    {
+        var request = new HttpRequestMessage(new HttpMethod(context.Request.Method), targetUrl);
+
+        if (HttpMethods.IsPost(context.Request.Method) || 
+            HttpMethods.IsPut(context.Request.Method) || 
+            HttpMethods.IsDelete(context.Request.Method))
+        {
+            context.Request.EnableBuffering();
+            var stream = new StreamReader(context.Request.Body);
+            var bodyText = await stream.ReadToEndAsync();
+            if (!string.IsNullOrEmpty(bodyText))
+            {
+                request.Content = new StringContent(bodyText, System.Text.Encoding.UTF8, "application/json");
+            }
+        }
+
+        foreach (var header in context.Request.Headers)
+        {
+            if (!header.Key.StartsWith("Content-", StringComparison.OrdinalIgnoreCase))
+            {
+                request.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+            }
+        }
+
+        try
+        {
+            var response = await client.SendAsync(request);
+            var content = await response.Content.ReadAsStringAsync();
+            context.Response.StatusCode = (int)response.StatusCode;
+            context.Response.ContentType = response.Content.Headers.ContentType?.ToString() ?? "application/json";
+            await context.Response.WriteAsync(content);
+        }
+        catch (Exception ex)
+        {
+            context.Response.StatusCode = 502;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new { error = $"Kiosk Proxy failed: {ex.Message}" });
+        }
+    }
+
+    app.MapPost("/api/auth/login", async (HttpContext context, HttpClient client) =>
+    {
+        await ProxyToKioskAsync(context, $"{kioskUrl}/api/auth/login", client);
+    });
+
+    app.Map("/api/rbac/{*path}", async (string? path, HttpContext context, HttpClient client) =>
+    {
+        var targetUrl = $"{kioskUrl}/api/rbac/{path}";
+        if (context.Request.QueryString.HasValue)
+        {
+            targetUrl += context.Request.QueryString.Value;
+        }
+        await ProxyToKioskAsync(context, targetUrl, client);
     });
 
     app.MapFallbackToFile("index.html");

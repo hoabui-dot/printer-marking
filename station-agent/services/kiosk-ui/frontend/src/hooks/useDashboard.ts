@@ -50,9 +50,8 @@ export function useDashboard(stationId: string) {
   const [todayRecords, setTodayRecords] = useState<ProductionRecord[]>([])
   const [isConnected, setIsConnected] = useState(false)
 
-  // Resolve absolute API / Hub URLs for the projection service running on port 5009
-  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  const baseUrl = import.meta.env.VITE_PROJECTION_URL || (isDev ? 'http://localhost:5009' : `${window.location.protocol}//${window.location.hostname}:5009`);
+  // Resolve absolute API / Hub URLs for the projection service proxy (routing through Kiosk UI backend)
+  const baseUrl = import.meta.env.VITE_PROJECTION_URL || `${window.location.protocol}//${window.location.host}`;
 
   useEffect(() => {
     // 1. Initial REST fetch from projection service

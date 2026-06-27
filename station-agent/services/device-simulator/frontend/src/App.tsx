@@ -10,10 +10,20 @@ import JobsPanel from './components/JobsPanel'
 import ConnectionPanel from './components/ConnectionPanel'
 import EnvPanel from './components/EnvPanel'
 import GatewayConsole from './components/GatewayConsole'
-import { useState, useEffect } from 'react'
+import TestConsolePanel from './components/TestConsolePanel'
+import { useState, useEffect, useRef } from 'react'
 import type { ConfigValue } from './types'
 
-type Tab = 'devices' | 'gateway' | 'jobs' | 'env'
+type Tab = 'devices' | 'gateway' | 'jobs' | 'env' | 'tests'
+type Lang = 'en' | 'vi'
+
+const TAB_LABELS: Record<Tab, { en: string; vi: string }> = {
+  devices:  { en: 'Virtual Devices',           vi: 'Thiết bị ảo' },
+  gateway:  { en: 'Factory Gateway',           vi: 'Cổng nhà máy' },
+  jobs:     { en: 'Production History',        vi: 'Lịch sử gia công' },
+  env:      { en: 'Environment Config',        vi: 'Cấu hình môi trường' },
+  tests:    { en: 'Test Console',              vi: 'Kiểm tra hệ thống' },
+}
 
 export default function App() {
   const { status, timeline, connected } = useSimulator()
@@ -23,7 +33,16 @@ export default function App() {
   const gatewayEvents = useGatewayEvents()
   const connections = useConnections()
   const [tab, setTab] = useState<Tab>('devices')
+  const [lang, setLang] = useState<Lang>('en')
   const [configValues, setConfigValues] = useState<ConfigValue[]>([])
+  const signalREventCountRef = useRef(0)
+  const [signalREventCount, setSignalREventCount] = useState(0)
+
+  // Track SignalR events for the test runner
+  useEffect(() => {
+    signalREventCountRef.current += 1
+    setSignalREventCount(signalREventCountRef.current)
+  }, [timeline])
 
   const fetchConfig = () => {
     fetch('/api/config')
@@ -56,12 +75,30 @@ export default function App() {
   return (
     <div className="min-h-screen p-4 bg-gray-950 text-gray-100">
       {/* Header */}
-      <header className="flex items-center justify-between mb-5 pb-4 border-b border-gray-850">
+      <header className="flex items-center justify-between mb-5 pb-4 border-b border-gray-800">
         <div>
           <h1 className="text-xl font-bold text-white tracking-tight">Device Simulator</h1>
-          <p className="text-xs text-gray-500">Virtual factory environment — 5 devices auto-running</p>
+          <p className="text-xs text-gray-500">
+            {lang === 'en' ? 'Virtual factory environment — 5 devices auto-running' : 'Môi trường nhà máy ảo — 5 thiết bị tự động'}
+          </p>
         </div>
         <div className="flex items-center gap-3 text-xs">
+          {/* Language toggle */}
+          <div className="flex items-center bg-gray-900 border border-gray-800 rounded-full p-0.5 gap-0.5">
+            <button
+              onClick={() => setLang('en')}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${lang === 'en' ? 'bg-indigo-700 text-white' : 'text-gray-400 hover:text-white'}`}
+            >
+              EN
+            </button>
+            <button
+              onClick={() => setLang('vi')}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${lang === 'vi' ? 'bg-indigo-700 text-white' : 'text-gray-400 hover:text-white'}`}
+            >
+              VI
+            </button>
+          </div>
+
           <div className="flex items-center gap-1.5 bg-gray-900 border border-gray-800 rounded-full px-3 py-1">
             <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
             <span className="text-gray-400 font-mono">{connected ? 'SignalR Live' : 'Disconnected'}</span>
@@ -94,20 +131,16 @@ export default function App() {
         {/* Main */}
         <main className="flex-1 min-w-0">
           {/* Tabs */}
-          <div className="flex gap-1 mb-4 border-b border-gray-850">
-            {(['devices', 'gateway', 'jobs', 'env'] as Tab[]).map(t => (
+          <div className="flex gap-1 mb-4 border-b border-gray-800 overflow-x-auto">
+            {(['devices', 'gateway', 'jobs', 'env', 'tests'] as Tab[]).map(t => (
               <button key={t} onClick={() => setTab(t)}
-                className={`px-4 py-2 text-xs font-semibold rounded-t transition-all border-t border-x -mb-[1px]
+                className={`px-4 py-2 text-xs font-semibold rounded-t transition-all border-t border-x -mb-[1px] whitespace-nowrap
                   ${tab === t
                     ? 'bg-gray-900 text-white border-gray-800 border-b-gray-900'
-                    : 'text-gray-500 hover:text-gray-300 border-transparent hover:bg-gray-900/50'}`}>
-                {t === 'jobs'
-                  ? `Lịch sử gia công`
-                  : t === 'gateway'
-                  ? 'Factory Gateway (MQTT)'
-                  : t === 'devices'
-                  ? 'Virtual Devices'
-                  : 'Environment Config'}
+                    : 'text-gray-500 hover:text-gray-300 border-transparent hover:bg-gray-900/50'}
+                  ${t === 'tests' ? 'text-indigo-400 hover:text-indigo-300' : ''}`}>
+                {t === 'tests' ? '🧪 ' : ''}
+                {lang === 'en' ? TAB_LABELS[t].en : TAB_LABELS[t].vi}
               </button>
             ))}
           </div>
@@ -127,7 +160,7 @@ export default function App() {
 
           {tab === 'devices' && !status && (
             <div className="flex items-center justify-center h-48 text-gray-500 text-sm font-medium animate-pulse">
-              Connecting to virtual devices…
+              {lang === 'en' ? 'Connecting to virtual devices…' : 'Đang kết nối thiết bị ảo…'}
             </div>
           )}
 
@@ -142,9 +175,16 @@ export default function App() {
               <EnvPanel />
             </div>
           )}
+
+          {tab === 'tests' && (
+            <TestConsolePanel
+              signalRConnected={connected}
+              signalREventCount={signalREventCount}
+              lang={lang}
+            />
+          )}
         </main>
       </div>
     </div>
   )
 }
-

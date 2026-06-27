@@ -116,7 +116,7 @@ services:
     networks:
       - station-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5002/health"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/5002 && printf 'GET /health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'healthy' <&3"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -182,6 +182,8 @@ services:
       - STATION_ID=${STATION_ID:-STATION-01}
       - REDIS_CONNECTION_STRING=redis:6379,password=${REDIS_PASSWORD:-changeme}
       - SQLITE_LASER_PATH=/data/laser.db
+      - Laser__Host=device-simulator
+      - Laser__Port=8901
       - RabbitMq__Host=rabbitmq
       - RabbitMq__Port=5672
       - RabbitMq__Username=${RABBITMQ_USER:-guest}
@@ -251,7 +253,7 @@ services:
     networks:
       - station-net
 
-  # ─────────────────────────────────────────────
+  # ───────────────────────────────────────1──────
   # 7. Kiosk UI
   # ─────────────────────────────────────────────
   kiosk-ui:
@@ -278,6 +280,7 @@ services:
       - Jwt__Audience=${JWT_AUDIENCE:-nd-kiosk}
       - Jwt__ExpiryMinutes=${JWT_EXPIRY_MINUTES:-480}
       - ASPNETCORE_ENVIRONMENT=Production
+      - PROJECTION_SERVICE_URL=http://projection-service:5009
       - JOB_ENGINE_HOST=${JOB_ENGINE_HOST:-job-engine}
       - JOB_ENGINE_PORT=${JOB_ENGINE_PORT:-5002}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5007,http://192.168.1.87:5007,http://localhost:5222,http://192.168.1.87:5222,http://localhost:3000}
@@ -321,7 +324,7 @@ services:
     networks:
       - station-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'healthy' <&3"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -359,7 +362,7 @@ services:
     networks:
       - station-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5009/health"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/5009 && printf 'GET /health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'healthy' <&3"]
       interval: 15s
       timeout: 5s
       retries: 3

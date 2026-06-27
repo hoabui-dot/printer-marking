@@ -23,8 +23,8 @@ export function useProductionRecords() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  const baseUrl = import.meta.env.VITE_PROJECTION_URL || (isDev ? 'http://localhost:5009' : `${window.location.protocol}//${window.location.hostname}:5009`);
+  // Resolve absolute API / Hub URLs for the projection service proxy (routing through Kiosk UI backend)
+  const baseUrl = import.meta.env.VITE_PROJECTION_URL || `${window.location.protocol}//${window.location.host}`;
 
   const fetchHistory = useCallback(async (
     page: number,
