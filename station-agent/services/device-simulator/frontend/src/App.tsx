@@ -11,18 +11,20 @@ import ConnectionPanel from './components/ConnectionPanel'
 import EnvPanel from './components/EnvPanel'
 import GatewayConsole from './components/GatewayConsole'
 import TestConsolePanel from './components/TestConsolePanel'
+import ZebraLabelStudio from './components/ZebraLabelStudio'
 import { useState, useEffect, useRef } from 'react'
 import type { ConfigValue } from './types'
 
-type Tab = 'devices' | 'gateway' | 'jobs' | 'env' | 'tests'
+type Tab = 'devices' | 'gateway' | 'jobs' | 'env' | 'tests' | 'label-studio'
 type Lang = 'en' | 'vi'
 
 const TAB_LABELS: Record<Tab, { en: string; vi: string }> = {
-  devices:  { en: 'Virtual Devices',           vi: 'Thiết bị ảo' },
-  gateway:  { en: 'Factory Gateway',           vi: 'Cổng nhà máy' },
-  jobs:     { en: 'Production History',        vi: 'Lịch sử gia công' },
-  env:      { en: 'Environment Config',        vi: 'Cấu hình môi trường' },
-  tests:    { en: 'Test Console',              vi: 'Kiểm tra hệ thống' },
+  devices:      { en: 'Virtual Devices',      vi: 'Thiết bị ảo' },
+  gateway:      { en: 'Factory Gateway',      vi: 'Cổng nhà máy' },
+  jobs:         { en: 'Production History',   vi: 'Lịch sử gia công' },
+  env:          { en: 'Environment Config',   vi: 'Cấu hình môi trường' },
+  tests:        { en: 'Test Console',         vi: 'Kiểm tra hệ thống' },
+  'label-studio': { en: 'Zebra Label Studio', vi: 'Zebra Label Studio' },
 }
 
 export default function App() {
@@ -132,14 +134,15 @@ export default function App() {
         <main className="flex-1 min-w-0">
           {/* Tabs */}
           <div className="flex gap-1 mb-4 border-b border-gray-800 overflow-x-auto">
-            {(['devices', 'gateway', 'jobs', 'env', 'tests'] as Tab[]).map(t => (
+            {(['devices', 'gateway', 'jobs', 'env', 'tests', 'label-studio'] as Tab[]).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className={`px-4 py-2 text-xs font-semibold rounded-t transition-all border-t border-x -mb-[1px] whitespace-nowrap
                   ${tab === t
                     ? 'bg-gray-900 text-white border-gray-800 border-b-gray-900'
                     : 'text-gray-500 hover:text-gray-300 border-transparent hover:bg-gray-900/50'}
-                  ${t === 'tests' ? 'text-indigo-400 hover:text-indigo-300' : ''}`}>
-                {t === 'tests' ? '🧪 ' : ''}
+                  ${t === 'tests' ? 'text-indigo-400 hover:text-indigo-300' : ''}
+                  ${t === 'label-studio' ? 'text-yellow-400 hover:text-yellow-300' : ''}`}>
+                {t === 'tests' ? '🧪 ' : t === 'label-studio' ? '🦓 ' : ''}
                 {lang === 'en' ? TAB_LABELS[t].en : TAB_LABELS[t].vi}
               </button>
             ))}
@@ -182,6 +185,10 @@ export default function App() {
               signalREventCount={signalREventCount}
               lang={lang}
             />
+          )}
+
+          {tab === 'label-studio' && (
+            <ZebraLabelStudio />
           )}
         </main>
       </div>

@@ -236,6 +236,29 @@ try
         return Results.Ok(new { status = "disconnected" });
     });
 
+    // GET /api/printer/mode — returns current simulator failure mode
+    app.MapGet("/api/printer/mode", (VirtualPrinterServer printer) =>
+        Results.Ok(new
+        {
+            mode = (int)printer.SimulatorMode,
+            modeName = printer.SimulatorMode.ToString(),
+            availableModes = Enum.GetValues<ND.DeviceSimulator.Infrastructure.VirtualDevices.PrinterSimulatorMode>()
+                .Select(m => new { value = (int)m, name = m.ToString() })
+        }));
+
+    // POST /api/printer/mode — set simulator failure mode
+    // Body: { "mode": 3 }  (0=Success, 1=PrinterBusy, 2=Offline, 3=PaperOut, 4=RibbonOut,
+    //                        5=HeadOpen, 6=InvalidZpl, 7=InvalidBarcode, 8=TcpTimeout,
+    //                        9=TcpConnectionRefused, 10=MemoryFull)
+    app.MapPost("/api/printer/mode", (SetPrinterModeRequest req, VirtualPrinterServer printer) =>
+    {
+        if (!Enum.IsDefined(typeof(ND.DeviceSimulator.Infrastructure.VirtualDevices.PrinterSimulatorMode), req.Mode))
+            return Results.BadRequest(new { error = $"Invalid mode value: {req.Mode}. Valid range: 0-10" });
+
+        printer.SimulatorMode = (ND.DeviceSimulator.Infrastructure.VirtualDevices.PrinterSimulatorMode)req.Mode;
+        return Results.Ok(new { mode = req.Mode, modeName = printer.SimulatorMode.ToString() });
+    });
+
     // ── Laser Connect/Disconnect ─────────────────────────────────────────────
     app.MapPost("/api/laser/connect", async (VirtualLaserServer laser) =>
     {
@@ -909,6 +932,71 @@ try
         await ProxyToKioskAsync(context, targetUrl, client);
     });
 
+    // ── Printer Adapter Service Proxy for Label Templates & Print History ─────
+    var printerAdapterUrl = builder.Configuration["PRINTER_ADAPTER_URL"] ?? "http://printer-adapter:5003";
+
+    async Task ProxyToPrinterAdapterAsync(HttpContext context, string targetUrl, HttpClient client)
+    {
+        var request = new HttpRequestMessage(new HttpMethod(context.Request.Method), targetUrl);
+
+        if (HttpMethods.IsPost(context.Request.Method) || 
+            HttpMethods.IsPut(context.Request.Method) || 
+            HttpMethods.IsDelete(context.Request.Method))
+        {
+            context.Request.EnableBuffering();
+            var stream = new StreamReader(context.Request.Body);
+            var bodyText = await stream.ReadToEndAsync();
+            if (!string.IsNullOrEmpty(bodyText))
+            {
+                request.Content = new StringContent(bodyText, System.Text.Encoding.UTF8, "application/json");
+            }
+        }
+
+        foreach (var header in context.Request.Headers)
+        {
+            if (!header.Key.StartsWith("Content-", StringComparison.OrdinalIgnoreCase))
+            {
+                request.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+            }
+        }
+
+        try
+        {
+            var response = await client.SendAsync(request);
+            var content = await response.Content.ReadAsStringAsync();
+            context.Response.StatusCode = (int)response.StatusCode;
+            context.Response.ContentType = response.Content.Headers.ContentType?.ToString() ?? "application/json";
+            await context.Response.WriteAsync(content);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Printer Adapter Proxy failed: {TargetUrl}", targetUrl);
+            context.Response.StatusCode = 502;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new { error = $"Printer Adapter Proxy failed: {ex.Message}" });
+        }
+    }
+
+    app.Map("/api/label-templates/{*path}", async (string? path, HttpContext context, HttpClient client) =>
+    {
+        var targetUrl = $"{printerAdapterUrl}/api/label-templates" + (string.IsNullOrEmpty(path) ? "" : $"/{path}");
+        if (context.Request.QueryString.HasValue)
+        {
+            targetUrl += context.Request.QueryString.Value;
+        }
+        await ProxyToPrinterAdapterAsync(context, targetUrl, client);
+    });
+
+    app.Map("/api/print-history/{*path}", async (string? path, HttpContext context, HttpClient client) =>
+    {
+        var targetUrl = $"{printerAdapterUrl}/api/print-history" + (string.IsNullOrEmpty(path) ? "" : $"/{path}");
+        if (context.Request.QueryString.HasValue)
+        {
+            targetUrl += context.Request.QueryString.Value;
+        }
+        await ProxyToPrinterAdapterAsync(context, targetUrl, client);
+    });
+
     app.MapFallbackToFile("index.html");
 
     await app.RunAsync();
@@ -926,5 +1014,7 @@ finally
 return 0;
 
 public record TriggerJobRequest(string? Scenario);
+
+public record SetPrinterModeRequest(int Mode);
 
 public partial class Program { }
