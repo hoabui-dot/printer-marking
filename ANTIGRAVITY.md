@@ -56,6 +56,9 @@ All backend services follow Clean Architecture layers:
 - `printer_printers`: List of print devices, IPs, vendor protocols (ZPL/TSPL), and health status.
 - `printer_jobs`: Log of rendered label contents and print job status.
 - `printer_events`: Incidents (out of paper, cover open, disconnects).
+- `label_templates`: List of design label templates in JSON format.
+- `label_template_versions`: Immutable snapshots of historical label template versions.
+- `print_history`: Detailed audit log of print executions including ZPL, hex TCP dumps, trace/correlation IDs, duration, retries, and errors.
 
 ### 4.4. `laser.db` (Laser Adapter)
 - `laser_lasers`: Registered laser marking machines and connection settings (TCP/SDK).
@@ -102,3 +105,15 @@ dotnet run
 - All packages are configured in `Directory.Packages.props` at the root of `station-agent`.
 - **Never** add package versions inside individual `.csproj` files. Use `<PackageReference Include="PackageName" />` only.
 - In case of transitive native library vulnerability warnings (e.g. `SQLitePCLRaw`), use `NuGetAuditMode=direct` in `Directory.Build.props` to restrict auditing to direct dependencies.
+
+---
+
+## 6. Current Deployment Configuration
+- **Server IP Address**:
+  - Private LAN IP: `192.168.1.87`
+  - Tailscale VPN IP: `100.68.50.41`
+- **Cloudflare Tunnel Routing**:
+  - Systemd Service: [simulator-frontend.service](file:///etc/systemd/system/simulator-frontend.service) runs `cloudflared tunnel --url http://localhost:5008`.
+  - Exposes the visual Device Simulator dashboard at: `https://renaissance-inform-ensemble-wiley.trycloudflare.com`
+- **Proxy/Gateway Routing**:
+  - The `device-simulator` backend (port `5008`) acts as a reverse-proxy forwarding `/api/label-templates/{*path}` and `/api/print-history/{*path}` to the `printer-adapter` service (port `5003`). This ensures that the frontend running behind a Cloudflare tunnel URL can access printer templates and print histories without CORS or 405 Method Not Allowed issues.

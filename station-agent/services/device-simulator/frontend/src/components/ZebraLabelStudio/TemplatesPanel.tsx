@@ -86,17 +86,97 @@ export default function TemplatesPanel({ onOpenDesigner, onOpenPreview }: Props)
     try {
       const text = await file.text()
       const json = JSON.parse(text)
+
+      // Normalize canvas dimensions
+      let width = json.width;
+      let height = json.height;
+      let dpi = json.dpi;
+      if (json.label && typeof json.label === 'object') {
+        width = width ?? json.label.width;
+        height = height ?? json.label.height;
+        dpi = dpi ?? json.label.dpi;
+      }
+      width = width ?? 100;
+      height = height ?? 50;
+      dpi = dpi ?? 203;
+
+      // Normalize elements
+      const rawElements = json.elements ?? [];
+      const normalizedElements = rawElements.map((el: any, index: number) => {
+        const type = el.type ?? 'text';
+        const x = typeof el.x === 'number' ? el.x : 20;
+        const y = typeof el.y === 'number' ? el.y : 20;
+        const rotation = typeof el.rotation === 'number' ? el.rotation : 0;
+        const layer = typeof el.layer === 'number' ? el.layer : index;
+
+        let font = 'Arial';
+        let fontSize = 16;
+        if (el.font) {
+          if (typeof el.font === 'string') {
+            font = el.font;
+          } else if (typeof el.font === 'object') {
+            font = el.font.family ?? 'Arial';
+            fontSize = el.font.height ?? el.font.width ?? 16;
+          }
+        }
+        if (typeof el.fontSize === 'number') {
+          fontSize = el.fontSize;
+        }
+
+        let defaultWidth = 100;
+        let defaultHeight = 30;
+        if (type === 'barcode') {
+          defaultWidth = 200;
+          defaultHeight = 80;
+        } else if (type === 'qr') {
+          defaultWidth = 80;
+          defaultHeight = 80;
+        } else if (type === 'circle') {
+          defaultWidth = 60;
+          defaultHeight = 60;
+        }
+
+        const widthVal = el.width ?? defaultWidth;
+        const heightVal = el.height ?? defaultHeight;
+
+        const textVal = el.text ?? el.defaultValue ?? el.value ?? '';
+        const binding = el.binding ?? '';
+
+        return {
+          ...el,
+          id: el.id ?? `el-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          type,
+          x,
+          y,
+          width: widthVal,
+          height: heightVal,
+          rotation,
+          layer,
+          font,
+          fontSize,
+          text: textVal,
+          binding
+        };
+      });
+
+      const normalizedJson = {
+        width,
+        height,
+        dpi,
+        elements: normalizedElements
+      };
+
       const name = file.name.replace('.json', '').replace(/_/g, ' ')
       const res = await fetch(`${API_BASE}/label-templates`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: json.name ?? name,
-          description: json.description,
-          dpi: json.dpi ?? 203,
-          labelWidth: json.width ?? json.labelWidth ?? 100,
-          labelHeight: json.height ?? json.labelHeight ?? 50,
-          templateJson: text
+          description: json.description ?? '',
+          dpi,
+          labelWidth: width,
+          labelHeight: height,
+          templateJson: JSON.stringify(normalizedJson)
         })
       })
       if (res.ok) loadTemplates()

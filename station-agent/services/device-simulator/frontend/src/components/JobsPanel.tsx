@@ -77,6 +77,7 @@ interface JobDetails {
     triggered_by_user_id: string | null
     reason_code: string | null
     reason_description: string | null
+    labelTemplate?: string | null
   }
   attempts: any[]
   timeline: TimelineItem[]
@@ -335,7 +336,7 @@ export default function JobsPanel() {
               ) : details ? (
                 <div className="space-y-6">
                   {/* Job Info Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className={`grid grid-cols-1 gap-4 ${details.job.labelTemplate ? 'md:grid-cols-5' : 'md:grid-cols-4'}`}>
                     <div className="bg-gray-950 border border-gray-850 rounded-lg p-3 space-y-1">
                       <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Mã Lệnh Sản Xuất</div>
                       <div className="text-sm font-bold text-white font-mono">{details.job.jobNo}</div>
@@ -344,6 +345,14 @@ export default function JobsPanel() {
                       <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Mã Sản Phẩm</div>
                       <div className="text-sm font-bold text-gray-200 font-mono">{details.job.productCode}</div>
                     </div>
+                    {details.job.labelTemplate && (
+                      <div className="bg-gray-950 border border-gray-850 rounded-lg p-3 space-y-1">
+                        <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider text-amber-400/90 font-bold">Mẫu Nhãn Sử Dụng</div>
+                        <div className="text-xs font-bold text-amber-300 font-mono truncate mt-0.5" title={details.job.labelTemplate}>
+                          📄 {details.job.labelTemplate}
+                        </div>
+                      </div>
+                    )}
                     <div className="bg-gray-950 border border-gray-850 rounded-lg p-3 space-y-1">
                       <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Trạng Thái Lệnh</div>
                       <div className="flex items-center mt-0.5">

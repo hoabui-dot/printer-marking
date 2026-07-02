@@ -3,7 +3,7 @@ import { ALL_TESTS } from '../testDefinitions'
 import type { TestCategory, TestDefinition } from '../testDefinitions'
 import { useTestRunner } from '../hooks/useTestRunner'
 import TestExecutionLog from './TestExecutionLog'
-import { USE_CASES_MD } from '../useCasesDoc'
+import { USE_CASES_MD, USE_CASES_MD_VI } from '../useCasesDoc'
 
 interface Props {
   signalRConnected: boolean
@@ -759,7 +759,7 @@ export default function TestConsolePanel({ signalRConnected, signalREventCount }
             </div>
             {/* Modal Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {renderMarkdown(USE_CASES_MD)}
+              {renderMarkdown(panelLang === 'vi' ? USE_CASES_MD_VI : USE_CASES_MD)}
             </div>
             {/* Modal Footer */}
             <div className="px-6 py-3.5 border-t border-gray-855 flex justify-end">

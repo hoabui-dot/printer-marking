@@ -16,7 +16,7 @@ public sealed class JobProcessingConsumer : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IRabbitMqConsumer _consumer;
-    private readonly IPrinterAdapter _printerAdapter;
+    private readonly IPrintQueue _printQueue;
     private readonly IRabbitMqPublisher _publisher;
     private readonly ILogger<JobProcessingConsumer> _logger;
 
@@ -32,13 +32,13 @@ public sealed class JobProcessingConsumer : BackgroundService
     public JobProcessingConsumer(
         IServiceScopeFactory scopeFactory,
         IRabbitMqConsumer consumer,
-        IPrinterAdapter printerAdapter,
+        IPrintQueue printQueue,
         IRabbitMqPublisher publisher,
         ILogger<JobProcessingConsumer> logger)
     {
         _scopeFactory = scopeFactory;
         _consumer = consumer;
-        _printerAdapter = printerAdapter;
+        _printQueue = printQueue;
         _publisher = publisher;
         _logger = logger;
     }
@@ -111,9 +111,24 @@ public sealed class JobProcessingConsumer : BackgroundService
         printerJob.MarkSent();
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Sending ZPL print command to printer at {IpAddress}:{Port} for Job {JobNo}...", printer.IpAddress, printer.Port, evt.JobNo);
+        _logger.LogInformation("Queuing ZPL print command for Job {JobNo}...", evt.JobNo);
 
-        var success = await _printerAdapter.PrintAsync(printer.IpAddress, printer.Port, renderedZpl, cancellationToken);
+        var tcs = new TaskCompletionSource<bool>();
+        var queuedJob = new PrintJob(
+            printer.PrinterCode,
+            printer.IpAddress,
+            printer.Port,
+            renderedZpl,
+            evt.JobId,
+            evt.EventId,
+            "STANDARD_ZPL",
+            1,
+            Guid.NewGuid().ToString("N"),
+            Guid.NewGuid().ToString("N"),
+            tcs);
+
+        await _printQueue.QueuePrintJobAsync(queuedJob);
+        var success = await tcs.Task;
 
         if (success)
         {
@@ -122,7 +137,7 @@ public sealed class JobProcessingConsumer : BackgroundService
         }
         else
         {
-            printerJob.MarkFailed("Connection failed / socket timeout");
+            printerJob.MarkFailed("Connection failed / socket timeout / queue print error");
             _logger.LogError("Failed to send ZPL print command to printer for Job {JobNo}.", evt.JobNo);
         }
 

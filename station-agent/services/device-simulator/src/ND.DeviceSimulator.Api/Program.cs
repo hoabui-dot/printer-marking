@@ -537,6 +537,35 @@ try
         var attempts = new List<dynamic>();
         var engineTimeline = new List<dynamic>();
 
+        string? labelTemplateName = null;
+        var printerDbPath = jobEngineDbPath.Replace("job_engine.db", "printer.db");
+        if (File.Exists(printerDbPath))
+        {
+            try
+            {
+                using (var printerConnection = new SqliteConnection($"Data Source={printerDbPath};Mode=ReadOnly"))
+                {
+                    await printerConnection.OpenAsync();
+                    var printerJobSql = "SELECT label_template FROM printer_jobs WHERE job_id = @jobId LIMIT 1";
+                    using (var printerCmd = new SqliteCommand(printerJobSql, printerConnection))
+                    {
+                        printerCmd.Parameters.AddWithValue("@jobId", id);
+                        using (var printerReader = await printerCmd.ExecuteReaderAsync())
+                        {
+                            if (await printerReader.ReadAsync())
+                            {
+                                labelTemplateName = printerReader.GetString(0);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error reading printer.db: {ex.Message}");
+            }
+        }
+
         using (var connection = new SqliteConnection($"Data Source={jobEngineDbPath};Mode=ReadOnly"))
         {
             await connection.OpenAsync();
@@ -566,7 +595,8 @@ try
                             completed_at = jobCompletedAt,
                             triggered_by_user_id = reader.IsDBNull(7) ? null : reader.GetString(7),
                             reason_code = reader.IsDBNull(8) ? null : reader.GetString(8),
-                            reason_description = reader.IsDBNull(9) ? null : reader.GetString(9)
+                            reason_description = reader.IsDBNull(9) ? null : reader.GetString(9),
+                            labelTemplate = labelTemplateName
                         };
                     }
                 }
@@ -642,7 +672,7 @@ try
                 };
             }
 
-            var historySql = "SELECT action_name, old_status, new_status, performed_by, note, occurred_at FROM job_engine_job_history WHERE job_id = @jobId ORDER BY occurred_at ASC";
+            var historySql = "SELECT action_name, old_status, new_status, performed_by, note, created_at FROM job_engine_job_history WHERE job_id = @jobId ORDER BY created_at ASC";
             using (var cmd = new SqliteCommand(historySql, connection))
             {
                 cmd.Parameters.AddWithValue("@jobId", id);

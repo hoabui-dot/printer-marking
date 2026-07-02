@@ -16,9 +16,27 @@ using ND.DeviceSimulator.Infrastructure.Persistence;
 namespace ND.DeviceSimulator.Infrastructure.VirtualDevices;
 
 /// <summary>
+/// Configurable failure modes for the virtual Zebra printer simulator.
+/// </summary>
+public enum PrinterSimulatorMode
+{
+    Success = 0,
+    PrinterBusy = 1,
+    Offline = 2,
+    PaperOut = 3,
+    RibbonOut = 4,
+    HeadOpen = 5,
+    InvalidZpl = 6,
+    InvalidBarcode = 7,
+    TcpTimeout = 8,
+    TcpConnectionRefused = 9,
+    MemoryFull = 10,
+}
+
+/// <summary>
 /// Virtual printer TCP server on port 9100.
 /// Accepts ZPL/EPL payloads from printer-adapter or any TCP client.
-/// Simulates configurable delay and failure rate.
+/// Supports configurable failure modes for realistic Zebra printer simulation.
 /// </summary>
 public sealed class VirtualPrinterServer : BackgroundService
 {
@@ -33,6 +51,19 @@ public sealed class VirtualPrinterServer : BackgroundService
 
     private TcpListener? _listener;
     private volatile bool _forceDisconnected = false;
+
+    // Configurable failure mode (thread-safe volatile)
+    private volatile int _simulatorMode = (int)PrinterSimulatorMode.Success;
+
+    public PrinterSimulatorMode SimulatorMode
+    {
+        get => (PrinterSimulatorMode)_simulatorMode;
+        set
+        {
+            _simulatorMode = (int)value;
+            _logger.LogInformation("Printer simulator mode changed to: {Mode}", value);
+        }
+    }
 
     public VirtualPrinterServer(
         IServiceScopeFactory scopeFactory,
@@ -86,13 +117,27 @@ public sealed class VirtualPrinterServer : BackgroundService
                     continue;
                 }
 
+                // If mode is Offline or TcpConnectionRefused, don't listen
+                if (SimulatorMode == PrinterSimulatorMode.Offline)
+                {
+                    if (_listener != null)
+                    {
+                        _listener.Stop();
+                        _listener = null;
+                        _state.SetPrinterOnline(false);
+                        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+                    }
+                    await Task.Delay(500, stoppingToken);
+                    continue;
+                }
+
                 if (_listener == null)
                 {
                     var port = int.TryParse(GetConfig("PRINTER_PORT", "9100"), out var p) ? p : DefaultPort;
                     _listener = new TcpListener(IPAddress.Any, port);
                     _listener.Start();
                     _state.SetPrinterOnline(true);
-                    _logger.LogInformation("VirtualPrinterServer listening on TCP :{Port}", port);
+                    _logger.LogInformation("VirtualPrinterServer listening on TCP :{Port} (mode: {Mode})", port, SimulatorMode);
                     await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
                 }
 
@@ -117,10 +162,21 @@ public sealed class VirtualPrinterServer : BackgroundService
 
     private async Task HandleClientAsync(TcpClient client, CancellationToken ct)
     {
+        var mode = SimulatorMode;
+
+        // TcpConnectionRefused — immediately close the connection with no data
+        if (mode == PrinterSimulatorMode.TcpConnectionRefused)
+        {
+            _logger.LogWarning("Printer simulator: TcpConnectionRefused — dropping connection immediately");
+            client.Close();
+            await PersistAndBroadcastAsync(null, "FAILED", "TCP Connection Refused (simulated)", 0, ct);
+            return;
+        }
+
         using (client)
         {
             var remote = client.Client.RemoteEndPoint;
-            _logger.LogDebug("Printer: connection from {Remote}", remote);
+            _logger.LogDebug("Printer: connection from {Remote} (mode: {Mode})", remote, mode);
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             string? zplContent = null;
@@ -134,13 +190,15 @@ public sealed class VirtualPrinterServer : BackgroundService
 
                 var sb = new StringBuilder();
                 var buffer = new char[4096];
-                client.ReceiveTimeout = 2000;
+
+                // TcpTimeout — use very short receive window to force timeout
+                client.ReceiveTimeout = mode == PrinterSimulatorMode.TcpTimeout ? 50 : 2000;
 
                 int read;
                 while ((read = await reader.ReadAsync(buffer, ct)) > 0)
                 {
                     sb.Append(buffer, 0, read);
-                    if (sb.Length > 65536) break; // cap at 64 KB
+                    if (sb.Length > 65536) break;
                 }
 
                 zplContent = sb.ToString();
@@ -150,27 +208,43 @@ public sealed class VirtualPrinterServer : BackgroundService
                 {
                     var jobNo = ExtractJobNoFromZpl(zplContent);
                     if (!string.IsNullOrEmpty(jobNo))
-                    {
                         _state.SetActiveJobId(jobNo);
+                }
+
+                // Simulate mode-specific behavior
+                (status, error) = mode switch
+                {
+                    PrinterSimulatorMode.PrinterBusy => ("FAILED", "ERROR: Printer busy — please wait"),
+                    PrinterSimulatorMode.PaperOut => ("FAILED", "ERROR: Paper out — reload paper and retry"),
+                    PrinterSimulatorMode.RibbonOut => ("FAILED", "ERROR: Ribbon out — replace ribbon"),
+                    PrinterSimulatorMode.HeadOpen => ("FAILED", "ERROR: Print head open — close the cover"),
+                    PrinterSimulatorMode.InvalidZpl => ("FAILED", "ERROR: Invalid ZPL command — parse error at offset 0"),
+                    PrinterSimulatorMode.InvalidBarcode => ("FAILED", "ERROR: Invalid barcode data — check barcode content"),
+                    PrinterSimulatorMode.MemoryFull => ("FAILED", "ERROR: Printer memory full — delete unused formats"),
+                    PrinterSimulatorMode.TcpTimeout => ("FAILED", "TCP Timeout (simulated)"),
+                    _ => ("_PROCESS", null) // will apply normal logic below
+                };
+
+                if (status == "_PROCESS")
+                {
+                    var delayMs = int.TryParse(GetConfig("PRINTER_DELAY_MS", "800"), out var d) ? d : 800;
+                    await Task.Delay(delayMs, ct);
+
+                    var failureRate = int.TryParse(GetConfig("PRINTER_FAILURE_RATE", "5"), out var f) ? f : 5;
+                    if (Rng.Next(100) < failureRate)
+                    {
+                        status = "FAILED";
+                        error = "Simulated random print failure";
+                    }
+                    else
+                    {
+                        status = "PRINTED";
                     }
                 }
 
-                var delayMs = int.TryParse(GetConfig("PRINTER_DELAY_MS", "800"), out var d) ? d : 800;
-                await Task.Delay(delayMs, ct);
-                sw.Restart();
-
-                var failureRate = int.TryParse(GetConfig("PRINTER_FAILURE_RATE", "5"), out var f) ? f : 5;
-                if (Rng.Next(100) < failureRate)
-                {
-                    status = "FAILED";
-                    error = "Simulated print failure";
-                    await stream.WriteAsync("NACK\n"u8.ToArray(), ct);
-                }
-                else
-                {
-                    status = "PRINTED";
-                    await stream.WriteAsync("ACK\n"u8.ToArray(), ct);
-                }
+                // Send realistic ZPL response
+                var response = BuildResponse(mode, status, error);
+                await stream.WriteAsync(Encoding.ASCII.GetBytes(response + "\n"), ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -180,21 +254,37 @@ public sealed class VirtualPrinterServer : BackgroundService
 
             sw.Stop();
             var duration = (int)sw.ElapsedMilliseconds;
-
-            _state.RecordPrinterJob(zplContent, status);
-
-            var job = PrinterJob.Create(zplContent, duration, status, error);
-            await PersistAsync(job, ct);
-
-            var dto = new PrinterJobDto(job.Id, status, zplContent?[..Math.Min(200, zplContent?.Length ?? 0)], duration, job.ReceivedAt);
-            await _hub.Clients.All.PrinterJobReceived(dto);
-            await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
-
-            await AddTimelineAsync("PRINTER_EXECUTED", status == "PRINTED" ? "OK" : "FAILED",
-                $"Print job received — {zplContent?.Length ?? 0} bytes — {status}", ct);
-
-            _logger.LogInformation("Printer job {Status} — {Bytes} bytes — {Duration}ms", status, zplContent?.Length ?? 0, duration);
+            await PersistAndBroadcastAsync(zplContent, status, error, duration, ct);
         }
+    }
+
+    private static string BuildResponse(PrinterSimulatorMode mode, string status, string? error)
+    {
+        return mode switch
+        {
+            PrinterSimulatorMode.PrinterBusy => "NACK: BUSY",
+            PrinterSimulatorMode.PaperOut => "NACK: PAPER_OUT",
+            PrinterSimulatorMode.RibbonOut => "NACK: RIBBON_OUT",
+            PrinterSimulatorMode.HeadOpen => "NACK: HEAD_OPEN",
+            PrinterSimulatorMode.InvalidZpl => "NACK: INVALID_ZPL",
+            PrinterSimulatorMode.InvalidBarcode => "NACK: INVALID_BARCODE",
+            PrinterSimulatorMode.MemoryFull => "NACK: MEMORY_FULL",
+            _ => status == "PRINTED" ? "ACK" : $"NACK: {error ?? "UNKNOWN"}"
+        };
+    }
+
+    private async Task PersistAndBroadcastAsync(string? zplContent, string status, string? error, int duration, CancellationToken ct)
+    {
+        _state.RecordPrinterJob(zplContent, status);
+        var job = PrinterJob.Create(zplContent, duration, status, error);
+        await PersistAsync(job, ct);
+        var dto = new PrinterJobDto(job.Id, status, zplContent?[..Math.Min(200, zplContent?.Length ?? 0)], duration, job.ReceivedAt);
+        await _hub.Clients.All.PrinterJobReceived(dto);
+        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+        await AddTimelineAsync("PRINTER_EXECUTED", status == "PRINTED" ? "OK" : "FAILED",
+            $"Print job — {zplContent?.Length ?? 0} bytes — {status}{(error != null ? ": " + error : "")}", ct);
+        _logger.LogInformation("Printer job {Status} — {Bytes} bytes — {Duration}ms{Error}",
+            status, zplContent?.Length ?? 0, duration, error != null ? " — " + error : "");
     }
 
     private async Task PersistAsync(PrinterJob job, CancellationToken ct)
@@ -202,8 +292,6 @@ public sealed class VirtualPrinterServer : BackgroundService
         await using var scope = _scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<SimulatorDbContext>();
         db.PrinterJobs.Add(job);
-
-        // Keep last 500
         var count = await db.PrinterJobs.CountAsync(ct);
         if (count > 500)
         {
@@ -220,7 +308,6 @@ public sealed class VirtualPrinterServer : BackgroundService
         var evt = TimelineEvent.Create(stage, status, detail);
         db.TimelineEvents.Add(evt);
         await db.SaveChangesAsync(ct);
-
         var dto = new TimelineEventDto(evt.Id, evt.Stage, evt.Status, evt.Detail, evt.OccurredAt);
         await _hub.Clients.All.TimelineEventAdded(dto);
     }

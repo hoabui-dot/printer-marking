@@ -12,6 +12,7 @@ This directory contains the **business and operational documentation** for the P
 > 4. [EVENT_MODEL.md](./EVENT_MODEL.md)
 > 5. [MQTT_PAYLOAD_CONTRACT.md](./MQTT_PAYLOAD_CONTRACT.md)
 > 6. [BUSINESS_CONSTANTS.md](./BUSINESS_CONSTANTS.md)
+> 7. [DATABASE_DICTIONARY.md](./DATABASE_DICTIONARY.md)
 
 ## Document Index
 
@@ -23,3 +24,4 @@ This directory contains the **business and operational documentation** for the P
 | [EVENT_MODEL.md](./EVENT_MODEL.md) | All business events, JSON schema, event flows |
 | [MQTT_PAYLOAD_CONTRACT.md](./MQTT_PAYLOAD_CONTRACT.md) | Mandatory MQTT message format and validation rules |
 | [BUSINESS_CONSTANTS.md](./BUSINESS_CONSTANTS.md) | All valid business values with meanings and C# mapping |
+| [DATABASE_DICTIONARY.md](./DATABASE_DICTIONARY.md) | Database per service schemas, table purposes, column rules and FK links |

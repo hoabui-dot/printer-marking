@@ -11,6 +11,9 @@ public sealed class PrinterDbContext : DbContext, IUnitOfWork
     public DbSet<Printer> Printers => Set<Printer>();
     public DbSet<PrinterJob> PrinterJobs => Set<PrinterJob>();
     public DbSet<PrinterEvent> PrinterEvents => Set<PrinterEvent>();
+    public DbSet<LabelTemplate> LabelTemplates => Set<LabelTemplate>();
+    public DbSet<LabelTemplateVersion> LabelTemplateVersions => Set<LabelTemplateVersion>();
+    public DbSet<PrintHistory> PrintHistories => Set<PrintHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -61,5 +64,64 @@ public sealed class PrinterDbContext : DbContext, IUnitOfWork
             e.Property(x => x.OccurredAt).HasColumnName("occurred_at").IsRequired();
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         });
+
+        // ── Label Templates ──────────────────────────────────────────────────
+        modelBuilder.Entity<LabelTemplate>(e =>
+        {
+            e.ToTable("label_templates");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.Name).HasColumnName("name").IsRequired();
+            e.Property(x => x.Description).HasColumnName("description");
+            e.Property(x => x.Dpi).HasColumnName("dpi");
+            e.Property(x => x.LabelWidth).HasColumnName("label_width");
+            e.Property(x => x.LabelHeight).HasColumnName("label_height");
+            e.Property(x => x.TemplateJson).HasColumnName("template_json").IsRequired();
+            e.Property(x => x.Version).HasColumnName("version");
+            e.Property(x => x.IsActive).HasColumnName("is_active");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at").IsRequired();
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+        });
+
+        // ── Label Template Versions ──────────────────────────────────────────
+        modelBuilder.Entity<LabelTemplateVersion>(e =>
+        {
+            e.ToTable("label_template_versions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TemplateId).HasColumnName("template_id").IsRequired();
+            e.HasIndex(x => new { x.TemplateId, x.Version }).IsUnique();
+            e.Property(x => x.Version).HasColumnName("version");
+            e.Property(x => x.TemplateJson).HasColumnName("template_json").IsRequired();
+            e.Property(x => x.CreatedBy).HasColumnName("created_by");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+        });
+
+        // ── Print History ─────────────────────────────────────────────────────
+        modelBuilder.Entity<PrintHistory>(e =>
+        {
+            e.ToTable("print_history");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.TemplateId).HasColumnName("template_id").IsRequired();
+            e.Property(x => x.TemplateName).HasColumnName("template_name").IsRequired();
+            e.Property(x => x.TemplateVersion).HasColumnName("template_version");
+            e.Property(x => x.PrinterCode).HasColumnName("printer_code").IsRequired();
+            e.Property(x => x.RuntimeDataJson).HasColumnName("runtime_data_json").IsRequired();
+            e.Property(x => x.RenderedZpl).HasColumnName("rendered_zpl").IsRequired();
+            e.Property(x => x.TcpRequestHex).HasColumnName("tcp_request_hex");
+            e.Property(x => x.TcpResponseHex).HasColumnName("tcp_response_hex");
+            e.Property(x => x.PrinterResult).HasColumnName("printer_result");
+            e.Property(x => x.Status).HasColumnName("status").IsRequired();
+            e.Property(x => x.DurationMs).HasColumnName("duration_ms");
+            e.Property(x => x.RetryCount).HasColumnName("retry_count");
+            e.Property(x => x.TraceId).HasColumnName("trace_id").IsRequired();
+            e.Property(x => x.CorrelationId).HasColumnName("correlation_id").IsRequired();
+            e.Property(x => x.ExceptionMessage).HasColumnName("exception_message");
+            e.Property(x => x.TimelineJson).HasColumnName("timeline_json");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+        });
     }
 }
+
+

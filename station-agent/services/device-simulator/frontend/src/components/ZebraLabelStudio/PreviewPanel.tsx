@@ -35,9 +35,14 @@ export default function PreviewPanel({ template }: Props) {
 
   useEffect(() => {
     if (template) {
-      setTemplateJson(JSON.stringify(JSON.parse(template.templateJson), null, 2))
+      try {
+        const rawJson = template.templateJson || '{}'
+        setTemplateJson(JSON.stringify(JSON.parse(rawJson), null, 2))
+      } catch (e) {
+        setTemplateJson('{}')
+      }
     }
-  }, [template?.id])
+  }, [template?.id, template?.templateJson])
 
   const handleRender = useCallback(async () => {
     if (!templateJson.trim()) return

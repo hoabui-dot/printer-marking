@@ -302,6 +302,56 @@ Lưu event từ printer.
 
 ---
 
+## Table: label_templates
+
+### Mục đích
+
+Lưu trữ cấu hình template nhãn thiết kế từ studio dạng JSON.
+
+### Các thuộc tính chính
+
+* name: Tên template
+* description: Mô tả template
+* dpi: Độ phân giải máy in (203/300/600)
+* label_width: Chiều rộng nhãn (mm)
+* label_height: Chiều cao nhãn (mm)
+* template_json: Nội dung thiết kế dạng JSON
+
+---
+
+## Table: label_template_versions
+
+### Mục đích
+
+Lưu trữ các phiên bản cũ của template để phục vụ cho in lịch sử.
+
+### Các thuộc tính chính
+
+* template_id: Khóa ngoại trỏ đến template
+* version: Số phiên bản
+* template_json: Nội dung thiết kế JSON của phiên bản đó
+
+---
+
+## Table: print_history
+
+### Mục đích
+
+Lưu trữ chi tiết toàn bộ các lượt gửi lệnh in để phân tích lỗi/hiệu năng.
+
+### Các thuộc tính chính
+
+* template_id: ID template được in
+* template_version: Phiên bản template được in
+* printer_code: Máy in thực hiện
+* status: Trạng thái (SUCCESS/FAILED)
+* duration_ms: Thời gian gửi in
+* tcp_request_hex: Dữ liệu TCP thô gửi đi dạng hex
+* tcp_response_hex: Dữ liệu TCP phản hồi dạng hex
+* exception_message: Lỗi chi tiết nếu in thất bại
+
+---
+
 # 5. LASER DATABASE
 
 Database:
