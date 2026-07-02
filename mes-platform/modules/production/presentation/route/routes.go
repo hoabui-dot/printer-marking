@@ -33,4 +33,8 @@ func Register(
 	protected.GET("/work-orders/:id", h.GetWorkOrder)
 	protected.PATCH("/work-orders/:id/start", h.StartWorkOrder)
 	protected.PATCH("/work-orders/:id/complete", h.CompleteWorkOrder)
+
+	// Integration endpoints (unauthenticated for SSE/Webhooks simplicity)
+	router.POST("/production/gateway/events", h.ProcessGatewayEvent)
+	router.GET("/production-orders/:id/stream", h.StreamProductionOrder)
 }

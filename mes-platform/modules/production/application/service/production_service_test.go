@@ -7,6 +7,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/nd/mes-platform/modules/production/application/dto"
 	"github.com/nd/mes-platform/modules/production/application/service"
+	"github.com/nd/mes-platform/modules/production/domain/entity"
 	"github.com/nd/mes-platform/modules/production/domain/repository"
 	"github.com/nd/mes-platform/modules/production/infrastructure/model"
 	"github.com/nd/mes-platform/modules/production/infrastructure/persistence"
@@ -26,12 +27,24 @@ func (m *MockOutboxRepository) Save(_ context.Context, event *outbox.Event) erro
 	return nil
 }
 
+type MockGatewayClient struct {
+	SendFunc func(ctx context.Context, order *entity.ProductionOrder) (string, error)
+}
+
+func (m *MockGatewayClient) SendProductionOrder(ctx context.Context, order *entity.ProductionOrder) (string, error) {
+	if m.SendFunc != nil {
+		return m.SendFunc(ctx, order)
+	}
+	return "mock-gateway-order-id", nil
+}
+
 func setupProductionSvc(t *testing.T) (*gorm.DB, *MockOutboxRepository, *service.ProductionService) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
 	err = db.AutoMigrate(
 		&model.ProductionOrderModel{},
+		&model.ProductionOrderEventModel{},
 		&model.RoutingModel{},
 		&model.OperationModel{},
 		&model.WorkOrderModel{},
@@ -42,10 +55,12 @@ func setupProductionSvc(t *testing.T) (*gorm.DB, *MockOutboxRepository, *service
 	orderRepo := persistence.NewGormProductionOrderRepository(db)
 	workRepo := persistence.NewGormWorkOrderRepository(db)
 	routingRepo := persistence.NewGormRoutingRepository(db)
+	eventRepo := persistence.NewGormProductionOrderEventRepository(db)
 	outboxRepo := &MockOutboxRepository{}
 	log := logger.NewNop()
+	gatewayCli := &MockGatewayClient{}
 
-	svc := service.NewProductionService(orderRepo, workRepo, routingRepo, outboxRepo, log)
+	svc := service.NewProductionService(orderRepo, workRepo, routingRepo, eventRepo, outboxRepo, gatewayCli, log)
 	return db, outboxRepo, svc
 }
 
@@ -95,12 +110,14 @@ func TestProductionService_CreateProductionOrder(t *testing.T) {
 
 	dueDate := "2026-08-01"
 	order, err := svc.CreateProductionOrder(context.Background(), dto.CreateProductionOrderRequest{
-		OrderNumber: "PO-2026-001",
-		ProductName: "Wedding Invitation Cards",
-		Quantity:    500,
-		Priority:    80,
-		DueDate:     &dueDate,
-		Notes:       "High priority customer",
+		OrderNumber:   "PO-2026-001",
+		ProductName:   "Wedding Invitation Cards",
+		Quantity:      500,
+		Priority:      80,
+		OperationType: "PRINT_AND_MARK",
+		Station:       "Station-Combined-01",
+		DueDate:       &dueDate,
+		Notes:         "High priority customer",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "PO-2026-001", order.OrderNumber)
@@ -113,10 +130,12 @@ func TestProductionService_CreateProductionOrder(t *testing.T) {
 
 	// Conflict on duplicate order number
 	_, err = svc.CreateProductionOrder(context.Background(), dto.CreateProductionOrderRequest{
-		OrderNumber: "PO-2026-001",
-		ProductName: "Duplicate",
-		Quantity:    1,
-		Priority:    1,
+		OrderNumber:   "PO-2026-001",
+		ProductName:   "Duplicate",
+		Quantity:      1,
+		Priority:      1,
+		OperationType: "PRINT_AND_MARK",
+		Station:       "Station-Combined-01",
 	})
 	assert.ErrorIs(t, err, service.ErrConflict)
 }
@@ -125,10 +144,12 @@ func TestProductionService_OrderLifecycle(t *testing.T) {
 	_, outboxRepo, svc := setupProductionSvc(t)
 
 	order, err := svc.CreateProductionOrder(context.Background(), dto.CreateProductionOrderRequest{
-		OrderNumber: "PO-LIFE-001",
-		ProductName: "Brochures",
-		Quantity:    1000,
-		Priority:    50,
+		OrderNumber:   "PO-LIFE-001",
+		ProductName:   "Brochures",
+		Quantity:      1000,
+		Priority:      50,
+		OperationType: "PRINT_AND_MARK",
+		Station:       "Station-Combined-01",
 	})
 	require.NoError(t, err)
 	outboxRepo.Events = nil
@@ -142,7 +163,7 @@ func TestProductionService_OrderLifecycle(t *testing.T) {
 	// Verify status
 	got, err := svc.GetProductionOrder(context.Background(), order.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "released", got.Status)
+	assert.Equal(t, "sent_to_gateway", got.Status)
 
 	outboxRepo.Events = nil
 
@@ -163,10 +184,12 @@ func TestProductionService_WorkOrder_Lifecycle(t *testing.T) {
 
 	// Create & release production order
 	order, err := svc.CreateProductionOrder(context.Background(), dto.CreateProductionOrderRequest{
-		OrderNumber: "PO-WO-001",
-		ProductName: "Flyers",
-		Quantity:    200,
-		Priority:    60,
+		OrderNumber:   "PO-WO-001",
+		ProductName:   "Flyers",
+		Quantity:      200,
+		Priority:      60,
+		OperationType: "PRINT_AND_MARK",
+		Station:       "Station-Combined-01",
 	})
 	require.NoError(t, err)
 	require.NoError(t, svc.ReleaseProductionOrder(context.Background(), order.ID))
@@ -211,10 +234,12 @@ func TestProductionService_WorkOrder_DraftOrderBlocked(t *testing.T) {
 	routing := createTestRouting(t, svc, "Blocked Routing")
 
 	order, err := svc.CreateProductionOrder(context.Background(), dto.CreateProductionOrderRequest{
-		OrderNumber: "PO-BLOCKED",
-		ProductName: "Test",
-		Quantity:    1,
-		Priority:    1,
+		OrderNumber:   "PO-BLOCKED",
+		ProductName:   "Test",
+		Quantity:      1,
+		Priority:      1,
+		OperationType: "PRINT_AND_MARK",
+		Station:       "Station-Combined-01",
 	})
 	require.NoError(t, err)
 
@@ -232,10 +257,12 @@ func TestProductionService_ListWorkOrders_ByProductionOrder(t *testing.T) {
 
 	routing := createTestRouting(t, svc, "List Routing")
 	order, _ := svc.CreateProductionOrder(context.Background(), dto.CreateProductionOrderRequest{
-		OrderNumber: "PO-LIST-001",
-		ProductName: "Test",
-		Quantity:    100,
-		Priority:    50,
+		OrderNumber:   "PO-LIST-001",
+		ProductName:   "Test",
+		Quantity:      100,
+		Priority:      50,
+		OperationType: "PRINT_AND_MARK",
+		Station:       "Station-Combined-01",
 	})
 	svc.ReleaseProductionOrder(context.Background(), order.ID)
 

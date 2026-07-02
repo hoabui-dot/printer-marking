@@ -51,6 +51,18 @@ func (r *GormProductionOrderRepository) FindByOrderNumber(ctx context.Context, o
 	return modelToProductionOrder(&m), nil
 }
 
+func (r *GormProductionOrderRepository) FindByGatewayOrderID(ctx context.Context, gatewayOrderID string) (*entity.ProductionOrder, error) {
+	var m model.ProductionOrderModel
+	err := r.db.WithContext(ctx).Where("gateway_order_id = ?", gatewayOrderID).First(&m).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, repository.ErrProductionOrderNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return modelToProductionOrder(&m), nil
+}
+
 func (r *GormProductionOrderRepository) List(ctx context.Context, filter repository.ProductionOrderFilter) ([]*entity.ProductionOrder, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.ProductionOrderModel{})
 
@@ -263,4 +275,36 @@ func (r *GormOutboxRepository) Save(ctx context.Context, event *outbox.Event) er
 		UpdatedAt:   event.UpdatedAt,
 	}
 	return r.db.WithContext(ctx).Create(m).Error
+}
+
+// ─── Production Order Event Repository ────────────────────────────────────────
+
+type GormProductionOrderEventRepository struct {
+	db *gorm.DB
+}
+
+func NewGormProductionOrderEventRepository(db *gorm.DB) *GormProductionOrderEventRepository {
+	return &GormProductionOrderEventRepository{db: db}
+}
+
+func (r *GormProductionOrderEventRepository) Save(ctx context.Context, event *entity.ProductionOrderEvent) error {
+	m := productionOrderEventToModel(event)
+	return r.db.WithContext(ctx).Save(m).Error
+}
+
+func (r *GormProductionOrderEventRepository) ListByProductionOrderID(ctx context.Context, productionOrderID uuid.UUID) ([]*entity.ProductionOrderEvent, error) {
+	var models []model.ProductionOrderEventModel
+	err := r.db.WithContext(ctx).
+		Where("production_order_id = ?", productionOrderID).
+		Order("occurred_at ASC, created_at ASC").
+		Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+
+	events := make([]*entity.ProductionOrderEvent, len(models))
+	for i, m := range models {
+		events[i] = modelToProductionOrderEvent(&m)
+	}
+	return events, nil
 }

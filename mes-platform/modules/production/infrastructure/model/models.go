@@ -8,19 +8,35 @@ import (
 
 // ProductionOrderModel is the GORM model for production_orders.
 type ProductionOrderModel struct {
-	ID          uuid.UUID  `gorm:"type:uuid;primaryKey"`
-	OrderNumber string     `gorm:"type:varchar(100);uniqueIndex;not null"`
-	ProductName string     `gorm:"type:varchar(255);not null"`
-	Quantity    int        `gorm:"not null;default:1"`
-	Priority    int        `gorm:"not null;default:50"`
-	Status      string     `gorm:"type:varchar(50);not null;default:'draft';index"`
-	DueDate     *time.Time `gorm:"type:date;index"`
-	Notes       string     `gorm:"type:text"`
-	CreatedAt   time.Time  `gorm:"autoCreateTime"`
-	UpdatedAt   time.Time  `gorm:"autoUpdateTime"`
+	ID             uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	OrderNumber    string     `gorm:"type:varchar(100);uniqueIndex;not null"`
+	ProductName    string     `gorm:"type:varchar(255);not null"`
+	Quantity       int        `gorm:"not null;default:1"`
+	Priority       int        `gorm:"not null;default:50"`
+	Status         string     `gorm:"type:varchar(50);not null;default:'draft';index"`
+	OperationType  string     `gorm:"type:varchar(50);not null;default:'PRINT_ONLY'"`
+	Station        string     `gorm:"type:varchar(100);not null;default:''"`
+	GatewayOrderID *string    `gorm:"type:varchar(100);default:null;index"`
+	DueDate        *time.Time `gorm:"type:date;index"`
+	Notes          string     `gorm:"type:text"`
+	CreatedAt      time.Time  `gorm:"autoCreateTime"`
+	UpdatedAt      time.Time  `gorm:"autoUpdateTime"`
 }
 
 func (ProductionOrderModel) TableName() string { return "production_orders" }
+
+// ProductionOrderEventModel is the GORM model for production_order_events.
+type ProductionOrderEventModel struct {
+	ID                uuid.UUID `gorm:"type:uuid;primaryKey"`
+	ProductionOrderID uuid.UUID `gorm:"type:uuid;not null;index"`
+	EventType         string    `gorm:"type:varchar(100);not null"`
+	Status            string    `gorm:"type:varchar(50);not null"`
+	Message           string    `gorm:"type:text;not null"`
+	OccurredAt        time.Time `gorm:"not null"`
+	CreatedAt         time.Time `gorm:"autoCreateTime"`
+}
+
+func (ProductionOrderEventModel) TableName() string { return "production_order_events" }
 
 // RoutingModel is the GORM model for production_routings.
 type RoutingModel struct {

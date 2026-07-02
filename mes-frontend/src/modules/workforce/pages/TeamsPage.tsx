@@ -161,31 +161,35 @@ export function TeamsPage() {
   const columns: ColumnDef<TeamDTO>[] = [
     {
       accessorKey: 'code',
-      header: 'Code',
+      header: t('common.code'),
       cell: (info) => <span className="font-mono font-bold text-slate-800">{info.getValue() as string}</span>,
     },
     {
       accessorKey: 'name',
-      header: 'Name',
-      cell: (info) => <span className="font-semibold text-slate-700">{info.getValue() as string}</span>,
+      header: t('common.name'),
+      cell: (info) => <span className="font-semibold text-slate-700">{t(`team_values.${info.getValue() as string}`, { defaultValue: info.getValue() as string })}</span>,
     },
     {
       accessorKey: 'workshop_name',
-      header: 'Workshop',
-      cell: (info) => info.getValue() as string || <span className="text-slate-400">—</span>,
+      header: t('teams.workshop', { defaultValue: 'Workshop' }),
+      cell: (info) => {
+        const wName = info.getValue() as string
+        return wName ? <span>{t(`workshops.${wName}`, { defaultValue: wName })}</span> : <span className="text-slate-400">—</span>
+      },
     },
     {
       accessorKey: 'leader_name',
-      header: 'Leader',
+      header: t('teams.supervisor'),
       cell: (info) => info.getValue() as string || <span className="text-slate-400">—</span>,
     },
     {
       accessorKey: 'description',
-      header: 'Description',
+      header: t('common.description'),
+      cell: (info) => <span>{t(`teams_desc.${info.getValue() as string}`, { defaultValue: info.getValue() as string })}</span>,
     },
     {
       accessorKey: 'status',
-      header: 'Status',
+      header: t('common.status'),
       cell: (info) => {
         const val = info.getValue() as string
         return (
@@ -231,13 +235,13 @@ export function TeamsPage() {
   return (
     <div className="fade-in max-w-7xl mx-auto p-4 space-y-6">
       <PageHeader
-        title="Teams"
-        description="Manage work teams, supervisors, and shift group structures."
+        title={t('teams.title')}
+        description={t('teams.subtitle')}
       >
         <PermissionGuard permission={PERMISSIONS.WORKER_CREATE}>
           <button onClick={openCreateModal} className="btn btn-primary flex items-center gap-2 text-xs">
             <Plus size={16} />
-            Add Team
+            {t('teams.addTeam')}
           </button>
         </PermissionGuard>
       </PageHeader>
@@ -247,7 +251,7 @@ export function TeamsPage() {
           columns={columns}
           data={teams}
           loading={isLoading}
-          emptyMessage="No teams found"
+          emptyMessage={t('teams.emptyMessage')}
         />
       </div>
 

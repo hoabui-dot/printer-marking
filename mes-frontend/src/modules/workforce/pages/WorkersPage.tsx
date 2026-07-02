@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import {
   Plus, Search, ShieldCheck, Mail, Phone, Calendar, Trash2, Edit, Check, X,
-  ShieldAlert, Award, FileText, UserPlus, RefreshCw, Eye, BookOpen, Trash, CheckCircle2, MoreVertical
+  ShieldAlert, Award, FileText, UserPlus, RefreshCw, Eye, BookOpen, Trash, CheckCircle2, MoreVertical, ChevronDown
 } from 'lucide-react'
 import { PageHeader, PermissionGuard, Spinner, EmptyState } from '@/components/common'
 import { StatusBadge } from '@/components/industrial/StatusComponents'
@@ -24,6 +24,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu'
 
 export function WorkersPage() {
@@ -427,20 +429,36 @@ export function WorkersPage() {
             style={{ paddingLeft: 36, width: '100%' }}
           />
         </div>
-        <select
-          className="select"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          style={{ width: 160 }}
-        >
-          <option value="all">{t('common.all')}</option>
-          <option value="active">{t('common.active')}</option>
-          <option value="probation">Probation</option>
-          <option value="suspended">{t('common.suspended')}</option>
-          <option value="resigned">Resigned</option>
-          <option value="retired">Retired</option>
-          <option value="terminated">{t('common.terminated')}</option>
-        </select>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="btn btn-secondary btn-sm flex items-center gap-2" style={{ minWidth: 160, height: 38, justifyContent: 'space-between', padding: '0 12px', border: '1px solid var(--color-border-subtle)', borderRadius: 8, background: '#fff', cursor: 'pointer' }}>
+              <span className="flex items-center gap-2 text-xs">
+                <span className="text-slate-400 font-normal">{t('common.status')}:</span>
+                <span className="font-semibold text-slate-700">
+                  {statusFilter === 'all' ? t('common.all') :
+                   statusFilter === 'active' ? t('common.active') :
+                   statusFilter === 'probation' ? 'Probation' :
+                   statusFilter === 'suspended' ? t('common.suspended') :
+                   statusFilter === 'resigned' ? 'Resigned' :
+                   statusFilter === 'retired' ? 'Retired' :
+                   statusFilter === 'terminated' ? t('common.terminated') : statusFilter}
+                </span>
+              </span>
+              <ChevronDown size={14} className="text-slate-400" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-48 bg-white shadow-md border rounded-lg p-1">
+            <DropdownMenuRadioGroup value={statusFilter} onValueChange={setStatusFilter}>
+              <DropdownMenuRadioItem value="all" className="text-xs hover:bg-slate-50 cursor-pointer">{t('common.all')}</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="active" className="text-xs hover:bg-slate-50 cursor-pointer">{t('common.active')}</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="probation" className="text-xs hover:bg-slate-50 cursor-pointer">Probation</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="suspended" className="text-xs hover:bg-slate-50 cursor-pointer">{t('common.suspended')}</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="resigned" className="text-xs hover:bg-slate-50 cursor-pointer">Resigned</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="retired" className="text-xs hover:bg-slate-50 cursor-pointer">Retired</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="terminated" className="text-xs hover:bg-slate-50 cursor-pointer">{t('common.terminated')}</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <button
           className={`btn ${showArchived ? 'btn-primary' : 'btn-secondary'} btn-sm`}

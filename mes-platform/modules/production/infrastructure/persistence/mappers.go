@@ -12,13 +12,16 @@ import (
 
 func modelToProductionOrder(m *model.ProductionOrderModel) *entity.ProductionOrder {
 	o := &entity.ProductionOrder{
-		OrderNumber: m.OrderNumber,
-		ProductName: m.ProductName,
-		Quantity:    m.Quantity,
-		Priority:    m.Priority,
-		Status:      entity.OrderStatus(m.Status),
-		DueDate:     m.DueDate,
-		Notes:       m.Notes,
+		OrderNumber:    m.OrderNumber,
+		ProductName:    m.ProductName,
+		Quantity:       m.Quantity,
+		Priority:       m.Priority,
+		Status:         entity.OrderStatus(m.Status),
+		OperationType:  m.OperationType,
+		Station:        m.Station,
+		GatewayOrderID: m.GatewayOrderID,
+		DueDate:        m.DueDate,
+		Notes:          m.Notes,
 	}
 	o.BaseEntity = domain.BaseEntity{
 		ID:        m.ID,
@@ -88,16 +91,41 @@ func modelToWorkOrder(m *model.WorkOrderModel) *entity.WorkOrder {
 
 func productionOrderToModel(e *entity.ProductionOrder) *model.ProductionOrderModel {
 	return &model.ProductionOrderModel{
-		ID:          e.ID,
-		OrderNumber: e.OrderNumber,
-		ProductName: e.ProductName,
-		Quantity:    e.Quantity,
-		Priority:    e.Priority,
-		Status:      string(e.Status),
-		DueDate:     e.DueDate,
-		Notes:       e.Notes,
-		CreatedAt:   e.CreatedAt,
-		UpdatedAt:   e.UpdatedAt,
+		ID:             e.ID,
+		OrderNumber:    e.OrderNumber,
+		ProductName:    e.ProductName,
+		Quantity:       e.Quantity,
+		Priority:       e.Priority,
+		Status:         string(e.Status),
+		OperationType:  e.OperationType,
+		Station:        e.Station,
+		GatewayOrderID: e.GatewayOrderID,
+		DueDate:        e.DueDate,
+		Notes:          e.Notes,
+		CreatedAt:      e.CreatedAt,
+		UpdatedAt:      e.UpdatedAt,
+	}
+}
+
+func modelToProductionOrderEvent(m *model.ProductionOrderEventModel) *entity.ProductionOrderEvent {
+	return &entity.ProductionOrderEvent{
+		ID:                m.ID,
+		ProductionOrderID: m.ProductionOrderID,
+		EventType:         m.EventType,
+		Status:            m.Status,
+		Message:           m.Message,
+		OccurredAt:        m.OccurredAt,
+	}
+}
+
+func productionOrderEventToModel(e *entity.ProductionOrderEvent) *model.ProductionOrderEventModel {
+	return &model.ProductionOrderEventModel{
+		ID:                e.ID,
+		ProductionOrderID: e.ProductionOrderID,
+		EventType:         e.EventType,
+		Status:            e.Status,
+		Message:           e.Message,
+		OccurredAt:        e.OccurredAt,
 	}
 }
 

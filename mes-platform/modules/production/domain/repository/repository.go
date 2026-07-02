@@ -33,7 +33,14 @@ type ProductionOrderRepository interface {
 	Save(ctx context.Context, order *entity.ProductionOrder) error
 	FindByID(ctx context.Context, id uuid.UUID) (*entity.ProductionOrder, error)
 	FindByOrderNumber(ctx context.Context, orderNumber string) (*entity.ProductionOrder, error)
+	FindByGatewayOrderID(ctx context.Context, gatewayOrderID string) (*entity.ProductionOrder, error)
 	List(ctx context.Context, filter ProductionOrderFilter) ([]*entity.ProductionOrder, int64, error)
+}
+
+// ProductionOrderEventRepository manages persistence of production order execution events.
+type ProductionOrderEventRepository interface {
+	Save(ctx context.Context, event *entity.ProductionOrderEvent) error
+	ListByProductionOrderID(ctx context.Context, productionOrderID uuid.UUID) ([]*entity.ProductionOrderEvent, error)
 }
 
 // WorkOrderRepository manages persistence of work orders.

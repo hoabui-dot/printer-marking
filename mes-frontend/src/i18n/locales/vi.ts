@@ -290,6 +290,39 @@ export const vi = {
       title: 'Đơn hàng Sản xuất',
       subtitle: 'Theo dõi đơn hàng tổng thể và tiến độ giao hàng',
       addOrder: 'Tạo Đơn hàng mới',
+      orderNumber: 'Mã đơn hàng (Order Number)',
+      productName: 'Tên sản phẩm (Product Name)',
+      quantity: 'Số lượng',
+      priority: 'Độ ưu tiên',
+      operation: 'Loại tích hợp (Operation)',
+      station: 'Trạm tích hợp',
+      dueDate: 'Hạn hoàn thành (Due Date)',
+      notes: 'Ghi chú (Notes)',
+      progress: 'Tiến độ sản xuất',
+      timeline: 'Nhật ký tích hợp Gateway (Timeline)',
+      emptyState: 'Không có đơn hàng nào được chọn',
+      emptyStateDesc: 'Chọn một đơn hàng từ danh sách để kiểm tra tiến trình định tuyến.',
+      noOrders: 'Không tìm thấy đơn hàng sản xuất nào',
+      createTitle: 'Tạo đơn hàng sản xuất mới',
+      release: 'Phê duyệt & Phát hành',
+      releasing: 'Đang gửi...',
+      cancelOrder: 'Hủy đơn hàng',
+      cancelling: 'Đang hủy...',
+      details: 'Chi tiết đơn hàng',
+      targetQty: 'Số lượng mục tiêu',
+      integrationType: 'Loại tích hợp',
+      integrationStation: 'Trạm tích hợp',
+      activeConnection: 'KẾT NỐI HOẠT ĐỘNG',
+      noOps: 'Chưa có hoạt động sản xuất nào được thiết lập',
+      timelineEmpty: 'Chưa có nhật ký hoạt động cho đơn hàng này. Hãy bấm "Phê duyệt & Phát hành" để bắt đầu.',
+      workOrders: 'Hoạt động chi tiết (Work Orders)',
+      noSelectedOrder: 'Không có đơn hàng nào được chọn',
+      chooseOrder: 'Chọn một đơn hàng từ danh sách để kiểm tra tiến trình định tuyến.',
+      dateToday: 'Hôm nay',
+      date7Days: '7 ngày qua',
+      dateMonth: '30 ngày qua',
+      dateCustom: 'Tự chọn khoảng',
+      rangeLimitWarning: 'Khoảng thời gian tự chọn tối đa là 1 tháng. Ngày đã được tự động điều chỉnh.'
     },
     work_orders: {
       title: 'Lệnh Sản xuất Chi tiết',
@@ -528,5 +561,71 @@ export const vi = {
       confirmAssignWorker: "Bạn có chắc chắn muốn phân ca làm việc này cho công nhân không?",
       confirmRemoveWorker: "Bạn có chắc chắn muốn xóa phân ca của công nhân này không?"
     },
+    skills: {
+      "Manual Assembly": "Lắp ráp thủ công",
+      "CNC Programming": "Lập trình CNC",
+      "Quality Inspection": "Kiểm tra chất lượng (QC)",
+      "Electrical Wiring": "Đi dây điện",
+      "Soldering": "Hàn mạch",
+      "Forklift Operations": "Vận hành xe nâng",
+      "CAD modeling": "Thiết kế CAD"
+    },
+    skills_desc: {
+      "Competency in manual assembly methods": "Năng lực về phương pháp lắp ráp thủ công",
+      "G-code scripting and tooling setup": "Lập trình G-code và thiết lập công cụ",
+      "Usage of micrometer and optical comparator": "Sử dụng thước đo panme và máy so mẫu quang học",
+      "Wiring panels and reading schematics": "Đấu nối bảng điện và đọc sơ đồ mạch điện",
+      "High precision soldering skills": "Kỹ năng hàn mạch độ chính xác cao",
+      "Certified heavy forklift operator inside factory floor": "Vận hành xe nâng hạng nặng trong nhà máy",
+      "Drafting parts routing models using SolidWorks": "Thiết kế mô hình quy trình chi tiết bằng SolidWorks"
+    },
+    team_values: {
+      "Assembly A Team": "Đội Lắp ráp A",
+      "Assembly B Team": "Đội Lắp ráp B",
+      "CNC Operators": "Đội Vận hành CNC",
+      "Quality Check Team": "Tổ Kiểm tra Chất lượng (QC)",
+      "Electrical Maintenance": "Đội Bảo trì Điện",
+      "Logistics Staging Crew": "Đội Hậu cần & Xếp dỡ",
+      "Process Engineering Team": "Tổ Kỹ thuật Quy trình"
+    },
+    teams_desc: {
+      "General precision mechanical assembly": "Lắp ráp cơ khí chính xác chung",
+      "Sub-assembly and component packaging": "Lắp ráp phụ và đóng gói linh kiện",
+      "Metal milling and G-code execution": "Phay kim loại và thực thi G-code",
+      "Incoming parts inspection": "Kiểm tra linh kiện đầu vào",
+      "High voltage and electronics repair": "Sửa chữa điện cao thế và điện tử",
+      "In-factory material transit handlers": "Nhân sự luân chuyển nguyên vật liệu nội bộ",
+      "Industrial routing design specialists": "Chuyên gia thiết kế quy trình công nghiệp"
+    },
+    workshops: {
+      "Assembly Workshop A": "Phân xưởng Lắp ráp A",
+      "Machining Workshop B": "Phân xưởng Gia công cơ khí B",
+      "Testing Lab Alpha": "Phòng thử nghiệm Alpha",
+      "Main Repair Shop": "Xưởng Sửa chữa chính",
+      "Material Depot C": "Kho nguyên vật liệu C",
+      "Design Office Suite": "Văn phòng Thiết kế"
+    },
+    order_status: {
+      all: 'Tất cả trạng thái',
+      draft: 'Bản nháp',
+      released: 'Đã phát hành',
+      sent_to_gateway: 'Đã gửi Gateway',
+      accepted: 'Đã chấp nhận',
+      in_progress: 'Đang sản xuất',
+      completed: 'Hoàn thành',
+      failed: 'Lỗi / Thất bại',
+      cancelled: 'Đã hủy'
+    },
+    priority: {
+      low: 'Thấp',
+      normal: 'Bình thường',
+      high: 'Cao',
+      urgent: 'Khẩn cấp'
+    },
+    operation_type: {
+      PRINT_ONLY: 'Chỉ in phun',
+      MARK_ONLY: 'Chỉ khắc laser',
+      PRINT_AND_MARK: 'In & Khắc kết hợp'
+    }
   },
 }

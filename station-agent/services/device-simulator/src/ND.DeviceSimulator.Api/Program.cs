@@ -9,6 +9,7 @@ using ND.DeviceSimulator.Infrastructure.VirtualDevices;
 using ND.DeviceSimulator.Infrastructure.Workers;
 using Microsoft.Data.Sqlite;
 using System.Text.Json;
+using ND.DeviceSimulator.Domain.Entities;
 
 // ── Bootstrap Serilog ─────────────────────────────────────────────────────────
 Log.Logger = new LoggerConfiguration().WriteTo.Console().CreateBootstrapLogger();
@@ -87,6 +88,7 @@ try
     builder.Services.AddHostedService(sp => sp.GetRequiredService<VirtualPrinterServer>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<VirtualLaserServer>());
     builder.Services.AddHostedService<ConnectionCheckWorker>();
+    builder.Services.AddHostedService<MesEventForwarder>();
 
     // ── SignalR ───────────────────────────────────────────────────────────────
     builder.Services.AddSignalR();
@@ -401,6 +403,91 @@ try
             }
 
             return Results.Ok(new { eventId });
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    });
+
+    app.MapPost("/gateway/production-orders", async (
+        CreateGatewayOrderRequest req,
+        VirtualFactoryGateway gateway,
+        SimulatorDbContext db,
+        IConfiguration config) =>
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(req.ProductionOrderId))
+                return Results.BadRequest(new { error = "production_order_id is required" });
+            if (string.IsNullOrWhiteSpace(req.OrderNumber))
+                return Results.BadRequest(new { error = "order_number is required" });
+            if (string.IsNullOrWhiteSpace(req.OperationType))
+                return Results.BadRequest(new { error = "operation_type is required" });
+            if (string.IsNullOrWhiteSpace(req.Station))
+                return Results.BadRequest(new { error = "station is required" });
+            if (req.Quantity <= 0)
+                return Results.BadRequest(new { error = "quantity must be greater than 0" });
+
+            var data = new List<UnifiedTagRequest>();
+            if (req.OperationType == "PRINT_ONLY")
+            {
+                data.Add(new("operation.type", "PRINT_ONLY"));
+                data.Add(new("print.type", "LABEL_PRINT"));
+                data.Add(new("product.id", req.ProductId));
+                data.Add(new("product.lot", req.LotNumber));
+                data.Add(new("product.mfg_date", req.MfgDate));
+                data.Add(new("product.exp_date", req.ExpDate));
+            }
+            else if (req.OperationType == "MARK_ONLY")
+            {
+                data.Add(new("operation.type", "MARK_ONLY"));
+                data.Add(new("marking.type", "LASER_ETCHING"));
+                data.Add(new("marking.serial", req.SerialNumber));
+                data.Add(new("marking.lot", req.LotNumber));
+                data.Add(new("marking.date_code", req.MfgDate));
+            }
+            else if (req.OperationType == "PRINT_AND_MARK")
+            {
+                data.Add(new("operation.type", "PRINT_AND_MARK"));
+                data.Add(new("print.type", "PRODUCT_LABEL"));
+                data.Add(new("marking.type", "LASER_SERIALIZATION"));
+                data.Add(new("product.id", req.ProductId));
+                data.Add(new("product.lot", req.LotNumber));
+                data.Add(new("marking.serial", req.SerialNumber));
+            }
+            else
+            {
+                return Results.BadRequest(new { error = $"Unsupported operation type: {req.OperationType}" });
+            }
+
+            // MES Event Correlation tags
+            data.Add(new("production.order_id", req.ProductionOrderId));
+            data.Add(new("production.order_number", req.OrderNumber));
+
+            var site = config["Simulator:SITE_CODE"] ?? "NMDDuongDuong";
+            var edgeId = config["Simulator:EDGE_ID"] ?? "edge-ipc-l3-marking";
+            var area = config["Simulator:AREA_CODE"] ?? "Assembly_Section";
+            var line = config["Simulator:LINE_CODE"] ?? "Chuyen03";
+            var topic = $"nd/{site}/{edgeId}/command";
+
+            var publishReq = new GatewayPublishRequest(topic, site, area, line, req.Station, edgeId, data);
+            var eventId = await gateway.PublishAsync(publishReq);
+
+            // Record mapping in SQLite
+            var mapping = ProductionOrderMapping.Create(
+                req.ProductionOrderId,
+                req.OrderNumber,
+                eventId,
+                req.ProductionOrderId, // Correlation ID
+                req.OperationType,
+                req.Station,
+                "QUEUED"
+            );
+            db.ProductionOrderMappings.Add(mapping);
+            await db.SaveChangesAsync();
+
+            return Results.Json(new { gatewayOrderId = eventId, accepted = true, timestamp = DateTime.UtcNow });
         }
         catch (Exception ex)
         {
@@ -1046,5 +1133,19 @@ return 0;
 public record TriggerJobRequest(string? Scenario);
 
 public record SetPrinterModeRequest(int Mode);
+
+public record CreateGatewayOrderRequest(
+    [property: System.Text.Json.Serialization.JsonPropertyName("production_order_id")] string ProductionOrderId,
+    [property: System.Text.Json.Serialization.JsonPropertyName("order_number")] string OrderNumber,
+    [property: System.Text.Json.Serialization.JsonPropertyName("operation_type")] string OperationType,
+    [property: System.Text.Json.Serialization.JsonPropertyName("station")] string Station,
+    [property: System.Text.Json.Serialization.JsonPropertyName("priority")] int Priority,
+    [property: System.Text.Json.Serialization.JsonPropertyName("product_id")] string ProductId,
+    [property: System.Text.Json.Serialization.JsonPropertyName("lot_number")] string LotNumber,
+    [property: System.Text.Json.Serialization.JsonPropertyName("serial_number")] string SerialNumber,
+    [property: System.Text.Json.Serialization.JsonPropertyName("mfg_date")] string MfgDate,
+    [property: System.Text.Json.Serialization.JsonPropertyName("exp_date")] string ExpDate,
+    [property: System.Text.Json.Serialization.JsonPropertyName("quantity")] int Quantity
+);
 
 public partial class Program { }

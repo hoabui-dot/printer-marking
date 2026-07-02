@@ -11,10 +11,6 @@ COPY shared/ shared/
 # Copy service source
 COPY services/device-simulator/ services/device-simulator/
 
-# Build React frontend
-WORKDIR /repo/services/device-simulator/frontend
-RUN apt-get update && apt-get install -y nodejs npm && npm ci && npm run build
-
 # Build .NET backend
 WORKDIR /repo/services/device-simulator
 RUN dotnet publish src/ND.DeviceSimulator.Api/ND.DeviceSimulator.Api.csproj \

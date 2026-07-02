@@ -49,29 +49,53 @@ type RoutingDTO struct {
 // ─── Production Order DTOs ────────────────────────────────────────────────────
 
 type CreateProductionOrderRequest struct {
-	OrderNumber string  `json:"order_number" binding:"required,min=2,max=100"`
-	ProductName string  `json:"product_name" binding:"required,min=2,max=255"`
-	Quantity    int     `json:"quantity" binding:"required,min=1"`
-	Priority    int     `json:"priority" binding:"required,min=1,max=100"`
-	DueDate     *string `json:"due_date"` // optional YYYY-MM-DD
-	Notes       string  `json:"notes" binding:"max=1000"`
+	OrderNumber   string  `json:"order_number" binding:"required,min=2,max=100"`
+	ProductName   string  `json:"product_name" binding:"required,min=2,max=255"`
+	Quantity      int     `json:"quantity" binding:"required,min=1"`
+	Priority      int     `json:"priority" binding:"required,min=1,max=100"`
+	OperationType string  `json:"operation_type" binding:"required,oneof=PRINT_ONLY MARK_ONLY PRINT_AND_MARK"`
+	Station       string  `json:"station" binding:"required,min=2,max=100"`
+	DueDate       *string `json:"due_date"` // optional YYYY-MM-DD
+	Notes         string  `json:"notes" binding:"max=1000"`
 }
 
 type UpdatePriorityRequest struct {
 	Priority int `json:"priority" binding:"required,min=1,max=100"`
 }
 
+type ProductionOrderEventDTO struct {
+	ID                uuid.UUID `json:"id"`
+	ProductionOrderID uuid.UUID `json:"production_order_id"`
+	EventType         string    `json:"event_type"`
+	Status            string    `json:"status"`
+	Message           string    `json:"message"`
+	OccurredAt        time.Time `json:"occurred_at"`
+}
+
 type ProductionOrderDTO struct {
-	ID          uuid.UUID  `json:"id"`
-	OrderNumber string     `json:"order_number"`
-	ProductName string     `json:"product_name"`
-	Quantity    int        `json:"quantity"`
-	Priority    int        `json:"priority"`
-	Status      string     `json:"status"`
-	DueDate     *time.Time `json:"due_date,omitempty"`
-	Notes       string     `json:"notes,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID             uuid.UUID                 `json:"id"`
+	OrderNumber    string                    `json:"order_number"`
+	ProductName    string                    `json:"product_name"`
+	Quantity       int                       `json:"quantity"`
+	Priority       int                       `json:"priority"`
+	Status         string                    `json:"status"`
+	OperationType  string                    `json:"operation_type"`
+	Station        string                    `json:"station"`
+	GatewayOrderID *string                   `json:"gateway_order_id,omitempty"`
+	DueDate        *time.Time                `json:"due_date,omitempty"`
+	Notes          string                    `json:"notes,omitempty"`
+	Events         []ProductionOrderEventDTO `json:"events,omitempty"`
+	CreatedAt      time.Time                 `json:"created_at"`
+	UpdatedAt      time.Time                 `json:"updated_at"`
+}
+
+type GatewayEventPayload struct {
+	JobNo             string    `json:"job_no" binding:"required"`
+	ProductionOrderID string    `json:"production_order_id"`
+	OrderNumber       string    `json:"order_number"`
+	Status            string    `json:"status" binding:"required"`
+	Message           string    `json:"message" binding:"required"`
+	OccurredAt        time.Time `json:"occurred_at" binding:"required"`
 }
 
 // ─── Work Order DTOs ──────────────────────────────────────────────────────────

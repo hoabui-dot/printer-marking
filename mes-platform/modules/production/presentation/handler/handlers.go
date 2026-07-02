@@ -1,7 +1,11 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -258,4 +262,70 @@ func (h *ProductionHandler) CompleteWorkOrder(c *gin.Context) {
 		return
 	}
 	response.NoContent(c)
+}
+
+func (h *ProductionHandler) ProcessGatewayEvent(c *gin.Context) {
+	var req dto.GatewayEventPayload
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "VALIDATION_ERROR", err.Error())
+		return
+	}
+	if err := h.svc.ProcessGatewayEvent(c.Request.Context(), req); err != nil {
+		response.BadRequest(c, "BAD_REQUEST", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"status": "processed"})
+}
+
+func (h *ProductionHandler) StreamProductionOrder(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid production order ID format")
+		return
+	}
+
+	clientID := uuid.New().String()
+	updateCh := h.svc.Subscribe(clientID)
+	defer h.svc.Unsubscribe(clientID)
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	// Send initial state immediately
+	initDTO, err := h.svc.GetProductionOrder(c.Request.Context(), id)
+	if err == nil && initDTO != nil {
+		h.writeSSEEvent(c.Writer, "order_update", initDTO)
+	}
+
+	heartbeat := time.NewTicker(30 * time.Second)
+	defer heartbeat.Stop()
+
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case dto, ok := <-updateCh:
+			if !ok {
+				return
+			}
+			// Only send updates relevant to the subscribed order ID
+			if dto.ID == id {
+				h.writeSSEEvent(c.Writer, "order_update", dto)
+			}
+		case <-heartbeat.C:
+			fmt.Fprintf(c.Writer, ": heartbeat\n\n")
+			c.Writer.Flush()
+		}
+	}
+}
+
+func (h *ProductionHandler) writeSSEEvent(w gin.ResponseWriter, event string, data any) {
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, payload)
+	w.(http.Flusher).Flush()
 }

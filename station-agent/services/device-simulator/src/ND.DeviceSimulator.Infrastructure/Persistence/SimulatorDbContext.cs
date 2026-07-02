@@ -16,6 +16,7 @@ public sealed class SimulatorDbContext : DbContext, IUnitOfWork
     public DbSet<TimelineEvent> TimelineEvents => Set<TimelineEvent>();
     public DbSet<SystemConnection> SystemConnections => Set<SystemConnection>();
     public DbSet<ConfigurationValue> ConfigurationValues => Set<ConfigurationValue>();
+    public DbSet<ProductionOrderMapping> ProductionOrderMappings => Set<ProductionOrderMapping>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -120,6 +121,23 @@ public sealed class SimulatorDbContext : DbContext, IUnitOfWork
             e.Property(x => x.IsEditable).HasColumnName("is_editable");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<ProductionOrderMapping>(e =>
+        {
+            e.ToTable("production_order_mappings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ProductionOrderId).HasColumnName("production_order_id").IsRequired();
+            e.Property(x => x.OrderNumber).HasColumnName("order_number").IsRequired();
+            e.Property(x => x.EventId).HasColumnName("event_id").IsRequired();
+            e.HasIndex(x => x.EventId).IsUnique();
+            e.Property(x => x.CorrelationId).HasColumnName("correlation_id").IsRequired();
+            e.Property(x => x.OperationType).HasColumnName("operation_type").IsRequired();
+            e.Property(x => x.Station).HasColumnName("station").IsRequired();
+            e.Property(x => x.Status).HasColumnName("status").IsRequired();
+            e.Property(x => x.OccurredAt).HasColumnName("occurred_at").IsRequired();
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
         });
     }
 }

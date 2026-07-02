@@ -138,17 +138,18 @@ export function SkillsPage() {
   const columns: ColumnDef<SkillDTO>[] = [
     {
       accessorKey: 'code',
-      header: 'Code',
+      header: t('common.code'),
       cell: (info) => <span className="font-mono font-bold text-slate-800">{info.getValue() as string}</span>,
     },
     {
       accessorKey: 'name',
-      header: 'Name',
-      cell: (info) => <span className="font-semibold text-slate-700">{info.getValue() as string}</span>,
+      header: t('common.name'),
+      cell: (info) => <span className="font-semibold text-slate-700">{t(`skills.${info.getValue() as string}`, { defaultValue: info.getValue() as string })}</span>,
     },
     {
       accessorKey: 'description',
-      header: 'Description',
+      header: t('common.description'),
+      cell: (info) => <span>{t(`skills_desc.${info.getValue() as string}`, { defaultValue: info.getValue() as string })}</span>,
     },
     {
       id: 'actions',
@@ -184,13 +185,13 @@ export function SkillsPage() {
   return (
     <div className="fade-in max-w-7xl mx-auto p-4 space-y-6">
       <PageHeader
-        title="Skills"
-        description="Define and maintain operator technical qualifications and capabilities."
+        title={t('skills_module.title')}
+        description={t('skills_module.subtitle')}
       >
         <PermissionGuard permission={PERMISSIONS.WORKER_CREATE}>
           <button onClick={openCreateModal} className="btn btn-primary flex items-center gap-2 text-xs">
             <Plus size={16} />
-            Add Skill
+            {t('skills_module.addSkill')}
           </button>
         </PermissionGuard>
       </PageHeader>
@@ -200,7 +201,7 @@ export function SkillsPage() {
           data={skills}
           columns={columns}
           loading={isLoading}
-          emptyMessage="No skills found"
+          emptyMessage={t('skills_module.emptyMessage')}
         />
       </div>
 

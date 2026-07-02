@@ -167,6 +167,15 @@ export interface OvertimeRequestDTO {
   updated_at: string
 }
 
+export interface ProductionOrderEventDTO {
+  id: string
+  production_order_id: string
+  event_type: string
+  status: string
+  message: string
+  occurred_at: string
+}
+
 // Production types
 export interface ProductionOrderDTO {
   id: string
@@ -177,6 +186,10 @@ export interface ProductionOrderDTO {
   unit: string
   status: ProductionOrderStatus
   priority: 'low' | 'normal' | 'high' | 'urgent'
+  operation_type: 'PRINT_ONLY' | 'MARK_ONLY' | 'PRINT_AND_MARK'
+  station: string
+  gateway_order_id?: string
+  events?: ProductionOrderEventDTO[]
   planned_start: string
   planned_end: string
   actual_start?: string
@@ -186,7 +199,7 @@ export interface ProductionOrderDTO {
   updated_at: string
 }
 
-export type ProductionOrderStatus = 'draft' | 'planned' | 'in_progress' | 'completed' | 'cancelled' | 'on_hold'
+export type ProductionOrderStatus = 'draft' | 'released' | 'sent_to_gateway' | 'accepted' | 'in_progress' | 'completed' | 'closed' | 'failed' | 'cancelled'
 
 export interface WorkOrderDTO {
   id: string

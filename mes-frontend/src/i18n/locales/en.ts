@@ -290,6 +290,39 @@ export const en = {
       title: 'Production Orders',
       subtitle: 'Track production order schedule and delivery milestones',
       addOrder: 'Create Order',
+      orderNumber: 'Order Number',
+      productName: 'Product Name',
+      quantity: 'Quantity',
+      priority: 'Priority',
+      operation: 'Operation Integration Type',
+      station: 'Integration Station',
+      dueDate: 'Due Date',
+      notes: 'Notes',
+      progress: 'Production Progress',
+      timeline: 'Gateway Integration Timeline',
+      emptyState: 'No Order Selected',
+      emptyStateDesc: 'Choose an order from the list to inspect routing progress.',
+      noOrders: 'No production orders found',
+      createTitle: 'Create New Production Order',
+      release: 'Approve & Release',
+      releasing: 'Releasing...',
+      cancelOrder: 'Cancel Order',
+      cancelling: 'Cancelling...',
+      details: 'Order Details',
+      targetQty: 'Target Quantity',
+      integrationType: 'Integration Type',
+      integrationStation: 'Integration Station',
+      activeConnection: 'ACTIVE CONNECTION',
+      noOps: 'No operations defined',
+      timelineEmpty: 'No activity log for this order yet. Click "Approve & Release" to begin.',
+      workOrders: 'Work Orders (Operations)',
+      noSelectedOrder: 'No Order Selected',
+      chooseOrder: 'Choose an order from the list to inspect routing progress.',
+      dateToday: 'Today',
+      date7Days: 'Last 7 Days',
+      dateMonth: 'Last 30 Days',
+      dateCustom: 'Custom Range',
+      rangeLimitWarning: 'Maximum custom range is 1 month. Date has been automatically adjusted.'
     },
     work_orders: {
       title: 'Work Orders',
@@ -528,5 +561,71 @@ export const en = {
       confirmAssignWorker: "Are you sure you want to schedule this worker override?",
       confirmRemoveWorker: "Are you sure you want to remove this worker schedule?"
     },
+    skills: {
+      "Manual Assembly": "Manual Assembly",
+      "CNC Programming": "CNC Programming",
+      "Quality Inspection": "Quality Inspection",
+      "Electrical Wiring": "Electrical Wiring",
+      "Soldering": "Soldering",
+      "Forklift Operations": "Forklift Operations",
+      "CAD modeling": "CAD modeling"
+    },
+    skills_desc: {
+      "Competency in manual assembly methods": "Competency in manual assembly methods",
+      "G-code scripting and tooling setup": "G-code scripting and tooling setup",
+      "Usage of micrometer and optical comparator": "Usage of micrometer and optical comparator",
+      "Wiring panels and reading schematics": "Wiring panels and reading schematics",
+      "High precision soldering skills": "High precision soldering skills",
+      "Certified heavy forklift operator inside factory floor": "Certified heavy forklift operator inside factory floor",
+      "Drafting parts routing models using SolidWorks": "Drafting parts routing models using SolidWorks"
+    },
+    team_values: {
+      "Assembly A Team": "Assembly A Team",
+      "Assembly B Team": "Assembly B Team",
+      "CNC Operators": "CNC Operators",
+      "Quality Check Team": "Quality Check Team",
+      "Electrical Maintenance": "Electrical Maintenance",
+      "Logistics Staging Crew": "Logistics Staging Crew",
+      "Process Engineering Team": "Process Engineering Team"
+    },
+    teams_desc: {
+      "General precision mechanical assembly": "General precision mechanical assembly",
+      "Sub-assembly and component packaging": "Sub-assembly and component packaging",
+      "Metal milling and G-code execution": "Metal milling and G-code execution",
+      "Incoming parts inspection": "Incoming parts inspection",
+      "High voltage and electronics repair": "High voltage and electronics repair",
+      "In-factory material transit handlers": "In-factory material transit handlers",
+      "Industrial routing design specialists": "Industrial routing design specialists"
+    },
+    workshops: {
+      "Assembly Workshop A": "Assembly Workshop A",
+      "Machining Workshop B": "Machining Workshop B",
+      "Testing Lab Alpha": "Testing Lab Alpha",
+      "Main Repair Shop": "Main Repair Shop",
+      "Material Depot C": "Material Depot C",
+      "Design Office Suite": "Design Office Suite"
+    },
+    order_status: {
+      all: 'All Statuses',
+      draft: 'Draft',
+      released: 'Released',
+      sent_to_gateway: 'Sent to Gateway',
+      accepted: 'Accepted',
+      in_progress: 'In Progress',
+      completed: 'Completed',
+      failed: 'Failed',
+      cancelled: 'Cancelled'
+    },
+    priority: {
+      low: 'Low',
+      normal: 'Normal',
+      high: 'High',
+      urgent: 'Urgent'
+    },
+    operation_type: {
+      PRINT_ONLY: 'Print Only',
+      MARK_ONLY: 'Mark Only',
+      PRINT_AND_MARK: 'Print and Mark'
+    }
   },
 }

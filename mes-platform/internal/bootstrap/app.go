@@ -21,6 +21,7 @@ import (
 	planninghandler "github.com/nd/mes-platform/modules/planning/presentation/handler"
 	planningroute "github.com/nd/mes-platform/modules/planning/presentation/route"
 	productionsvc "github.com/nd/mes-platform/modules/production/application/service"
+	productiongateway "github.com/nd/mes-platform/modules/production/infrastructure/gateway"
 	productionpersistence "github.com/nd/mes-platform/modules/production/infrastructure/persistence"
 	productionhandler "github.com/nd/mes-platform/modules/production/presentation/handler"
 	productionroute "github.com/nd/mes-platform/modules/production/presentation/route"
@@ -217,13 +218,17 @@ func New() (*App, error) {
 	productionOrderRepo := productionpersistence.NewGormProductionOrderRepository(db.DB)
 	productionWorkRepo := productionpersistence.NewGormWorkOrderRepository(db.DB)
 	productionRoutingRepo := productionpersistence.NewGormRoutingRepository(db.DB)
+	productionEventRepo := productionpersistence.NewGormProductionOrderEventRepository(db.DB)
 	productionOutboxRepo := productionpersistence.NewGormOutboxRepository(db.DB)
+	gatewayClient := productiongateway.NewGatewayClient(cfg.Gateway.URL)
 
 	productionService := productionsvc.NewProductionService(
 		productionOrderRepo,
 		productionWorkRepo,
 		productionRoutingRepo,
+		productionEventRepo,
 		productionOutboxRepo,
+		gatewayClient,
 		log,
 	)
 

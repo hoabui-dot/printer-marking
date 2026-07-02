@@ -15,11 +15,15 @@ import (
 type OrderStatus string
 
 const (
-	OrderStatusDraft      OrderStatus = "draft"
-	OrderStatusReleased   OrderStatus = "released"
-	OrderStatusInProgress OrderStatus = "in_progress"
-	OrderStatusCompleted  OrderStatus = "completed"
-	OrderStatusCancelled  OrderStatus = "cancelled"
+	OrderStatusDraft         OrderStatus = "draft"
+	OrderStatusReleased      OrderStatus = "released"
+	OrderStatusSentToGateway OrderStatus = "sent_to_gateway"
+	OrderStatusAccepted      OrderStatus = "accepted"
+	OrderStatusInProgress    OrderStatus = "in_progress"
+	OrderStatusCompleted     OrderStatus = "completed"
+	OrderStatusClosed        OrderStatus = "closed"
+	OrderStatusFailed        OrderStatus = "failed"
+	OrderStatusCancelled     OrderStatus = "cancelled"
 )
 
 // ─── Work Order Status ────────────────────────────────────────────────────────
@@ -139,16 +143,19 @@ func (r *Routing) TotalEstimatedMinutes() int {
 // ProductionOrder is the top-level aggregate for manufacturing a product batch.
 type ProductionOrder struct {
 	domain.AggregateRoot
-	OrderNumber string
-	ProductName string
-	Quantity    int
-	Priority    int // 1 = lowest, 100 = highest
-	Status      OrderStatus
-	DueDate     *time.Time
-	Notes       string
+	OrderNumber    string
+	ProductName    string
+	Quantity       int
+	Priority       int // 1 = lowest, 100 = highest
+	Status         OrderStatus
+	OperationType  string
+	Station        string
+	GatewayOrderID *string
+	DueDate        *time.Time
+	Notes          string
 }
 
-func NewProductionOrder(orderNumber, productName string, quantity, priority int, dueDate *time.Time, notes string) (*ProductionOrder, error) {
+func NewProductionOrder(orderNumber, productName string, quantity, priority int, operationType, station string, dueDate *time.Time, notes string) (*ProductionOrder, error) {
 	if strings.TrimSpace(orderNumber) == "" {
 		return nil, errors.New("order number is required")
 	}
@@ -161,15 +168,23 @@ func NewProductionOrder(orderNumber, productName string, quantity, priority int,
 	if priority < 1 || priority > 100 {
 		return nil, errors.New("priority must be between 1 and 100")
 	}
+	if strings.TrimSpace(operationType) == "" {
+		return nil, errors.New("operation type is required")
+	}
+	if strings.TrimSpace(station) == "" {
+		return nil, errors.New("station is required")
+	}
 
 	po := &ProductionOrder{
-		OrderNumber: strings.TrimSpace(orderNumber),
-		ProductName: strings.TrimSpace(productName),
-		Quantity:    quantity,
-		Priority:    priority,
-		Status:      OrderStatusDraft,
-		DueDate:     dueDate,
-		Notes:       strings.TrimSpace(notes),
+		OrderNumber:   strings.TrimSpace(orderNumber),
+		ProductName:   strings.TrimSpace(productName),
+		Quantity:      quantity,
+		Priority:      priority,
+		Status:        OrderStatusDraft,
+		OperationType: strings.TrimSpace(operationType),
+		Station:       strings.TrimSpace(station),
+		DueDate:       dueDate,
+		Notes:         strings.TrimSpace(notes),
 	}
 	po.BaseEntity = domain.NewBaseEntity()
 	po.RecordEvent(NewProductionOrderCreatedEvent(po.ID, po.OrderNumber, po.ProductName, po.Quantity))
@@ -187,10 +202,31 @@ func (po *ProductionOrder) Release() error {
 	return nil
 }
 
-// Start transitions the order to in_progress.
+// SentToGateway marks that the order has been successfully transmitted to the gateway.
+func (po *ProductionOrder) SentToGateway(gatewayOrderID string) error {
+	if po.Status != OrderStatusReleased && po.Status != OrderStatusSentToGateway {
+		return fmt.Errorf("can only mark a released order as sent to gateway, current status: %s", po.Status)
+	}
+	po.Status = OrderStatusSentToGateway
+	po.GatewayOrderID = &gatewayOrderID
+	po.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
+// Accept transitions the order status to accepted.
+func (po *ProductionOrder) Accept() error {
+	if po.Status != OrderStatusSentToGateway {
+		return fmt.Errorf("can only accept an order that has been sent to gateway, current status: %s", po.Status)
+	}
+	po.Status = OrderStatusAccepted
+	po.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
+// Start transitions the order to in_progress (Running).
 func (po *ProductionOrder) Start() error {
-	if po.Status != OrderStatusReleased {
-		return fmt.Errorf("can only start a released order, current status: %s", po.Status)
+	if po.Status != OrderStatusAccepted && po.Status != OrderStatusReleased && po.Status != OrderStatusSentToGateway {
+		return fmt.Errorf("can only start an accepted or released order, current status: %s", po.Status)
 	}
 	po.Status = OrderStatusInProgress
 	po.UpdatedAt = time.Now().UTC()
@@ -199,8 +235,8 @@ func (po *ProductionOrder) Start() error {
 
 // Complete marks the order as fully manufactured.
 func (po *ProductionOrder) Complete() error {
-	if po.Status != OrderStatusInProgress {
-		return fmt.Errorf("can only complete an in-progress order, current status: %s", po.Status)
+	if po.Status != OrderStatusInProgress && po.Status != OrderStatusAccepted && po.Status != OrderStatusSentToGateway {
+		return fmt.Errorf("can only complete an active order, current status: %s", po.Status)
 	}
 	po.Status = OrderStatusCompleted
 	po.UpdatedAt = time.Now().UTC()
@@ -208,10 +244,30 @@ func (po *ProductionOrder) Complete() error {
 	return nil
 }
 
+// Fail marks the order as failed.
+func (po *ProductionOrder) Fail() error {
+	if po.Status != OrderStatusInProgress && po.Status != OrderStatusReleased && po.Status != OrderStatusSentToGateway && po.Status != OrderStatusAccepted {
+		return fmt.Errorf("cannot fail an order in status: %s", po.Status)
+	}
+	po.Status = OrderStatusFailed
+	po.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
+// Close transitions the order status to closed.
+func (po *ProductionOrder) Close() error {
+	if po.Status != OrderStatusCompleted {
+		return fmt.Errorf("can only close a completed order, current status: %s", po.Status)
+	}
+	po.Status = OrderStatusClosed
+	po.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
 // Cancel marks the order as cancelled. Only draft or released orders can be cancelled.
 func (po *ProductionOrder) Cancel() error {
-	if po.Status != OrderStatusDraft && po.Status != OrderStatusReleased {
-		return fmt.Errorf("can only cancel a draft or released order, current status: %s", po.Status)
+	if po.Status != OrderStatusDraft && po.Status != OrderStatusReleased && po.Status != OrderStatusSentToGateway {
+		return fmt.Errorf("can only cancel a draft, released or sent order, current status: %s", po.Status)
 	}
 	po.Status = OrderStatusCancelled
 	po.UpdatedAt = time.Now().UTC()
@@ -227,6 +283,27 @@ func (po *ProductionOrder) UpdatePriority(priority int) error {
 	po.Priority = priority
 	po.UpdatedAt = time.Now().UTC()
 	return nil
+}
+
+// ProductionOrderEvent represents a historical log of actions/events for a ProductionOrder.
+type ProductionOrderEvent struct {
+	ID                uuid.UUID
+	ProductionOrderID uuid.UUID
+	EventType         string
+	Status            string
+	Message           string
+	OccurredAt        time.Time
+}
+
+func NewProductionOrderEvent(productionOrderID uuid.UUID, eventType, status, message string, occurredAt time.Time) *ProductionOrderEvent {
+	return &ProductionOrderEvent{
+		ID:                uuid.New(),
+		ProductionOrderID: productionOrderID,
+		EventType:         eventType,
+		Status:            status,
+		Message:           message,
+		OccurredAt:        occurredAt,
+	}
 }
 
 // ─── Work Order ───────────────────────────────────────────────────────────────

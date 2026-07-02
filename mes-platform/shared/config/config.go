@@ -27,6 +27,11 @@ type Config struct {
 	RateLimit RateLimitConfig
 	Password  PasswordPolicyConfig
 	CORS      CORSConfig
+	Gateway   GatewayConfig
+}
+
+type GatewayConfig struct {
+	URL string
 }
 
 // AppConfig holds general application settings.
@@ -213,6 +218,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("PASSWORD_RESET_TOKEN_EXPIRY_MINUTES", 30)
 
 	v.SetDefault("CORS_ALLOWED_ORIGINS", "http://localhost:3100")
+	v.SetDefault("GATEWAY_URL", "http://localhost:5008")
 }
 
 // bind maps Viper keys to the typed Config struct.
@@ -301,9 +307,13 @@ func bind(v *viper.Viper, cfg *Config) error {
 		ResetTokenExpiry: resetExpiry,
 	}
 
-	origins := v.GetString("CORS_ALLOWED_ORIGINS")
+	allowedOrigins := strings.Split(v.GetString("CORS_ALLOWED_ORIGINS"), ",")
 	cfg.CORS = CORSConfig{
-		AllowedOrigins: strings.Split(origins, ","),
+		AllowedOrigins: allowedOrigins,
+	}
+
+	cfg.Gateway = GatewayConfig{
+		URL: v.GetString("GATEWAY_URL"),
 	}
 
 	return nil

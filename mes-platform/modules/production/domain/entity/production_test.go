@@ -80,7 +80,7 @@ func TestUnit_NewRouting_Validation(t *testing.T) {
 
 func TestUnit_NewProductionOrder_Success(t *testing.T) {
 	due := time.Now().Add(24 * time.Hour)
-	po, err := entity.NewProductionOrder("PO-001", "Offset Print Job", 500, 80, &due, "Rush order")
+	po, err := entity.NewProductionOrder("PO-001", "Offset Print Job", 500, 80, "PRINT_AND_MARK", "Station-Combined-01", &due, "Rush order")
 	require.NoError(t, err)
 	assert.Equal(t, "PO-001", po.OrderNumber)
 	assert.Equal(t, entity.OrderStatusDraft, po.Status)
@@ -92,24 +92,24 @@ func TestUnit_NewProductionOrder_Success(t *testing.T) {
 }
 
 func TestUnit_ProductionOrder_Validation(t *testing.T) {
-	_, err := entity.NewProductionOrder("", "Product", 1, 50, nil, "")
+	_, err := entity.NewProductionOrder("", "Product", 1, 50, "PRINT_AND_MARK", "Station-Combined-01", nil, "")
 	assert.ErrorContains(t, err, "order number is required")
 
-	_, err = entity.NewProductionOrder("PO-X", "", 1, 50, nil, "")
+	_, err = entity.NewProductionOrder("PO-X", "", 1, 50, "PRINT_AND_MARK", "Station-Combined-01", nil, "")
 	assert.ErrorContains(t, err, "product name is required")
 
-	_, err = entity.NewProductionOrder("PO-X", "Product", 0, 50, nil, "")
+	_, err = entity.NewProductionOrder("PO-X", "Product", 0, 50, "PRINT_AND_MARK", "Station-Combined-01", nil, "")
 	assert.ErrorContains(t, err, "quantity must be greater than 0")
 
-	_, err = entity.NewProductionOrder("PO-X", "Product", 1, 0, nil, "")
+	_, err = entity.NewProductionOrder("PO-X", "Product", 1, 0, "PRINT_AND_MARK", "Station-Combined-01", nil, "")
 	assert.ErrorContains(t, err, "priority must be between 1 and 100")
 
-	_, err = entity.NewProductionOrder("PO-X", "Product", 1, 101, nil, "")
+	_, err = entity.NewProductionOrder("PO-X", "Product", 1, 101, "PRINT_AND_MARK", "Station-Combined-01", nil, "")
 	assert.ErrorContains(t, err, "priority must be between 1 and 100")
 }
 
 func TestUnit_ProductionOrder_StatusLifecycle(t *testing.T) {
-	po, _ := entity.NewProductionOrder("PO-001", "Print Job", 100, 50, nil, "")
+	po, _ := entity.NewProductionOrder("PO-001", "Print Job", 100, 50, "PRINT_AND_MARK", "Station-Combined-01", nil, "")
 	po.PullEvents() // clear creation event
 
 	// draft → released
@@ -139,7 +139,7 @@ func TestUnit_ProductionOrder_StatusLifecycle(t *testing.T) {
 }
 
 func TestUnit_ProductionOrder_Cancel(t *testing.T) {
-	po, _ := entity.NewProductionOrder("PO-002", "Print Job", 100, 50, nil, "")
+	po, _ := entity.NewProductionOrder("PO-002", "Print Job", 100, 50, "PRINT_AND_MARK", "Station-Combined-01", nil, "")
 	po.PullEvents()
 
 	err := po.Cancel()

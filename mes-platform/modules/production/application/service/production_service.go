@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,27 +27,41 @@ type OutboxRepository interface {
 	Save(ctx context.Context, event *outbox.Event) error
 }
 
+type GatewayClient interface {
+	SendProductionOrder(ctx context.Context, order *entity.ProductionOrder) (string, error)
+}
+
 type ProductionService struct {
 	orderRepo   repository.ProductionOrderRepository
 	workRepo    repository.WorkOrderRepository
 	routingRepo repository.RoutingRepository
+	eventRepo   repository.ProductionOrderEventRepository
 	outboxRepo  OutboxRepository
+	gatewayCli  GatewayClient
 	log         *logger.Logger
+
+	mu          sync.RWMutex
+	subscribers map[string]chan *dto.ProductionOrderDTO
 }
 
 func NewProductionService(
 	orderRepo repository.ProductionOrderRepository,
 	workRepo repository.WorkOrderRepository,
 	routingRepo repository.RoutingRepository,
+	eventRepo repository.ProductionOrderEventRepository,
 	outboxRepo OutboxRepository,
+	gatewayCli GatewayClient,
 	log *logger.Logger,
 ) *ProductionService {
 	return &ProductionService{
 		orderRepo:   orderRepo,
 		workRepo:    workRepo,
 		routingRepo: routingRepo,
+		eventRepo:   eventRepo,
 		outboxRepo:  outboxRepo,
+		gatewayCli:  gatewayCli,
 		log:         log.With(logger.Module("production")),
+		subscribers: make(map[string]chan *dto.ProductionOrderDTO),
 	}
 }
 
@@ -129,6 +144,8 @@ func (s *ProductionService) CreateProductionOrder(ctx context.Context, req dto.C
 		req.ProductName,
 		req.Quantity,
 		req.Priority,
+		req.OperationType,
+		req.Station,
 		dueDate,
 		req.Notes,
 	)
@@ -140,6 +157,12 @@ func (s *ProductionService) CreateProductionOrder(ctx context.Context, req dto.C
 		return nil, err
 	}
 
+	// Create initial timeline event
+	initEvent := entity.NewProductionOrderEvent(order.ID, "OrderCreated", "draft", "Đơn hàng sản xuất được tạo ở dạng nháp.", time.Now())
+	if err := s.eventRepo.Save(ctx, initEvent); err != nil {
+		s.log.Error("failed to save initial production order timeline event", logger.Err(err))
+	}
+
 	_ = s.publishEvents(ctx, order.PullEvents())
 	return mapOrderToDTO(order), nil
 }
@@ -149,7 +172,26 @@ func (s *ProductionService) GetProductionOrder(ctx context.Context, id uuid.UUID
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	return mapOrderToDTO(order), nil
+	events, err := s.eventRepo.ListByProductionOrderID(ctx, id)
+	if err != nil {
+		s.log.Error("failed to list production order events", logger.Err(err))
+	}
+
+	orderDTO := mapOrderToDTO(order)
+	if len(events) > 0 {
+		orderDTO.Events = make([]dto.ProductionOrderEventDTO, len(events))
+		for i, ev := range events {
+			orderDTO.Events[i] = dto.ProductionOrderEventDTO{
+				ID:                ev.ID,
+				ProductionOrderID: ev.ProductionOrderID,
+				EventType:         ev.EventType,
+				Status:            ev.Status,
+				Message:           ev.Message,
+				OccurredAt:        ev.OccurredAt,
+			}
+		}
+	}
+	return orderDTO, nil
 }
 
 func (s *ProductionService) ListProductionOrders(ctx context.Context, filter repository.ProductionOrderFilter) ([]*dto.ProductionOrderDTO, int64, error) {
@@ -175,6 +217,25 @@ func (s *ProductionService) ReleaseProductionOrder(ctx context.Context, id uuid.
 	if err := s.orderRepo.Save(ctx, order); err != nil {
 		return err
 	}
+
+	// Create Release event in timeline
+	relEvent := entity.NewProductionOrderEvent(order.ID, "OrderReleased", "released", "Đơn hàng được phê duyệt và phát hành.", time.Now())
+	_ = s.eventRepo.Save(ctx, relEvent)
+
+	// Send to Gateway
+	gatewayID, err := s.gatewayCli.SendProductionOrder(ctx, order)
+	if err != nil {
+		s.log.Error("failed to send production order to gateway", logger.Err(err))
+		failEvent := entity.NewProductionOrderEvent(order.ID, "GatewayTransmissionFailed", "released", fmt.Sprintf("Không thể gửi đơn hàng đến Gateway: %s. Sẵn sàng để gửi lại.", err.Error()), time.Now())
+		_ = s.eventRepo.Save(ctx, failEvent)
+	} else {
+		if err := order.SentToGateway(gatewayID); err == nil {
+			_ = s.orderRepo.Save(ctx, order)
+			sentEvent := entity.NewProductionOrderEvent(order.ID, "SentToGateway", "sent_to_gateway", fmt.Sprintf("Đã gửi đơn hàng đến Gateway thành công. Gateway Order ID: %s", gatewayID), time.Now())
+			_ = s.eventRepo.Save(ctx, sentEvent)
+		}
+	}
+
 	_ = s.publishEvents(ctx, order.PullEvents())
 	return nil
 }
@@ -222,8 +283,11 @@ func (s *ProductionService) CreateWorkOrder(ctx context.Context, req dto.CreateW
 	if err != nil {
 		return nil, fmt.Errorf("%w: production order", ErrNotFound)
 	}
-	if order.Status != entity.OrderStatusReleased && order.Status != entity.OrderStatusInProgress {
-		return nil, fmt.Errorf("%w: production order must be released or in_progress to create work orders", ErrTransition)
+	if order.Status != entity.OrderStatusReleased &&
+		order.Status != entity.OrderStatusSentToGateway &&
+		order.Status != entity.OrderStatusAccepted &&
+		order.Status != entity.OrderStatusInProgress {
+		return nil, fmt.Errorf("%w: production order must be released, sent_to_gateway, accepted, or in_progress to create work orders", ErrTransition)
 	}
 
 	// Verify routing exists
@@ -338,16 +402,19 @@ func mapRoutingToDTO(r *entity.Routing) *dto.RoutingDTO {
 
 func mapOrderToDTO(o *entity.ProductionOrder) *dto.ProductionOrderDTO {
 	return &dto.ProductionOrderDTO{
-		ID:          o.ID,
-		OrderNumber: o.OrderNumber,
-		ProductName: o.ProductName,
-		Quantity:    o.Quantity,
-		Priority:    o.Priority,
-		Status:      string(o.Status),
-		DueDate:     o.DueDate,
-		Notes:       o.Notes,
-		CreatedAt:   o.CreatedAt,
-		UpdatedAt:   o.UpdatedAt,
+		ID:             o.ID,
+		OrderNumber:    o.OrderNumber,
+		ProductName:    o.ProductName,
+		Quantity:       o.Quantity,
+		Priority:       o.Priority,
+		Status:         string(o.Status),
+		OperationType:  o.OperationType,
+		Station:        o.Station,
+		GatewayOrderID: o.GatewayOrderID,
+		DueDate:        o.DueDate,
+		Notes:          o.Notes,
+		CreatedAt:      o.CreatedAt,
+		UpdatedAt:      o.UpdatedAt,
 	}
 }
 
@@ -362,5 +429,120 @@ func mapWorkOrderToDTO(wo *entity.WorkOrder) *dto.WorkOrderDTO {
 		CompletedAt:       wo.CompletedAt,
 		CreatedAt:         wo.CreatedAt,
 		UpdatedAt:         wo.UpdatedAt,
+	}
+}
+
+// ProcessGatewayEvent handles webhook status events sent from the Gateway.
+func (s *ProductionService) ProcessGatewayEvent(ctx context.Context, req dto.GatewayEventPayload) error {
+	var order *entity.ProductionOrder
+	var err error
+
+	// 1. Try lookup by ProductionOrderID if provided
+	if req.ProductionOrderID != "" {
+		if id, parseErr := uuid.Parse(req.ProductionOrderID); parseErr == nil {
+			order, err = s.orderRepo.FindByID(ctx, id)
+		}
+	}
+
+	// 2. Try lookup by OrderNumber if provided and not yet found
+	if (order == nil || err != nil) && req.OrderNumber != "" {
+		order, err = s.orderRepo.FindByOrderNumber(ctx, req.OrderNumber)
+	}
+
+	// 3. Try lookup by GatewayOrderID
+	if order == nil || err != nil {
+		order, err = s.orderRepo.FindByGatewayOrderID(ctx, req.JobNo)
+	}
+
+	// 4. Fallback to parsing JobNo as UUID
+	if order == nil || err != nil {
+		if id, parseErr := uuid.Parse(req.JobNo); parseErr == nil {
+			order, err = s.orderRepo.FindByID(ctx, id)
+		}
+	}
+
+	if err != nil || order == nil {
+		return fmt.Errorf("process gateway event: order not found for job_no %s (order_id: %s, order_no: %s)", req.JobNo, req.ProductionOrderID, req.OrderNumber)
+	}
+
+	// If gateway order ID is not set on the entity yet (race condition), set it now
+	if order.GatewayOrderID == nil || *order.GatewayOrderID == "" {
+		_ = order.SentToGateway(req.JobNo)
+	}
+
+	var timelineStatus string
+	var transitionErr error
+	switch req.Status {
+	case "QUEUED":
+		timelineStatus = "queued"
+		transitionErr = order.SentToGateway(req.JobNo)
+	case "ACCEPTED":
+		timelineStatus = "accepted"
+		transitionErr = order.Accept()
+	case "PROCESSING":
+		timelineStatus = "in_progress"
+		transitionErr = order.Start()
+	case "COMPLETED":
+		timelineStatus = "completed"
+		transitionErr = order.Complete()
+	case "FAILED":
+		timelineStatus = "failed"
+		transitionErr = order.Fail()
+	default:
+		timelineStatus = "in_progress"
+	}
+
+	if transitionErr != nil {
+		s.log.Warn("state transition warning in gateway event processing", logger.Err(transitionErr))
+	}
+
+	if err := s.orderRepo.Save(ctx, order); err != nil {
+		return err
+	}
+
+	// Add timeline event
+	ev := entity.NewProductionOrderEvent(order.ID, "GatewayStatusUpdated", timelineStatus, req.Message, req.OccurredAt)
+	if err := s.eventRepo.Save(ctx, ev); err != nil {
+		s.log.Error("failed to save gateway event in timeline", logger.Err(err))
+	}
+
+	// Broadcast updated Order DTO to SSE subscribers
+	s.broadcastOrderUpdate(ctx, order.ID)
+
+	return nil
+}
+
+func (s *ProductionService) Subscribe(clientID string) <-chan *dto.ProductionOrderDTO {
+	ch := make(chan *dto.ProductionOrderDTO, 10)
+	s.mu.Lock()
+	s.subscribers[clientID] = ch
+	s.mu.Unlock()
+	return ch
+}
+
+func (s *ProductionService) Unsubscribe(clientID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ch, ok := s.subscribers[clientID]; ok {
+		close(ch)
+		delete(s.subscribers, clientID)
+	}
+}
+
+func (s *ProductionService) broadcastOrderUpdate(ctx context.Context, id uuid.UUID) {
+	orderDTO, err := s.GetProductionOrder(ctx, id)
+	if err != nil {
+		s.log.Error("failed to get production order for broadcast", logger.Err(err))
+		return
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, ch := range s.subscribers {
+		select {
+		case ch <- orderDTO:
+		default:
+			// channel is full, skip
+		}
 	}
 }
