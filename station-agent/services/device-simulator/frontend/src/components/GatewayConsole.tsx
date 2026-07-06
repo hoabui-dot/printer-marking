@@ -37,13 +37,13 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
     }
   }
 
-  const triggerJob = async (url: string, label: string, scenario?: string) => {
+  const triggerJob = async (url: string, label: string, scenario?: string, pcs?: number) => {
     setPublishing(label)
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario })
+        body: JSON.stringify({ scenario, pcs })
       })
       const nowStr = new Date().toLocaleTimeString()
       if (response.ok) {
@@ -67,7 +67,14 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
 
   const onTriggerClick = (url: string, label: string) => {
     if (label === 'Print Job') {
-      triggerJob(url, label, undefined)
+      const input = window.prompt("Nhập số lượng sản phẩm cần in (pcs):", "100");
+      if (input === null) return; // User cancelled
+      const pcs = parseInt(input, 10);
+      if (isNaN(pcs) || pcs <= 0) {
+        window.alert("Số lượng sản phẩm phải lớn hơn 0!");
+        return;
+      }
+      triggerJob(url, label, undefined, pcs)
     } else {
       setSelectedJobForModal({ url, label })
     }

@@ -113,6 +113,22 @@ public sealed class ProjectionEventConsumer : BackgroundService
             onMessage: (routingKey, json) => HandleManualOverrideRequestedEventAsync(routingKey, json, stoppingToken),
             cancellationToken: stoppingToken);
 
+        // 6. Consume production order created events
+        await _consumer.StartConsumingAsync(
+            exchange: Exchange,
+            queue: "projection-service.production-order-events",
+            routingKeyPattern: "production.order.created",
+            onMessage: (routingKey, json) => HandleJobEventAsync(routingKey, json, stoppingToken),
+            cancellationToken: stoppingToken);
+
+        // 7. Consume device heartbeat events
+        await _consumer.StartConsumingAsync(
+            exchange: Exchange,
+            queue: "projection-service.device-heartbeats",
+            routingKeyPattern: "device.heartbeat.*",
+            onMessage: (routingKey, json) => HandleDeviceHeartbeatAsync(routingKey, json, stoppingToken),
+            cancellationToken: stoppingToken);
+
         // Keep service alive
         await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
     }
@@ -159,20 +175,36 @@ public sealed class ProjectionEventConsumer : BackgroundService
                         $"Công việc {evt.JobNo} đã được tạo và đưa vào hàng đợi.",
                         evt.Timestamp);
 
-                    // ProductionRecord logic
+                    // ProductionRecord logic — use IdempotencyKey from event (no cross-service DB access).
+                    // For batch orders, IdempotencyKey is "eventId:N" (e.g. "eventId:0", "eventId:1").
+                    // For single-item jobs, IdempotencyKey == eventId (no colon suffix).
+                    // We strip the ":N" suffix to find the temp record created by the MQTT handler (if any).
                     var record = await recordRepo.GetByJobIdAsync(evt.JobId, cancellationToken);
-                    if (record == null)
-                    {
-                        record = (await recordRepo.GetAllAsync(cancellationToken))
-                            .FirstOrDefault(r => r.JobNo == evt.JobNo);
-                    }
 
-                    if (record != null)
+                    if (record == null && !string.IsNullOrEmpty(evt.IdempotencyKey))
+                    {
+                        // Determine the lookup key: strip batch-item suffix ":N" to find the base eventId record
+                        var lookupKey = evt.IdempotencyKey.Contains(':')
+                            ? evt.IdempotencyKey[..evt.IdempotencyKey.LastIndexOf(':')]
+                            : evt.IdempotencyKey;
+
+                        record = await recordRepo.GetByJobIdAsync(lookupKey, cancellationToken);
+                        if (record != null)
+                        {
+                            // Only promote this temp record if it hasn't been claimed by another batch item yet.
+                            // Once claimed, its JobId changes to a real uuid — subsequent batch items won't find it.
+                            _logger.LogInformation("Promoting temp record {TempJobId} → real JobId {RealJobId}", lookupKey, evt.JobId);
+                            record.UpdateDetails(evt.JobId, evt.JobNo, evt.ProductCode, evt.ProductSerial, "QUEUED");
+                            await recordRepo.UpdateAsync(record, cancellationToken);
+                        }
+                    }
+                    else if (record != null)
                     {
                         record.UpdateDetails(evt.JobId, evt.JobNo, evt.ProductCode, evt.ProductSerial, "QUEUED");
                         await recordRepo.UpdateAsync(record, cancellationToken);
                     }
-                    else
+
+                    if (record == null)
                     {
                         record = ProductionRecord.Create(
                             evt.JobId,
@@ -217,6 +249,9 @@ public sealed class ProjectionEventConsumer : BackgroundService
                     if (record != null)
                     {
                         record.UpdateStatus("PROCESSING");
+                        if (!string.IsNullOrEmpty(evt.TargetPrinter))
+                            record.AssignPrinter(evt.TargetPrinter);
+                        record.SetStart(evt.Timestamp ?? DateTimeOffset.UtcNow.ToString("o"));
                         await recordRepo.UpdateAsync(record, cancellationToken);
                         productionRecordToPush = record;
                     }
@@ -274,9 +309,22 @@ public sealed class ProjectionEventConsumer : BackgroundService
                     var record = await recordRepo.GetByJobIdAsync(evt.JobId, cancellationToken);
                     if (record != null)
                     {
-                        record.UpdateStatus("COMPLETED");
+                        record.SetComplete(evt.Timestamp ?? DateTimeOffset.UtcNow.ToString("o"));
                         await recordRepo.UpdateAsync(record, cancellationToken);
                         productionRecordToPush = record;
+                    }
+
+                    // Update ProductionOrderView progress
+                    var orderRepo = scope.ServiceProvider.GetRequiredService<IProductionOrderViewRepository>();
+                    var orderView = await orderRepo.GetByOrderNoAsync(evt.JobNo, cancellationToken);
+                    if (orderView != null)
+                    {
+                        orderView.IncrementCompleted();
+                        await orderRepo.UpdateAsync(orderView, cancellationToken);
+                        // Push order summary update
+                        await _hubContext.Clients.Group(_stationId).SendAsync("OnProductionOrderUpdate",
+                            new { orderView.OrderNo, orderView.PlannedQty, orderView.CompletedQty, orderView.RemainingQty, orderView.Status },
+                            cancellationToken);
                     }
                 }
             }
@@ -304,10 +352,64 @@ public sealed class ProjectionEventConsumer : BackgroundService
                     var record = await recordRepo.GetByJobIdAsync(evt.JobId, cancellationToken);
                     if (record != null)
                     {
-                        record.UpdateStatus("FAILED");
+                        record.SetFailed(evt.ErrorMessage, evt.Timestamp ?? DateTimeOffset.UtcNow.ToString("o"));
                         await recordRepo.UpdateAsync(record, cancellationToken);
                         productionRecordToPush = record;
                     }
+
+                    // Create Alarm for Job Failure
+                    try
+                    {
+                        var alarmRepo = scope.ServiceProvider.GetRequiredService<IAlarmRepository>();
+                        var alarm = Alarm.Create(
+                            "Error",
+                            "Workflow",
+                            $"Công việc {evt.JobNo} thất bại: {evt.ErrorMessage ?? "Lỗi không xác định"}",
+                            null
+                        );
+                        await alarmRepo.AddAsync(alarm, cancellationToken);
+                        
+                        // Push alarm to UI
+                        var alarmDto = new AlarmDto(
+                            alarm.Id, alarm.Severity, alarm.Source, alarm.Message, alarm.DeviceId,
+                            alarm.IsAcknowledged, alarm.AcknowledgedBy, alarm.AcknowledgedAt, alarm.CreatedAt
+                        );
+                        await _hubContext.Clients.Group(_stationId).SendAsync("OnAlarmRaised", alarmDto, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to raise job failure alarm");
+                    }
+                }
+            }
+
+            else if (routingKey.Equals("production.order.created", StringComparison.OrdinalIgnoreCase))
+            {
+                var evt = JsonSerializer.Deserialize<ProductionOrderCreatedEvent>(payloadJson, JsonSerializerOptions);
+                if (evt != null)
+                {
+                    var orderRepo = scope.ServiceProvider.GetRequiredService<IProductionOrderViewRepository>();
+                    var orderView = await orderRepo.GetByOrderNoAsync(evt.JobNo, cancellationToken);
+                    if (orderView == null)
+                    {
+                        orderView = ProductionOrderView.Create(evt.JobNo, evt.ProductCode, evt.PlannedQty);
+                        await orderRepo.AddAsync(orderView, cancellationToken);
+                        _logger.LogInformation("Created ProductionOrderView for {OrderNo} qty={Qty}", evt.JobNo, evt.PlannedQty);
+                    }
+
+                    log = ActivityLog.Create(
+                        "ProductionOrderCreated",
+                        jobId: "",
+                        jobNo: evt.JobNo,
+                        productCode: evt.ProductCode,
+                        status: "CREATED",
+                        message: $"Lệnh sản xuất {evt.JobNo} được tạo với số lượng {evt.PlannedQty}.",
+                        occurredAt: evt.Timestamp);
+
+                    // Push order summary to UI
+                    await _hubContext.Clients.Group(_stationId).SendAsync("OnProductionOrderUpdate",
+                        new { orderView.OrderNo, orderView.PlannedQty, orderView.CompletedQty, orderView.RemainingQty, orderView.Status },
+                        cancellationToken);
                 }
             }
 
@@ -389,10 +491,14 @@ public sealed class ProjectionEventConsumer : BackgroundService
                 var opType = tagsDict.TryGetValue(BusinessConstants.MqttTag.OperationType, out var ot)
                     ? ot : "DEFAULT";
 
+                var jobNo = tagsDict.TryGetValue("production.order_number", out var wo) && !string.IsNullOrWhiteSpace(wo)
+                    ? wo
+                    : unifiedEvent.EventId;
+
                 var log = ActivityLog.Create(
                     "MqttMessageReceived",
                     jobId: "",
-                    jobNo: unifiedEvent.EventId,
+                    jobNo: jobNo,
                     productCode: productCode,
                     status: "RECEIVED",
                     message: "Nhận yêu cầu in/khắc mới từ cổng nhà máy.",
@@ -401,48 +507,68 @@ public sealed class ProjectionEventConsumer : BackgroundService
                 await activityRepo.AddAsync(log, cancellationToken);
                 await activityRepo.TrimExcessAsync(10, cancellationToken);
 
-                // ProductionRecord
-                var record = (await recordRepo.GetAllAsync(cancellationToken))
-                    .FirstOrDefault(r => r.JobNo == unifiedEvent.EventId);
-
-                if (record == null)
-                {
-                    record = ProductionRecord.Create(
-                        jobId: unifiedEvent.EventId, // Use EventId as temporary JobId
-                        jobNo: unifiedEvent.EventId,
-                        productCode: productCode,
-                        productSerial: productSerial,
-                        jobType: opType,
-                        stationId: _stationId,
-                        status: "RECEIVED");
-                    await recordRepo.AddAsync(record, cancellationToken);
-                }
-                else
-                {
-                    record.UpdateDetails(record.JobId, unifiedEvent.EventId, productCode, productSerial, "RECEIVED");
-                    await recordRepo.UpdateAsync(record, cancellationToken);
-                }
+                // Determine planned quantity from MQTT tags.
+                // For batch production orders (plannedQty > 1), do NOT create a temporary ProductionRecord here.
+                // Real records will be created one-per-item by the job.created event handler,
+                // each with a unique serial number and real JobId. Creating a temp record here
+                // causes ghost "Đã nhận yêu cầu" rows that cannot be merged into the batch items.
+                var plannedQty = tagsDict.TryGetValue("production.planned_qty", out var pqStr)
+                    && int.TryParse(pqStr, out var pq) ? pq : 1;
 
                 await unitOfWork.SaveChangesAsync(cancellationToken);
 
-                // SignalR Push
+                // SignalR Push — activity log always
                 var logDto = new ActivityLogDto(log.Id, log.EventType, log.JobId, log.JobNo, log.ProductCode, log.Status, log.Message, log.OccurredAt);
                 await _hubContext.Clients.Group(_stationId).SendAsync("OnActivityUpdate", logDto, cancellationToken);
                 _logger.LogInformation("Pushed raw MQTT receive activity update to group: {StationId}", _stationId);
 
-                var recordDto = new ProductionRecordDto(
-                    record.Id,
-                    record.JobId,
-                    record.JobNo,
-                    record.ProductCode,
-                    record.ProductSerial,
-                    record.JobType,
-                    record.CurrentStatus,
-                    record.StationId,
-                    record.CreatedAt,
-                    record.UpdatedAt);
-                await _hubContext.Clients.Group(_stationId).SendAsync("OnProductionRecordUpdate", recordDto, cancellationToken);
-                _logger.LogInformation("Pushed production record update from MQTT to group: {StationId}", _stationId);
+                // For single-item jobs only: create a temporary ProductionRecord so the UI
+                // shows instant "RECEIVED" feedback before job.created arrives.
+                // For batch orders the job.created events create proper per-item records.
+                if (plannedQty <= 1)
+                {
+                    var record = await recordRepo.GetByJobIdAsync(unifiedEvent.EventId, cancellationToken);
+
+                    if (record == null)
+                    {
+                        record = ProductionRecord.Create(
+                            jobId: unifiedEvent.EventId, // temporary — will be promoted by job.created
+                            jobNo: jobNo,
+                            productCode: productCode,
+                            productSerial: productSerial,
+                            jobType: opType,
+                            stationId: _stationId,
+                            status: "RECEIVED");
+                        await recordRepo.AddAsync(record, cancellationToken);
+                        await unitOfWork.SaveChangesAsync(cancellationToken);
+                    }
+                    else
+                    {
+                        record.UpdateDetails(record.JobId, jobNo, productCode, productSerial, "RECEIVED");
+                        await recordRepo.UpdateAsync(record, cancellationToken);
+                        await unitOfWork.SaveChangesAsync(cancellationToken);
+                    }
+
+                    var recordDto = new ProductionRecordDto(
+                        record.Id,
+                        record.JobId,
+                        record.JobNo,
+                        record.ProductCode,
+                        record.ProductSerial,
+                        record.JobType,
+                        record.CurrentStatus,
+                        record.StationId,
+                        record.CreatedAt,
+                        record.UpdatedAt);
+                    await _hubContext.Clients.Group(_stationId).SendAsync("OnProductionRecordUpdate", recordDto, cancellationToken);
+                    _logger.LogInformation("Pushed production record update from MQTT to group: {StationId}", _stationId);
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "Batch production order {JobNo} (qty={Qty}): skipping temp ProductionRecord — records created per item by job.created events.",
+                        jobNo, plannedQty);
+                }
             }
         }
         catch (Exception ex)
@@ -547,4 +673,41 @@ public sealed class ProjectionEventConsumer : BackgroundService
             throw; // Will Nack
         }
     }
+
+    private async Task HandleDeviceHeartbeatAsync(string routingKey, string payloadJson, CancellationToken cancellationToken)
+    {
+        _logger.LogDebug("Projection Service received device heartbeat: {RoutingKey}", routingKey);
+        try
+        {
+            var heartbeat = JsonSerializer.Deserialize<ND.UnifiedContracts.Events.DeviceStatusHeartbeat>(payloadJson, JsonSerializerOptions);
+            if (heartbeat == null) return;
+
+            using var scope = _scopeFactory.CreateScope();
+            var deviceRepo = scope.ServiceProvider.GetRequiredService<IDeviceStatusRepository>();
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+            var device = await deviceRepo.GetByIdAsync(heartbeat.DeviceId, cancellationToken);
+            if (device == null)
+            {
+                device = DeviceStatus.Create(heartbeat.DeviceId, heartbeat.DeviceType, heartbeat.IsOnline, heartbeat.Timestamp, heartbeat.LifecycleState);
+                await deviceRepo.AddAsync(device, cancellationToken);
+            }
+            else
+            {
+                device.UpdateStatus(heartbeat.IsOnline, heartbeat.Timestamp, heartbeat.LifecycleState);
+            }
+
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+
+            // Push SignalR update
+            var dto = new DeviceStatusDto(device.DeviceId, device.DeviceType, device.IsOnline, device.LastSeenAt, device.LifecycleState);
+            await _hubContext.Clients.Group(_stationId).SendAsync("OnDeviceStatusUpdate", dto, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to handle device heartbeat: {RoutingKey}", routingKey);
+        }
+    }
+
 }
+

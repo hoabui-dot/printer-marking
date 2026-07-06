@@ -28,6 +28,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IActivityLogRepository, ActivityLogRepository>();
         services.AddScoped<IDeviceStatusRepository, DeviceStatusRepository>();
         services.AddScoped<IProductionRecordRepository, ProductionRecordRepository>();
+        services.AddScoped<IAlarmRepository, AlarmRepository>();
+        services.AddScoped<IProductionOrderViewRepository, ProductionOrderViewRepository>();
 
         // RabbitMQ Publisher & Consumer
         services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));

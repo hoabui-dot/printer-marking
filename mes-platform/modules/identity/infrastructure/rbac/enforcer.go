@@ -199,6 +199,17 @@ func defaultPolicies() [][]string {
 		{"admin", "dashboard", "view"},
 		{"admin", "audit", "view"},
 		{"admin", "assignment", "override"},
+		{"admin", "workflow", "create"},
+		{"admin", "workflow", "view"},
+		{"admin", "workflow", "update"},
+		{"admin", "workflow", "publish"},
+		{"admin", "workflow", "archive"},
+		{"admin", "workflow", "clone"},
+		{"admin", "workflow", "delete"},
+		{"admin", "operation", "create"},
+		{"admin", "operation", "update"},
+		{"admin", "operation", "delete"},
+		{"admin", "operation", "move"},
 
 		// manager role
 		{"manager", "user", "view"},
@@ -210,11 +221,22 @@ func defaultPolicies() [][]string {
 		{"manager", "dashboard", "view"},
 		{"manager", "assignment", "override"},
 		{"manager", "audit", "view"},
+		{"manager", "workflow", "create"},
+		{"manager", "workflow", "view"},
+		{"manager", "workflow", "update"},
+		{"manager", "workflow", "publish"},
+		{"manager", "workflow", "archive"},
+		{"manager", "workflow", "clone"},
+		{"manager", "operation", "create"},
+		{"manager", "operation", "update"},
+		{"manager", "operation", "delete"},
+		{"manager", "operation", "move"},
 
 		// operator role
 		{"operator", "dashboard", "view"},
 		{"operator", "worker", "read"},
 		{"operator", "worker", "view"},
+		{"operator", "workflow", "view"},
 	}
 }
 

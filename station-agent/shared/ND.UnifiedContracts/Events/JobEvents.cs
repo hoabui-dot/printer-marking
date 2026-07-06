@@ -41,18 +41,53 @@ public record JobEventBase
 }
 
 /// <summary>
+/// Published when a new Production Order is created.
+/// RabbitMQ routing key: <c>production.order.created</c>
+/// </summary>
+public sealed record ProductionOrderCreatedEvent : JobEventBase
+{
+    [JsonPropertyName("planned_qty")]
+    public required int PlannedQty { get; init; }
+
+    public static ProductionOrderCreatedEvent From(
+        string orderNo,
+        string productCode,
+        int plannedQty,
+        string sourceSystem)
+    {
+        return new ProductionOrderCreatedEvent
+        {
+            EventType = "ProductionOrderCreated",
+            EventId = $"evt-order-created-{Guid.NewGuid():N}",
+            JobId = orderNo,
+            JobNo = orderNo,
+            JobType = "PRODUCTION_ORDER",
+            ProductCode = productCode,
+            Status = "CREATED",
+            SourceSystem = sourceSystem,
+            PlannedQty = plannedQty,
+            Timestamp = DateTimeOffset.UtcNow.ToString("o")
+        };
+    }
+}
+
+/// <summary>
 /// Published when a new Job is created in the Job Engine.
 /// RabbitMQ routing key: <c>job.created</c>
 /// </summary>
 public sealed record JobCreatedEvent : JobEventBase
 {
+    [JsonPropertyName("idempotency_key")]
+    public string? IdempotencyKey { get; init; }
+
     public static JobCreatedEvent From(
         string jobId,
         string jobNo,
         string jobType,
         string productCode,
         string? productSerial,
-        string sourceSystem)
+        string sourceSystem,
+        string? idempotencyKey = null)
     {
         return new JobCreatedEvent
         {
@@ -65,6 +100,7 @@ public sealed record JobCreatedEvent : JobEventBase
             ProductSerial = productSerial,
             Status = "CREATED",
             SourceSystem = sourceSystem,
+            IdempotencyKey = idempotencyKey,
             Timestamp = DateTimeOffset.UtcNow.ToString("o")
         };
     }
@@ -79,6 +115,12 @@ public sealed record JobProcessingEvent : JobEventBase
     [JsonPropertyName("attempt_no")]
     public int AttemptNo { get; init; }
 
+    [JsonPropertyName("payload_json")]
+    public string? PayloadJson { get; init; }
+
+    [JsonPropertyName("target_printer")]
+    public string? TargetPrinter { get; init; }
+
     public static JobProcessingEvent From(
         string jobId,
         string jobNo,
@@ -86,7 +128,9 @@ public sealed record JobProcessingEvent : JobEventBase
         string productCode,
         string? productSerial,
         string sourceSystem,
-        int attemptNo)
+        int attemptNo,
+        string? payloadJson = null,
+        string? targetPrinter = null)
     {
         return new JobProcessingEvent
         {
@@ -100,7 +144,9 @@ public sealed record JobProcessingEvent : JobEventBase
             Status = "PROCESSING",
             SourceSystem = sourceSystem,
             Timestamp = DateTimeOffset.UtcNow.ToString("o"),
-            AttemptNo = attemptNo
+            AttemptNo = attemptNo,
+            PayloadJson = payloadJson,
+            TargetPrinter = targetPrinter
         };
     }
 }
@@ -584,6 +630,7 @@ public sealed record ManualReprintAndRemarkingRequestedEvent
 /// </summary>
 public static class JobEventRoutingKeys
 {
+    public const string ProductionOrderCreated = "production.order.created";
     public const string Created = "job.created";
     public const string Processing = "job.processing";
     public const string Completed = "job.completed";

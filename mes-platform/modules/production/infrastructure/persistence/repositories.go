@@ -197,12 +197,48 @@ func NewGormWorkOrderRepository(db *gorm.DB) *GormWorkOrderRepository {
 
 func (r *GormWorkOrderRepository) Save(ctx context.Context, wo *entity.WorkOrder) error {
 	m := workOrderToModel(wo)
-	return r.db.WithContext(ctx).Save(m).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		ops := m.Operations
+		m.Operations = nil
+		if err := tx.Save(m).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Where("work_order_id = ?", m.ID).Delete(&model.WorkOrderOperationModel{}).Error; err != nil {
+			return err
+		}
+
+		if len(ops) > 0 {
+			for idx := range ops {
+				ops[idx].WorkOrderID = m.ID
+			}
+			if err := tx.Create(&ops).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (r *GormWorkOrderRepository) FindByID(ctx context.Context, id uuid.UUID) (*entity.WorkOrder, error) {
 	var m model.WorkOrderModel
-	err := r.db.WithContext(ctx).Where("id = ?", id).First(&m).Error
+	err := r.db.WithContext(ctx).Preload("Operations", func(db *gorm.DB) *gorm.DB {
+		return db.Order("sequence ASC")
+	}).Where("id = ?", id).First(&m).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, repository.ErrWorkOrderNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return modelToWorkOrder(&m), nil
+}
+
+func (r *GormWorkOrderRepository) FindBySerialNumber(ctx context.Context, sn string) (*entity.WorkOrder, error) {
+	var m model.WorkOrderModel
+	err := r.db.WithContext(ctx).Preload("Operations", func(db *gorm.DB) *gorm.DB {
+		return db.Order("sequence ASC")
+	}).Where("serial_number = ?", sn).First(&m).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, repository.ErrWorkOrderNotFound
 	}
@@ -213,13 +249,28 @@ func (r *GormWorkOrderRepository) FindByID(ctx context.Context, id uuid.UUID) (*
 }
 
 func (r *GormWorkOrderRepository) List(ctx context.Context, filter repository.WorkOrderFilter) ([]*entity.WorkOrder, int64, error) {
-	query := r.db.WithContext(ctx).Model(&model.WorkOrderModel{})
+	query := r.db.WithContext(ctx).Model(&model.WorkOrderModel{}).Preload("Operations", func(db *gorm.DB) *gorm.DB {
+		return db.Order("sequence ASC")
+	})
 
 	if filter.ProductionOrderID != nil {
 		query = query.Where("production_order_id = ?", *filter.ProductionOrderID)
 	}
+	if filter.DispatchPlanID != nil {
+		query = query.Where("dispatch_plan_id = ?", *filter.DispatchPlanID)
+	}
 	if filter.Status != "" {
 		query = query.Where("status = ?", filter.Status)
+	}
+	if filter.Station != "" {
+		query = query.Where("assigned_station = ?", filter.Station)
+	}
+	if filter.Team != "" {
+		query = query.Where("assigned_team = ?", filter.Team)
+	}
+	if filter.Search != "" {
+		s := "%" + filter.Search + "%"
+		query = query.Where("serial_number LIKE ? OR barcode LIKE ? OR qr_code LIKE ? OR trace_id LIKE ?", s, s, s, s)
 	}
 
 	var total int64
@@ -237,7 +288,7 @@ func (r *GormWorkOrderRepository) List(ctx context.Context, filter repository.Wo
 
 	var models []model.WorkOrderModel
 	err := query.
-		Offset((page-1)*pageSize).
+		Offset((page - 1) * pageSize).
 		Limit(pageSize).
 		Order("sequence ASC, created_at DESC").
 		Find(&models).Error
@@ -307,4 +358,72 @@ func (r *GormProductionOrderEventRepository) ListByProductionOrderID(ctx context
 		events[i] = modelToProductionOrderEvent(&m)
 	}
 	return events, nil
+}
+
+// ─── Dispatch Plan Repository ───────────────────────────────────────────────
+
+type GormDispatchPlanRepository struct {
+	db *gorm.DB
+}
+
+func NewGormDispatchPlanRepository(db *gorm.DB) *GormDispatchPlanRepository {
+	return &GormDispatchPlanRepository{db: db}
+}
+
+func (r *GormDispatchPlanRepository) Save(ctx context.Context, plan *entity.DispatchPlan) error {
+	m := dispatchPlanToModel(plan)
+	return r.db.WithContext(ctx).Save(m).Error
+}
+
+func (r *GormDispatchPlanRepository) FindByID(ctx context.Context, id uuid.UUID) (*entity.DispatchPlan, error) {
+	var m model.DispatchPlanModel
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&m).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, repository.ErrDispatchPlanNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return modelToDispatchPlan(&m), nil
+}
+
+func (r *GormDispatchPlanRepository) ListByProductionOrderID(ctx context.Context, orderID uuid.UUID) ([]*entity.DispatchPlan, error) {
+	var models []model.DispatchPlanModel
+	err := r.db.WithContext(ctx).Where("production_order_id = ?", orderID).Order("created_at ASC").Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	plans := make([]*entity.DispatchPlan, len(models))
+	for i, m := range models {
+		plans[i] = modelToDispatchPlan(&m)
+	}
+	return plans, nil
+}
+
+// ─── Work Order Timeline Repository ──────────────────────────────────────────
+
+type GormWorkOrderTimelineRepository struct {
+	db *gorm.DB
+}
+
+func NewGormWorkOrderTimelineRepository(db *gorm.DB) *GormWorkOrderTimelineRepository {
+	return &GormWorkOrderTimelineRepository{db: db}
+}
+
+func (r *GormWorkOrderTimelineRepository) Save(ctx context.Context, log *entity.WorkOrderTimeline) error {
+	m := workOrderTimelineToModel(log)
+	return r.db.WithContext(ctx).Create(m).Error
+}
+
+func (r *GormWorkOrderTimelineRepository) ListByWorkOrderID(ctx context.Context, woID uuid.UUID) ([]*entity.WorkOrderTimeline, error) {
+	var models []model.WorkOrderTimelineModel
+	err := r.db.WithContext(ctx).Where("work_order_id = ?", woID).Order("occurred_at ASC, created_at ASC").Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	logs := make([]*entity.WorkOrderTimeline, len(models))
+	for i, m := range models {
+		logs[i] = modelToWorkOrderTimeline(&m)
+	}
+	return logs, nil
 }

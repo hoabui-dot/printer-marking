@@ -120,6 +120,7 @@ export default function JobsPanel() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [details, setDetails] = useState<JobDetails | null>(null)
   const [loadingDetails, setLoadingDetails] = useState(false)
+  const [detailTab, setDetailTab] = useState<'pieces' | 'progress'>('pieces')
 
   const fetchJobs = async () => {
     try {
@@ -158,6 +159,7 @@ export default function JobsPanel() {
 
   useEffect(() => {
     if (selectedJobId) {
+      setDetailTab('pieces')
       fetchDetails(selectedJobId)
       const interval = setInterval(() => fetchDetails(selectedJobId), 3000)
       return () => clearInterval(interval)
@@ -326,6 +328,33 @@ export default function JobsPanel() {
               </button>
             </div>
 
+            {/* Tab Navigation */}
+            {details && (
+              <div className="flex border-b border-gray-800 shrink-0 bg-gray-950 px-5">
+                <button
+                  onClick={() => setDetailTab('pieces')}
+                  className={`px-6 py-2.5 font-bold text-xs tracking-wider uppercase border-b-2 transition-all flex items-center gap-2 ${
+                    detailTab === 'pieces'
+                      ? 'border-blue-500 text-blue-400 bg-blue-950/20'
+                      : 'border-transparent text-gray-400 hover:text-white hover:bg-gray-800'
+                  }`}
+                >
+                  <span>📦</span> Sản phẩm chi tiết ({jobs.filter((j: any) => j.jobNo === details.job.jobNo).length})
+                </button>
+                <button
+                  onClick={() => setDetailTab('progress')}
+                  disabled={!selectedJobId}
+                  className={`px-6 py-2.5 font-bold text-xs tracking-wider uppercase border-b-2 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+                    detailTab === 'progress'
+                      ? 'border-blue-500 text-blue-400 bg-blue-950/20'
+                      : 'border-transparent text-gray-400 hover:text-white hover:bg-gray-800'
+                  }`}
+                >
+                  <span>⚡</span> Tiến trình & Dữ liệu thiết bị
+                </button>
+              </div>
+            )}
+
             {/* Modal Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {loadingDetails && !details ? (
@@ -335,8 +364,51 @@ export default function JobsPanel() {
                 </div>
               ) : details ? (
                 <div className="space-y-6">
-                  {/* Job Info Grid */}
-                  <div className={`grid grid-cols-1 gap-4 ${details.job.labelTemplate ? 'md:grid-cols-5' : 'md:grid-cols-4'}`}>
+                  {detailTab === 'pieces' && (
+                    <div className="py-2 flex-1 overflow-y-auto min-h-[350px]">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                        {jobs.filter((j: any) => j.jobNo === details.job.jobNo).map((piece: any, idx: number) => {
+                          const isSelected = selectedJobId === piece.jobId;
+                          return (
+                            <div
+                              key={piece.jobId}
+                              onClick={() => {
+                                setSelectedJobId(piece.jobId);
+                                setDetailTab('progress');
+                              }}
+                              className={`p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-3 min-h-[110px] ${
+                                isSelected
+                                  ? 'bg-blue-950/40 border-blue-500/50 shadow-sm font-semibold'
+                                  : 'bg-gray-950 hover:bg-gray-800/50 border-gray-850 hover:border-gray-700 shadow-sm'
+                              }`}
+                            >
+                              <div className="flex justify-between items-start gap-2">
+                                <div>
+                                  <div className="font-bold text-xs text-white">Sản phẩm #{idx + 1}</div>
+                                  <div className="font-mono text-[10px] text-gray-400 mt-1 break-all">
+                                    Job ID: {piece.jobId.slice(0, 12)}…
+                                  </div>
+                                </div>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${getStatusBadgeClass(piece.status)}`}>
+                                  {piece.status}
+                                </span>
+                              </div>
+                              
+                              <div className="flex justify-between items-center text-[10px] text-gray-500 pt-2 border-t border-gray-800 font-medium">
+                                <span>Bắt đầu: {new Date(piece.startTime).toLocaleTimeString('vi-VN')}</span>
+                                <span className="text-blue-400 font-bold hover:underline">Xem chi tiết &rarr;</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {detailTab === 'progress' && (
+                    <div className="space-y-6">
+                      {/* Job Info Grid */}
+                      <div className={`grid grid-cols-1 gap-4 ${details.job.labelTemplate ? 'md:grid-cols-5' : 'md:grid-cols-4'}`}>
                     <div className="bg-gray-950 border border-gray-850 rounded-lg p-3 space-y-1">
                       <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Mã Lệnh Sản Xuất</div>
                       <div className="text-sm font-bold text-white font-mono">{details.job.jobNo}</div>
@@ -584,7 +656,9 @@ export default function JobsPanel() {
                     </div>
                   </div>
                 </div>
-              ) : (
+              )}
+            </div>
+            ) : (
                 <div className="text-center py-20 text-gray-500">
                   Không tìm thấy chi tiết yêu cầu.
                 </div>

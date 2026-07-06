@@ -72,13 +72,14 @@ public sealed class ZplRenderer : ILabelRenderer
             {
                 var elementZpl = type.ToLowerInvariant() switch
                 {
-                    "text"    => RenderText(el, data, dpi),
-                    "barcode" => RenderBarcode(el, data, dpi),
-                    "qr"      => RenderQrCode(el, data, dpi),
-                    "rect"    => RenderRect(el, dpi),
-                    "circle"  => RenderCircle(el, dpi),
-                    "line"    => RenderLine(el, dpi),
-                    _         => null
+                    "text"       => RenderText(el, data, dpi),
+                    "barcode"    => RenderBarcode(el, data, dpi),
+                    "qr"         => RenderQrCode(el, data, dpi),
+                    "datamatrix" => RenderDataMatrix(el, data, dpi),
+                    "rect"       => RenderRect(el, dpi),
+                    "circle"     => RenderCircle(el, dpi),
+                    "line"       => RenderLine(el, dpi),
+                    _            => null
                 };
 
                 if (elementZpl is not null)
@@ -141,6 +142,17 @@ public sealed class ZplRenderer : ILabelRenderer
         // ^BQ: QR Code. Format: ^BQa,b where a=model(2=QRCode), b=magnification(1-10)
         // Then ^FD followed by error correction level + A (Auto) + data + ^FS
         return $"^FO{x},{y}^BQN,2,{magnification}^FD{errorCorrection}A,{EscapeZpl(value)}^FS\n";
+    }
+
+    private string RenderDataMatrix(JsonElement el, IDictionary<string, string> data, int dpi)
+    {
+        var x = GetInt(el, "x", 0);
+        var y = GetInt(el, "y", 0);
+        var magnification = GetInt(el, "magnification", 4);
+        var value = ResolveBinding(el, data);
+
+        // ^BX: Data Matrix. ECC200 is represented by quality=200
+        return $"^FO{x},{y}^BXN,{magnification},200^FD{EscapeZpl(value)}^FS\n";
     }
 
     private string RenderRect(JsonElement el, int dpi)

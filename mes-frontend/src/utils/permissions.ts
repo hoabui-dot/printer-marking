@@ -76,6 +76,19 @@ export const PERMISSIONS = {
   // Settings
   SETTINGS_VIEW: 'settings.view',
   SETTINGS_UPDATE: 'settings.update',
+
+  // Workflow / Operations
+  WORKFLOW_VIEW: 'workflow.view',
+  WORKFLOW_CREATE: 'workflow.create',
+  WORKFLOW_UPDATE: 'workflow.update',
+  WORKFLOW_PUBLISH: 'workflow.publish',
+  WORKFLOW_ARCHIVE: 'workflow.archive',
+  WORKFLOW_CLONE: 'workflow.clone',
+  WORKFLOW_DELETE: 'workflow.delete',
+  OPERATION_CREATE: 'operation.create',
+  OPERATION_UPDATE: 'operation.update',
+  OPERATION_DELETE: 'operation.delete',
+  OPERATION_MOVE: 'operation.move',
 } as const
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]

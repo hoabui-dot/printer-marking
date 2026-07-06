@@ -28,11 +28,13 @@ public sealed class JobRepository : IJobRepository
         => await _context.Jobs.Where(j => j.CurrentStatus == status).ToListAsync(ct);
 
     public async Task<PagedResult<Job>> GetPagedAsync(
-        int page, int pageSize, string? statusFilter, CancellationToken ct = default)
+        int page, int pageSize, string? statusFilter, string? serialFilter = null, CancellationToken ct = default)
     {
         var query = _context.Jobs.AsQueryable();
         if (!string.IsNullOrWhiteSpace(statusFilter))
             query = query.Where(j => j.CurrentStatus == statusFilter);
+        if (!string.IsNullOrWhiteSpace(serialFilter))
+            query = query.Where(j => j.ProductSerial == serialFilter);
 
         var total = await query.CountAsync(ct);
         var items = await query
@@ -156,5 +158,70 @@ public sealed class OverwriteRequestRepository : IOverwriteRequestRepository
     {
         var entity = await GetByIdAsync(id, ct);
         if (entity is not null) _context.OverwriteRequests.Remove(entity);
+    }
+}
+
+public sealed class ProductionOrderRepository : IProductionOrderRepository
+{
+    private readonly JobEngineDbContext _context;
+
+    public ProductionOrderRepository(JobEngineDbContext context) => _context = context;
+
+    public async Task<ProductionOrder?> GetByIdAsync(string id, CancellationToken ct = default)
+        => await _context.ProductionOrders.FindAsync([id], ct);
+
+    public async Task<IReadOnlyList<ProductionOrder>> GetAllAsync(CancellationToken ct = default)
+        => await _context.ProductionOrders.ToListAsync(ct);
+
+    public async Task<ProductionOrder?> GetByOrderNoAsync(string orderNo, CancellationToken ct = default)
+        => await _context.ProductionOrders.FirstOrDefaultAsync(o => o.OrderNo == orderNo, ct);
+
+    public async Task AddAsync(ProductionOrder entity, CancellationToken ct = default)
+        => await _context.ProductionOrders.AddAsync(entity, ct);
+
+    public Task UpdateAsync(ProductionOrder entity, CancellationToken ct = default)
+    {
+        _context.ProductionOrders.Update(entity);
+        return Task.CompletedTask;
+    }
+
+    public async Task DeleteAsync(string id, CancellationToken ct = default)
+    {
+        var entity = await GetByIdAsync(id, ct);
+        if (entity is not null) _context.ProductionOrders.Remove(entity);
+    }
+}
+
+public sealed class ProductionItemRepository : IProductionItemRepository
+{
+    private readonly JobEngineDbContext _context;
+
+    public ProductionItemRepository(JobEngineDbContext context) => _context = context;
+
+    public async Task<ProductionItem?> GetByIdAsync(string id, CancellationToken ct = default)
+        => await _context.ProductionItems.FindAsync([id], ct);
+
+    public async Task<IReadOnlyList<ProductionItem>> GetAllAsync(CancellationToken ct = default)
+        => await _context.ProductionItems.ToListAsync(ct);
+
+    public async Task<IReadOnlyList<ProductionItem>> GetByOrderNoAsync(string orderNo, CancellationToken ct = default)
+        => await _context.ProductionItems.Where(i => i.OrderNo == orderNo).OrderBy(i => i.SequenceNo).ToListAsync(ct);
+
+    public async Task<ProductionItem?> GetByProductSerialAsync(string serial, CancellationToken ct = default)
+        => await _context.ProductionItems.FirstOrDefaultAsync(i => i.ProductSerial == serial, ct);
+
+    public async Task AddAsync(ProductionItem entity, CancellationToken ct = default)
+        => await _context.ProductionItems.AddAsync(entity, ct);
+
+    public Task UpdateAsync(ProductionItem entity, CancellationToken ct = default)
+    {
+        _context.ProductionItems.Update(entity);
+        return Task.CompletedTask;
+    }
+
+    public async Task DeleteAsync(string id, CancellationToken ct = default)
+    {
+        var entity = await GetByIdAsync(id, ct);
+        if (entity is not null) _context.ProductionItems.Remove(entity);
     }
 }

@@ -12,6 +12,7 @@ public interface ISimulatorStateService
     void SetPrinterOnline(bool online);
     void RecordPrinterJob(string? zplContent, string result);
     PrinterStateDto GetPrinterState();
+    System.Collections.Generic.IReadOnlyList<SimulatedPrinterDto> GetPrinters();
 
     // ── Laser ─────────────────────────────────────────────────────────────────
     void SetLaserOnline(bool online);

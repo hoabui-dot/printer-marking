@@ -101,3 +101,101 @@ While keeping a unified database per module, we segregate read and write concern
 - **Viper**: Configuration loading.
 - **golang-migrate**: Database migrations version control.
 - **Testcontainers**: Isolated Docker dependencies for integration tests.
+
+
+| Layer              | Current Technology                    | Future Recommendation                      | Notes                      |
+| ------------------ | ------------------------------------- | ------------------------------------------ | -------------------------- |
+| Frontend           | React 19 + TypeScript                 | React + Micro Frontend (Module Federation) | Current is enough          |
+| UI                 | TailwindCSS v4 + shadcn/ui + Radix UI | Keep                                       | Enterprise UI              |
+| State Management   | TanStack Query + Zustand              | Keep                                       | Server State + Local State |
+| Form               | React Hook Form + Zod                 | Keep                                       | Validation                 |
+| Table              | TanStack Table                        | Keep                                       | Enterprise Grid            |
+| Chart              | Recharts                              | Apache ECharts                             | Advanced dashboard         |
+| Drag & Drop        | dnd-kit                               | Keep                                       | Workflow editor            |
+| Routing            | React Router v7                       | Keep                                       | SPA                        |
+| Backend API        | Go (Gin)                              | Go + gRPC Internal                         | High Performance           |
+| Realtime           | Gorilla WebSocket                     | NATS / WebSocket Gateway                   | Factory realtime           |
+| Authentication     | JWT                                   | JWT + Refresh Token                        | Current                    |
+| Authorization      | RBAC                                  | RBAC + ABAC                                | Factory permission         |
+| SSO                | —                                     | Keycloak / Authentik                       | Enterprise Login           |
+| Database           | PostgreSQL                            | PostgreSQL Cluster                         | Main DB                    |
+| ORM                | GORM                                  | Keep                                       |                            |
+| Cache              | Redis                                 | Redis Cluster                              | Performance                |
+| Queue              | MQTT                                  | MQTT + NATS                                | Manufacturing Event        |
+| Message Broker     | MQTT                                  | Kafka (optional)                           | Analytics                  |
+| Event Architecture | Event Driven                          | Event Sourcing (partial)                   | Future                     |
+| CDC                | —                                     | Debezium                                   | Sync ERP/WMS               |Attachment                 |
+| Logging            | Zap                                   | Loki                                       | Central Log                |
+| Monitoring         | Prometheus                            | Prometheus + Grafana                       | Factory monitoring         |
+| Tracing            | —                                     | OpenTelemetry                              | Distributed tracing        |
+| API Gateway        | Gin Reverse Proxy                     | Kong / APISIX                              | Enterprise                 |
+| Config             | ENV                                   | Consul                                     | Multi Factory              |
+| Deployment         | Docker Compose                        | Keep                                 | HA                         |
+| CI/CD              | GitHub Actions                        | Keep                                     | GitOps                     |
+| Translation        | i18next                               | Keep                                       | Multi-language             |
+
+
+
+## print marking
+| Layer                | Current              |
+| -------------------- | -------------------- |
+| UI                   | React                |
+| Backend              | .NET 9               |
+| API                  | ASP.NET Minimal API  |
+| Print Library        | Raw ZPL              |
+| Device Communication | MQTT                 |
+| PLC                  | Modbus / OPC-UA      |
+| Database             | SQLite               |
+| ORM                  | EF Core              |
+| Realtime             | SignalR              |
+| Configuration        | JSON                 |
+| Deployment           | Docker               |
+
+
+
+
+
+
+
+
+
+
+-------
+
+
+| Layer                                        | Current Tech Stack                                                                                                   |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Frontend (MES Platform)**                  | React 19, TypeScript, Vite, TailwindCSS v4, shadcn/ui, TanStack Query, TanStack Table, React Hook Form, Zod, Zustand |
+| **Frontend (Station Agent / Kiosk UI)**      | React, TypeScript, Vite, TailwindCSS, shadcn/ui, SignalR                                                             |
+| **Frontend (Device Simulator)**              | React, TypeScript, Vite, TailwindCSS, shadcn/ui, SignalR, React Flow, React-Konva                                    |
+| **Backend API (MES, WMS, QMS)**                        | Go 1.24+, Gin, GORM, PostgreSQL, Redis, DDD, CQRS                              |
+| **Backend API (ERP Integration)**            | Go Integration Gateway, REST API, RabbitMQ Connector                                                          |
+| **    Industrial Edge Platform (Station Agent)** | .NET 9 Worker Services, ASP.NET Core, EF Core, SQLite                                                                |
+| **Industrial Device Adapters**               | .NET 9, TCP Socket, MQTT, BackgroundService, Native SDK Integration                                                  |
+| **Authentication**                           | JWT, Refresh Token                                                                                                   |
+| **Authorization**                            | RBAC, ABAC                                                                                                                 |
+| **Single Sign-On (SSO)**                     | Keycloak (OpenID Connect, OAuth2)                                                                                    |
+| **Database (Enterprise Applications)**       | PostgreSQL                                                                                                           |
+| **Database (Industrial Edge)**               | SQLite                                                                                                               |
+| **Distributed Cache**                        | Redis                                                                                                                |
+| **Message Broker**                           | RabbitMQ, MQTT                                                                                                       |
+| **Real-Time Communication**                  | SignalR, MQTT                                                                                                        |
+| **Industrial Communication Protocols**       | MQTT, TCP/IP, OPC UA, Modbus TCP                                                                         |
+| **API Gateway / Reverse Proxy**              | Nginx                                                                                                                |
+| **Container Platform**                       | Docker, Kubernetes                                                                                               |
+| **CI/CD**                                    | GitHub Actions                                                                                                       |
+| **Monitoring**                               | Prometheus, Grafana                                                                                                  |
+| **Centralized Logging**                      | Serilog, Zap, Loki                                                                                                   |
+| **Distributed Tracing**                      | OpenTelemetry, Jaeger                                                                                                |
+| **Health Monitoring**                        | ASP.NET Health Checks, Go Health Endpoints                                                                           |
+| **Configuration Management**                 | Environment Variables, Consul                                                                                        |
+| **Search Engine**                            | Elasticsearch / OpenSearch                                                                                           |
+| **Notification Platform**                    | SignalR, Email, Microsoft Teams, Slack                                                                               |
+| **Business Rule Engine**                     | Custom Rule Engine                                                                                                   |
+| **Change Data Capture (CDC)**                | Debezium                                                                                                             |
+| **Enterprise Event Streaming**               | Apache Kafka                                                                                                         |
+| **ETL / Data Integration**                   | Airbyte                                                                                                              |
+| **Data Lake**                                | Apache Iceberg, MinIO                                                                                                |
+| **Data Warehouse**                           | ClickHouse                                                                                                           |
+| **Business Intelligence (BI)**               | Apache Superset, Power BI                                                                                            |
+

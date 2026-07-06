@@ -220,6 +220,9 @@ func New() (*App, error) {
 	productionRoutingRepo := productionpersistence.NewGormRoutingRepository(db.DB)
 	productionEventRepo := productionpersistence.NewGormProductionOrderEventRepository(db.DB)
 	productionOutboxRepo := productionpersistence.NewGormOutboxRepository(db.DB)
+	productionWorkflowRepo := productionpersistence.NewGormWorkflowRepository(db.DB)
+	productionPlanRepo := productionpersistence.NewGormDispatchPlanRepository(db.DB)
+	productionTimelineRepo := productionpersistence.NewGormWorkOrderTimelineRepository(db.DB)
 	gatewayClient := productiongateway.NewGatewayClient(cfg.Gateway.URL)
 
 	productionService := productionsvc.NewProductionService(
@@ -229,10 +232,20 @@ func New() (*App, error) {
 		productionEventRepo,
 		productionOutboxRepo,
 		gatewayClient,
+		productionPlanRepo,
+		productionTimelineRepo,
+		productionWorkflowRepo,
+		log,
+	)
+
+	workflowService := productionsvc.NewWorkflowService(
+		productionWorkflowRepo,
+		productionOutboxRepo,
 		log,
 	)
 
 	productionHandlerInstance := productionhandler.NewProductionHandler(productionService)
+	workflowHandlerInstance := productionhandler.NewWorkflowHandler(workflowService, enforcer)
 
 	// ── 8.4. Assignment Module ─────────────────────────────────────────────────
 	assignmentRepo := assignmentpersistence.NewGormAssignmentRepository(db.DB)
@@ -293,7 +306,7 @@ func New() (*App, error) {
 	)
 	workforceroute.Register(v1, workforceHandlerInstance, jwtManager)
 	planningroute.Register(v1, planningHandlerInstance, jwtManager)
-	productionroute.Register(v1, productionHandlerInstance, jwtManager)
+	productionroute.Register(v1, productionHandlerInstance, workflowHandlerInstance, jwtManager)
 	assignmentroute.Register(v1, assignmentHandlerInstance, jwtManager)
 	projectionroute.Register(v1, projHandlerInstance, jwtManager)
 	notificationroute.Register(v1, notifyHandlerInstance, jwtManager)

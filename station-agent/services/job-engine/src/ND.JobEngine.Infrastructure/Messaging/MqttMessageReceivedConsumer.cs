@@ -106,16 +106,25 @@ public sealed class MqttMessageReceivedConsumer : BackgroundService
             ? serial
             : tagsDict.TryGetValue(BusinessConstants.MqttTag.ProductId, out var pidFallback) ? pidFallback : null;
 
+        var jobNo = tagsDict.TryGetValue("production.order_number", out var wo) && !string.IsNullOrWhiteSpace(wo)
+            ? wo
+            : unifiedEvent.EventId;
+
+        var plannedQty = tagsDict.TryGetValue("production.planned_qty", out var pqStr) && int.TryParse(pqStr, out var pq)
+            ? pq
+            : 1;
+
         // ── Step 1: Create Job ───────────────────────────────────────────────
         var createCommand = new CreateJobCommand(
-            JobNo: unifiedEvent.EventId,
+            JobNo: jobNo,
             SourceSystem: "MQTT_ADAPTER",
             JobType: opType,
             ProductCode: productCode,
             IdempotencyKey: unifiedEvent.EventId,
             PayloadJson: payloadJson,
             ProductSerial: productSerial,
-            Priority: 0);
+            Priority: 0,
+            PlannedQty: plannedQty);
 
         var createHandler = scope.ServiceProvider.GetRequiredService<CreateJobHandler>();
         JobDto job;
@@ -130,20 +139,6 @@ public sealed class MqttMessageReceivedConsumer : BackgroundService
         {
             _logger.LogError(ex,
                 "Failed to create job from UnifiedEvent EventId={EventId}", unifiedEvent.EventId);
-            throw;
-        }
-
-        // ── Step 2: Trigger Processing ───────────────────────────────────────
-        var processCommand = new ProcessJobCommand(job.Id, TriggerType.Auto);
-        var processHandler = scope.ServiceProvider.GetRequiredService<ProcessJobHandler>();
-        try
-        {
-            await processHandler.HandleAsync(processCommand, cancellationToken);
-            _logger.LogInformation("Job {JobId} processing triggered successfully", job.Id);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to trigger processing for Job {JobId}", job.Id);
             throw;
         }
     }

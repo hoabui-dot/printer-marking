@@ -31,10 +31,23 @@ const (
 type WorkOrderStatus string
 
 const (
-	WorkOrderStatusPending    WorkOrderStatus = "pending"
-	WorkOrderStatusInProgress WorkOrderStatus = "in_progress"
-	WorkOrderStatusCompleted  WorkOrderStatus = "completed"
-	WorkOrderStatusCancelled  WorkOrderStatus = "cancelled"
+	WorkOrderStatusPending        WorkOrderStatus = "pending"
+	WorkOrderStatusInProgress     WorkOrderStatus = "in_progress"
+	WorkOrderStatusQueued         WorkOrderStatus = "queued"
+	WorkOrderStatusDispatched     WorkOrderStatus = "dispatched"
+	WorkOrderStatusAccepted       WorkOrderStatus = "accepted"
+	WorkOrderStatusPrinting       WorkOrderStatus = "printing"
+	WorkOrderStatusPrintCompleted WorkOrderStatus = "print_completed"
+	WorkOrderStatusLaserRunning   WorkOrderStatus = "laser_running"
+	WorkOrderStatusLaserCompleted WorkOrderStatus = "laser_completed"
+	WorkOrderStatusVisionRunning  WorkOrderStatus = "vision_running"
+	WorkOrderStatusVisionPassed   WorkOrderStatus = "vision_passed"
+	WorkOrderStatusVisionFailed   WorkOrderStatus = "vision_failed"
+	WorkOrderStatusRetry          WorkOrderStatus = "retry"
+	WorkOrderStatusRejected       WorkOrderStatus = "rejected"
+	WorkOrderStatusCompleted      WorkOrderStatus = "completed"
+	WorkOrderStatusCancelled      WorkOrderStatus = "cancelled"
+	WorkOrderStatusPaused         WorkOrderStatus = "paused"
 )
 
 // ─── Operation (Value Object) ─────────────────────────────────────────────────
@@ -143,24 +156,34 @@ func (r *Routing) TotalEstimatedMinutes() int {
 // ProductionOrder is the top-level aggregate for manufacturing a product batch.
 type ProductionOrder struct {
 	domain.AggregateRoot
-	OrderNumber    string
-	ProductName    string
-	Quantity       int
-	Priority       int // 1 = lowest, 100 = highest
-	Status         OrderStatus
-	OperationType  string
-	Station        string
-	GatewayOrderID *string
-	DueDate        *time.Time
-	Notes          string
+	OrderNumber       string
+	Customer          string
+	Product           string
+	ProductRevision   string
+	WorkflowID        *uuid.UUID
+	Quantity          int
+	Priority          int // 1 = lowest, 100 = highest
+	Status            OrderStatus
+	ApprovalStatus    string // draft, pending_approval, approved, rejected
+	ProductionStatus  string // planned, in_progress, completed, cancelled
+	OperationType     *string // Deprecated/Optional
+	Station           *string // Deprecated/Optional
+	GatewayOrderID    *string
+	DueDate           *time.Time
+	Notes             string
+	QuantityCompleted int
+	QuantityRunning   int
+	QuantityFailed    int
+	QuantityCancelled int
+	ScrapQuantity     int
 }
 
-func NewProductionOrder(orderNumber, productName string, quantity, priority int, operationType, station string, dueDate *time.Time, notes string) (*ProductionOrder, error) {
+func NewProductionOrder(orderNumber, customer, product, revision string, workflowID *uuid.UUID, quantity, priority int, dueDate *time.Time, notes string) (*ProductionOrder, error) {
 	if strings.TrimSpace(orderNumber) == "" {
 		return nil, errors.New("order number is required")
 	}
-	if strings.TrimSpace(productName) == "" {
-		return nil, errors.New("product name is required")
+	if strings.TrimSpace(product) == "" {
+		return nil, errors.New("product is required")
 	}
 	if quantity <= 0 {
 		return nil, errors.New("quantity must be greater than 0")
@@ -168,26 +191,28 @@ func NewProductionOrder(orderNumber, productName string, quantity, priority int,
 	if priority < 1 || priority > 100 {
 		return nil, errors.New("priority must be between 1 and 100")
 	}
-	if strings.TrimSpace(operationType) == "" {
-		return nil, errors.New("operation type is required")
-	}
-	if strings.TrimSpace(station) == "" {
-		return nil, errors.New("station is required")
-	}
 
 	po := &ProductionOrder{
-		OrderNumber:   strings.TrimSpace(orderNumber),
-		ProductName:   strings.TrimSpace(productName),
-		Quantity:      quantity,
-		Priority:      priority,
-		Status:        OrderStatusDraft,
-		OperationType: strings.TrimSpace(operationType),
-		Station:       strings.TrimSpace(station),
-		DueDate:       dueDate,
-		Notes:         strings.TrimSpace(notes),
+		OrderNumber:       strings.TrimSpace(orderNumber),
+		Customer:          strings.TrimSpace(customer),
+		Product:           strings.TrimSpace(product),
+		ProductRevision:   strings.TrimSpace(revision),
+		WorkflowID:        workflowID,
+		Quantity:          quantity,
+		Priority:          priority,
+		Status:            OrderStatusDraft,
+		ApprovalStatus:    "draft",
+		ProductionStatus:  "planned",
+		DueDate:           dueDate,
+		Notes:             strings.TrimSpace(notes),
+		QuantityCompleted: 0,
+		QuantityRunning:   0,
+		QuantityFailed:    0,
+		QuantityCancelled: 0,
+		ScrapQuantity:     0,
 	}
 	po.BaseEntity = domain.NewBaseEntity()
-	po.RecordEvent(NewProductionOrderCreatedEvent(po.ID, po.OrderNumber, po.ProductName, po.Quantity))
+	po.RecordEvent(NewProductionOrderCreatedEvent(po.ID, po.OrderNumber, po.Product, po.Quantity))
 	return po, nil
 }
 
@@ -317,6 +342,50 @@ type WorkOrder struct {
 	Status            WorkOrderStatus
 	StartedAt         *time.Time
 	CompletedAt       *time.Time
+
+	// Extended fields
+	DispatchPlanID   *uuid.UUID
+	SerialNumber     string
+	Barcode          string
+	QRCode           string
+	CurrentStep      string
+	CurrentAttempt   int
+	AssignedStation  string
+	AssignedTeam     string
+	TraceID          string
+	RetryHistory     string // JSON string
+	GatewayJobID     *string
+	CurrentOperation string
+	WorkflowProgress int
+	Operations       []WorkOrderOperation
+}
+
+// WorkOrderOperation represents an immutable snapshot of a manufacturing operation within a work order's routing.
+type WorkOrderOperation struct {
+	ID                   uuid.UUID
+	WorkOrderID          uuid.UUID
+	Sequence             int
+	OperationName        string
+	OperationType        string
+	Status               string // pending, running, completed, failed, skipped
+	EstimatedDuration    int    // in seconds
+	RetryLimit           int
+	IsRequired           bool
+	RequiresStation      bool
+	DefaultStationType   string
+	QualityCheckRequired bool
+	IsFinalOperation     bool
+	StartedAt            *time.Time
+	CompletedAt          *time.Time
+	AssignedStation      string
+	AssignedTeam         string
+	Duration             int
+	RetryCount           int
+	Telemetry            string
+	Result               string
+	Comments             string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 func NewWorkOrder(productionOrderID, routingID uuid.UUID, sequence int) (*WorkOrder, error) {
@@ -329,6 +398,8 @@ func NewWorkOrder(productionOrderID, routingID uuid.UUID, sequence int) (*WorkOr
 		RoutingID:         routingID,
 		Sequence:          sequence,
 		Status:            WorkOrderStatusPending,
+		CurrentAttempt:    1,
+		RetryHistory:      "[]",
 	}
 	wo.BaseEntity = domain.NewBaseEntity()
 	wo.RecordEvent(NewWorkOrderCreatedEvent(wo.ID, productionOrderID, routingID, sequence))
@@ -337,8 +408,8 @@ func NewWorkOrder(productionOrderID, routingID uuid.UUID, sequence int) (*WorkOr
 
 // Start transitions the work order to in_progress.
 func (wo *WorkOrder) Start() error {
-	if wo.Status != WorkOrderStatusPending {
-		return fmt.Errorf("can only start a pending work order, current status: %s", wo.Status)
+	if wo.Status != WorkOrderStatusPending && wo.Status != WorkOrderStatusDispatched && wo.Status != WorkOrderStatusAccepted {
+		return fmt.Errorf("can only start a pending or dispatched work order, current status: %s", wo.Status)
 	}
 	now := time.Now().UTC()
 	wo.Status = WorkOrderStatusInProgress
@@ -350,9 +421,6 @@ func (wo *WorkOrder) Start() error {
 
 // Complete marks the work order as done.
 func (wo *WorkOrder) Complete() error {
-	if wo.Status != WorkOrderStatusInProgress {
-		return fmt.Errorf("can only complete an in-progress work order, current status: %s", wo.Status)
-	}
 	now := time.Now().UTC()
 	wo.Status = WorkOrderStatusCompleted
 	wo.CompletedAt = &now
@@ -369,4 +437,25 @@ func (wo *WorkOrder) Cancel() error {
 	wo.Status = WorkOrderStatusCancelled
 	wo.UpdatedAt = time.Now().UTC()
 	return nil
+}
+
+// WorkOrderTimeline represents a single execution event for a WorkOrder
+type WorkOrderTimeline struct {
+	ID          uuid.UUID
+	WorkOrderID uuid.UUID
+	Stage       string
+	Status      string
+	Detail      string
+	OccurredAt  time.Time
+}
+
+func NewWorkOrderTimeline(workOrderID uuid.UUID, stage, status, detail string) *WorkOrderTimeline {
+	return &WorkOrderTimeline{
+		ID:          uuid.New(),
+		WorkOrderID: workOrderID,
+		Stage:       stage,
+		Status:      status,
+		Detail:      detail,
+		OccurredAt:  time.Now().UTC(),
+	}
 }

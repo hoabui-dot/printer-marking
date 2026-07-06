@@ -17,7 +17,8 @@ public record JobDto(
     string? ExecutionType = "OriginalProduction",
     string? TriggeredByUserId = null,
     string? ReasonCode = null,
-    string? ReasonDescription = null
+    string? ReasonDescription = null,
+    string PayloadJson = "{}"
 );
 
 public record JobAttemptDto(
@@ -45,7 +46,12 @@ public record JobStepDto(
     string? StartedAt,
     string? FinishedAt,
     string? ErrorMessage,
-    string? ResultJson
+    string? ResultJson,
+    int ExecutionDurationMs = 0,
+    int RetryCount = 0,
+    string? PayloadJsonStep = null,
+    string? AssignedDeviceId = null,
+    string? ExecutionResult = null
 );
 
 public record JobHistoryDto(

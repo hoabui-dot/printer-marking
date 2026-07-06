@@ -978,6 +978,77 @@ app.MapPost("/api/commands/manual-override", async (
     }
 }).RequireAuthorization();
 
+// ── Printer Adapter proxy endpoints ──────────────────────────────────────────
+async Task<IResult> ProxyPrinterAdapterGetAsync(string relativePath, HttpContext ctx, CancellationToken ct)
+{
+    var userId = ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    if (userId is null) return Results.Unauthorized();
+
+    var printerHost = Environment.GetEnvironmentVariable("PRINTER_ADAPTER_HOST") ?? builder.Configuration["PrinterAdapter:Host"] ?? "localhost";
+    var printerPort = Environment.GetEnvironmentVariable("PRINTER_ADAPTER_PORT") ?? builder.Configuration["PrinterAdapter:Port"] ?? "5004";
+    var targetUrl = $"http://{printerHost}:{printerPort}/{relativePath}";
+
+    try
+    {
+        using var httpClient = new HttpClient();
+        var request = new HttpRequestMessage(HttpMethod.Get, targetUrl);
+        var response = await httpClient.SendAsync(request, ct);
+        var content = await response.Content.ReadAsStringAsync(ct);
+        return Results.Content(content, response.Content.Headers.ContentType?.ToString() ?? "application/json", statusCode: (int)response.StatusCode);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message, statusCode: 502);
+    }
+}
+
+async Task<IResult> ProxyPrinterAdapterPostAsync(string relativePath, HttpContext ctx, CancellationToken ct)
+{
+    var userId = ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    if (userId is null) return Results.Unauthorized();
+
+    var printerHost = Environment.GetEnvironmentVariable("PRINTER_ADAPTER_HOST") ?? builder.Configuration["PrinterAdapter:Host"] ?? "localhost";
+    var printerPort = Environment.GetEnvironmentVariable("PRINTER_ADAPTER_PORT") ?? builder.Configuration["PrinterAdapter:Port"] ?? "5004";
+    var targetUrl = $"http://{printerHost}:{printerPort}/{relativePath}";
+
+    try
+    {
+        using var httpClient = new HttpClient();
+        var request = new HttpRequestMessage(HttpMethod.Post, targetUrl);
+        
+        ctx.Request.EnableBuffering();
+        using var reader = new StreamReader(ctx.Request.Body, System.Text.Encoding.UTF8, true, 1024, true);
+        var bodyStr = await reader.ReadToEndAsync(ct);
+        ctx.Request.Body.Position = 0;
+        
+        request.Content = new StringContent(bodyStr, System.Text.Encoding.UTF8, "application/json");
+        
+        var response = await httpClient.SendAsync(request, ct);
+        var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/json";
+        if (contentType.Contains("image/"))
+        {
+            var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+            return Results.File(bytes, contentType);
+        }
+        
+        var content = await response.Content.ReadAsStringAsync(ct);
+        return Results.Content(content, contentType, statusCode: (int)response.StatusCode);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message, statusCode: 502);
+    }
+}
+
+app.MapGet("/api/label-templates/active", async (HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterGetAsync("api/label-templates/active", ctx, ct)).RequireAuthorization();
+
+app.MapPost("/api/label-templates/preview", async (HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterPostAsync("api/label-templates/preview", ctx, ct)).RequireAuthorization();
+
+app.MapPost("/api/label-templates/render", async (HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterPostAsync("api/label-templates/render", ctx, ct)).RequireAuthorization();
+
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "kiosk-ui" }));
 
 // SignalR hub

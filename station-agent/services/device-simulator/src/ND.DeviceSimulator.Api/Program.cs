@@ -73,8 +73,8 @@ try
 
     builder.Services.AddDbContext<SimulatorDbContext>(opt => opt.UseSqlite(dbPath));
 
-    // ── Singleton state service ───────────────────────────────────────────────
-    builder.Services.AddSingleton<ISimulatorStateService, SimulatorStateService>();
+    builder.Services.AddSingleton<SimulatorStateService>();
+    builder.Services.AddSingleton<ISimulatorStateService>(sp => sp.GetRequiredService<SimulatorStateService>());
 
     // ── Virtual device services ───────────────────────────────────────────────
     builder.Services.AddSingleton<VirtualVisionService>();
@@ -226,39 +226,50 @@ try
     });
 
     // ── Printer Connect/Disconnect ───────────────────────────────────────────
-    app.MapPost("/api/printer/connect", async (VirtualPrinterServer printer) =>
+    app.MapGet("/api/devices/printers", (ISimulatorStateService state) =>
     {
-        await printer.ConnectPrinterAsync();
-        return Results.Ok(new { status = "connected" });
+        return Results.Ok(state.GetPrinters());
     });
 
-    app.MapPost("/api/printer/disconnect", async (VirtualPrinterServer printer) =>
+    app.MapPost("/api/printer/connect", async (string? code, VirtualPrinterServer printer) =>
     {
-        await printer.DisconnectPrinterAsync();
-        return Results.Ok(new { status = "disconnected" });
+        await printer.ConnectPrinterAsync(code);
+        return Results.Ok(new { status = "connected", code });
     });
 
-    // GET /api/printer/mode — returns current simulator failure mode
-    app.MapGet("/api/printer/mode", (VirtualPrinterServer printer) =>
-        Results.Ok(new
+    app.MapPost("/api/printer/disconnect", async (string? code, VirtualPrinterServer printer) =>
+    {
+        await printer.DisconnectPrinterAsync(code);
+        return Results.Ok(new { status = "disconnected", code });
+    });
+
+    // GET /api/printer/mode — returns current simulator failure mode (for compatibility, references Printer-01)
+    app.MapGet("/api/printer/mode", (string? code, ISimulatorStateService state) =>
+    {
+        var targetCode = code ?? "Printer-01";
+        var p = state.GetPrinters().FirstOrDefault(x => x.PrinterCode.Equals(targetCode, StringComparison.OrdinalIgnoreCase));
+        if (p == null) return Results.NotFound();
+        Enum.TryParse<ND.DeviceSimulator.Infrastructure.VirtualDevices.PrinterSimulatorMode>(p.SimulatorMode, true, out var mode);
+        return Results.Ok(new
         {
-            mode = (int)printer.SimulatorMode,
-            modeName = printer.SimulatorMode.ToString(),
+            code = targetCode,
+            mode = (int)mode,
+            modeName = p.SimulatorMode,
             availableModes = Enum.GetValues<ND.DeviceSimulator.Infrastructure.VirtualDevices.PrinterSimulatorMode>()
                 .Select(m => new { value = (int)m, name = m.ToString() })
-        }));
+        });
+    });
 
     // POST /api/printer/mode — set simulator failure mode
-    // Body: { "mode": 3 }  (0=Success, 1=PrinterBusy, 2=Offline, 3=PaperOut, 4=RibbonOut,
-    //                        5=HeadOpen, 6=InvalidZpl, 7=InvalidBarcode, 8=TcpTimeout,
-    //                        9=TcpConnectionRefused, 10=MemoryFull)
-    app.MapPost("/api/printer/mode", (SetPrinterModeRequest req, VirtualPrinterServer printer) =>
+    app.MapPost("/api/printer/mode", (SetPrinterModeRequest req, string? code, VirtualPrinterServer printer) =>
     {
         if (!Enum.IsDefined(typeof(ND.DeviceSimulator.Infrastructure.VirtualDevices.PrinterSimulatorMode), req.Mode))
             return Results.BadRequest(new { error = $"Invalid mode value: {req.Mode}. Valid range: 0-10" });
 
-        printer.SimulatorMode = (ND.DeviceSimulator.Infrastructure.VirtualDevices.PrinterSimulatorMode)req.Mode;
-        return Results.Ok(new { mode = req.Mode, modeName = printer.SimulatorMode.ToString() });
+        var targetCode = code ?? "Printer-01";
+        var modeName = ((ND.DeviceSimulator.Infrastructure.VirtualDevices.PrinterSimulatorMode)req.Mode).ToString();
+        printer.SetPrinterMode(targetCode, modeName);
+        return Results.Ok(new { code = targetCode, mode = req.Mode, modeName });
     });
 
     // ── Laser Connect/Disconnect ─────────────────────────────────────────────
@@ -303,29 +314,102 @@ try
     });
 
     app.MapPost("/api/gateway/send-print-job", async (
+        TriggerJobRequest? body,
         VirtualFactoryGateway gateway,
+        ISimulatorStateService state,
         IConfiguration config) =>
     {
         try
         {
-            var data = new List<UnifiedTagRequest>
+            int pcs = body?.Pcs ?? 1;
+            if (pcs <= 0)
             {
-                new("operation.type", "PRINT_ONLY"),
-                new("print.type", "LABEL_PRINT"),
-                new("product.id", "FC-WP-RO100G-B-998822"),
-                new("product.lot", "LOT-2026-06-A-001"),
-                new("product.mfg_date", "2026-06-16"),
-                new("product.exp_date", "2028-06-16")
-            };
-            var site = config["Simulator:SITE_CODE"] ?? "NMDDuongDuong";
-            var edgeId = config["Simulator:EDGE_ID"] ?? "edge-ipc-l3-marking";
-            var area = config["Simulator:AREA_CODE"] ?? "Assembly_Section";
-            var line = config["Simulator:LINE_CODE"] ?? "Chuyen03";
-            var topic = $"nd/{site}/{edgeId}/command";
+                return Results.BadRequest(new { error = "Pcs must be greater than 0" });
+            }
 
-            var req = new GatewayPublishRequest(topic, site, area, line, "Printer-01", edgeId, data);
-            var eventId = await gateway.PublishAsync(req);
-            return Results.Ok(new { eventId });
+            if (pcs == 1)
+            {
+                var data = new List<UnifiedTagRequest>
+                {
+                    new("operation.type", "PRINT_ONLY"),
+                    new("print.type", "LABEL_PRINT"),
+                    new("product.id", "FC-WP-RO100G-B-998822"),
+                    new("product.lot", "LOT-2026-06-A-001"),
+                    new("product.mfg_date", "2026-06-16"),
+                    new("product.exp_date", "2028-06-16"),
+                    new("production.planned_qty", "1"),
+                    new("production.completed_qty", "1"),
+                    new("production.remaining_qty", "0")
+                };
+                var site = config["Simulator:SITE_CODE"] ?? "NMDDuongDuong";
+                var edgeId = config["Simulator:EDGE_ID"] ?? "edge-ipc-l3-marking";
+                var area = config["Simulator:AREA_CODE"] ?? "Assembly_Section";
+                var line = config["Simulator:LINE_CODE"] ?? "Chuyen03";
+                var topic = $"nd/{site}/{edgeId}/command";
+
+                var req = new GatewayPublishRequest(topic, site, area, line, "Printer-01", edgeId, data);
+                var eventId = await gateway.PublishAsync(req);
+
+                if (!string.IsNullOrEmpty(body?.Scenario))
+                {
+                    state.SetJobScenario(eventId, body.Scenario);
+                }
+
+                return Results.Ok(new { eventId });
+            }
+            else
+            {
+                // Generate a shared production order number for this batch so they all group together
+                var batchId = Guid.NewGuid().ToString("N")[..8].ToUpper();
+                var orderNo = $"WO-{batchId}";
+
+                // Fire-and-forget background task
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var site = config["Simulator:SITE_CODE"] ?? "NMDDuongDuong";
+                        var edgeId = config["Simulator:EDGE_ID"] ?? "edge-ipc-l3-marking";
+                        var area = config["Simulator:AREA_CODE"] ?? "Assembly_Section";
+                        var line = config["Simulator:LINE_CODE"] ?? "Chuyen03";
+                        var topic = $"nd/{site}/{edgeId}/command";
+
+                        for (int i = 0; i < pcs; i++)
+                        {
+                            var data = new List<UnifiedTagRequest>
+                            {
+                                new("operation.type", "PRINT_ONLY"),
+                                new("print.type", "LABEL_PRINT"),
+                                new("product.id", "FC-WP-RO100G-B-998822"),
+                                new("product.lot", "LOT-2026-06-A-001"),
+                                new("product.mfg_date", "2026-06-16"),
+                                new("product.exp_date", "2028-06-16"),
+                                new("production.order_number", orderNo),
+                                new("production.planned_qty", pcs.ToString()),
+                                new("production.completed_qty", (i + 1).ToString()),
+                                new("production.remaining_qty", (pcs - (i + 1)).ToString())
+                            };
+
+                            var req = new GatewayPublishRequest(topic, site, area, line, "Printer-01", edgeId, data);
+                            var eventId = await gateway.PublishAsync(req);
+
+                            if (!string.IsNullOrEmpty(body?.Scenario))
+                            {
+                                state.SetJobScenario(eventId, body.Scenario);
+                            }
+
+                            // Wait 1.2 seconds between prints to let Kiosk UI animate progress
+                            await Task.Delay(1200);
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // Ignore background worker exceptions
+                    }
+                });
+
+                return Results.Ok(new { status = "triggered", pcs });
+            }
         }
         catch (Exception ex)
         {
@@ -464,6 +548,22 @@ try
             // MES Event Correlation tags
             data.Add(new("production.order_id", req.ProductionOrderId));
             data.Add(new("production.order_number", req.OrderNumber));
+
+            // Enriched Planning tags
+            data.Add(new("production.workflow", req.WorkflowName ?? "Default Workflow"));
+            data.Add(new("product.name", req.ProductName ?? "Bearing Seal 35mm"));
+            data.Add(new("product.revision", req.ProductRevision ?? "Rev A"));
+            data.Add(new("customer.name", req.Customer ?? "Won Seal Tech"));
+            data.Add(new("production.planned_qty", req.PlannedQuantity.ToString()));
+            data.Add(new("production.completed_qty", req.CompletedQuantity.ToString()));
+            data.Add(new("production.remaining_qty", req.RemainingQuantity.ToString()));
+            data.Add(new("production.step", req.CurrentStep ?? "PRINT"));
+            data.Add(new("assigned_team", req.AssignedTeam ?? "Team A"));
+            data.Add(new("operator", req.Operator ?? "admin.operator"));
+            data.Add(new("product.material", "NBR-70"));
+            data.Add(new("product.rubber_type", "Synthetic Rubber"));
+            data.Add(new("product.country", "Vietnam"));
+            data.Add(new("product.batch", "BATCH-01"));
 
             var site = config["Simulator:SITE_CODE"] ?? "NMDDuongDuong";
             var edgeId = config["Simulator:EDGE_ID"] ?? "edge-ipc-l3-marking";
@@ -1130,7 +1230,7 @@ finally
 
 return 0;
 
-public record TriggerJobRequest(string? Scenario);
+public record TriggerJobRequest(string? Scenario, int? Pcs = null);
 
 public record SetPrinterModeRequest(int Mode);
 
@@ -1145,7 +1245,17 @@ public record CreateGatewayOrderRequest(
     [property: System.Text.Json.Serialization.JsonPropertyName("serial_number")] string SerialNumber,
     [property: System.Text.Json.Serialization.JsonPropertyName("mfg_date")] string MfgDate,
     [property: System.Text.Json.Serialization.JsonPropertyName("exp_date")] string ExpDate,
-    [property: System.Text.Json.Serialization.JsonPropertyName("quantity")] int Quantity
+    [property: System.Text.Json.Serialization.JsonPropertyName("quantity")] int Quantity,
+    [property: System.Text.Json.Serialization.JsonPropertyName("workflow_name")] string WorkflowName,
+    [property: System.Text.Json.Serialization.JsonPropertyName("product_name")] string ProductName,
+    [property: System.Text.Json.Serialization.JsonPropertyName("product_revision")] string ProductRevision,
+    [property: System.Text.Json.Serialization.JsonPropertyName("customer")] string Customer,
+    [property: System.Text.Json.Serialization.JsonPropertyName("planned_quantity")] int PlannedQuantity,
+    [property: System.Text.Json.Serialization.JsonPropertyName("completed_quantity")] int CompletedQuantity,
+    [property: System.Text.Json.Serialization.JsonPropertyName("remaining_quantity")] int RemainingQuantity,
+    [property: System.Text.Json.Serialization.JsonPropertyName("current_step")] string CurrentStep,
+    [property: System.Text.Json.Serialization.JsonPropertyName("assigned_team")] string AssignedTeam,
+    [property: System.Text.Json.Serialization.JsonPropertyName("operator")] string Operator
 );
 
 public partial class Program { }

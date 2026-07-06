@@ -20,6 +20,7 @@ public sealed class Job : AuditableEntity
     public int Priority { get; private set; } = 0;
     public string IdempotencyKey { get; private set; } = default!;
     public string? CompletedAt { get; private set; }
+    public string? AssignedPrinter { get; private set; }
     
     public string? ParentJobId { get; private set; }
     public string? RootJobId { get; private set; }
@@ -112,6 +113,12 @@ public sealed class Job : AuditableEntity
         if (CurrentStatus == JobStatus.Completed)
             throw new InvalidJobTransitionException(Id, CurrentStatus, JobStatus.Cancelled);
         CurrentStatus = JobStatus.Cancelled;
+        Touch();
+    }
+
+    public void AssignPrinter(string printerCode)
+    {
+        AssignedPrinter = printerCode;
         Touch();
     }
 

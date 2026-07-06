@@ -329,3 +329,190 @@ func (h *ProductionHandler) writeSSEEvent(w gin.ResponseWriter, event string, da
 	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, payload)
 	w.(http.Flusher).Flush()
 }
+
+func (h *ProductionHandler) CreateDispatchPlan(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid production order ID format")
+		return
+	}
+
+	var req dto.CreateDispatchPlanRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "VALIDATION_ERROR", err.Error())
+		return
+	}
+
+	plan, err := h.svc.CreateDispatchPlan(c.Request.Context(), id, req)
+	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			response.NotFound(c, "production order")
+			return
+		}
+		response.UnprocessableEntity(c, "ERROR", err.Error())
+		return
+	}
+
+	response.Created(c, plan)
+}
+
+func (h *ProductionHandler) ListDispatchPlans(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid production order ID format")
+		return
+	}
+
+	plans, err := h.svc.ListDispatchPlans(c.Request.Context(), id)
+	if err != nil {
+		response.InternalServerError(c, c.GetString("trace_id"))
+		return
+	}
+
+	response.OK(c, plans)
+}
+
+func (h *ProductionHandler) GenerateWorkOrders(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid dispatch plan ID format")
+		return
+	}
+
+	if err := h.svc.GenerateWorkOrders(c.Request.Context(), id); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			response.NotFound(c, "dispatch plan")
+			return
+		}
+		response.UnprocessableEntity(c, "ERROR", err.Error())
+		return
+	}
+
+	response.OK(c, gin.H{"status": "generation_started"})
+}
+
+func (h *ProductionHandler) DispatchWorkOrder(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid work order ID format")
+		return
+	}
+
+	var req dto.DispatchWorkOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "VALIDATION_ERROR", err.Error())
+		return
+	}
+
+	if err := h.svc.DispatchWorkOrder(c.Request.Context(), id, req); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			response.NotFound(c, "work order")
+			return
+		}
+		response.UnprocessableEntity(c, "ERROR", err.Error())
+		return
+	}
+
+	response.OK(c, gin.H{"status": "dispatched"})
+}
+
+func (h *ProductionHandler) BulkDispatchWorkOrders(c *gin.Context) {
+	var req dto.BulkDispatchWorkOrdersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "VALIDATION_ERROR", err.Error())
+		return
+	}
+
+	if err := h.svc.BulkDispatchWorkOrders(c.Request.Context(), req); err != nil {
+		response.UnprocessableEntity(c, "ERROR", err.Error())
+		return
+	}
+
+	response.OK(c, gin.H{"status": "dispatched"})
+}
+
+func (h *ProductionHandler) CancelWorkOrder(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid work order ID format")
+		return
+	}
+
+	if err := h.svc.CancelWorkOrder(c.Request.Context(), id); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			response.NotFound(c, "work order")
+			return
+		}
+		response.UnprocessableEntity(c, "ERROR", err.Error())
+		return
+	}
+
+	response.NoContent(c)
+}
+
+func (h *ProductionHandler) PauseWorkOrder(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid work order ID format")
+		return
+	}
+
+	if err := h.svc.PauseWorkOrder(c.Request.Context(), id); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			response.NotFound(c, "work order")
+			return
+		}
+		response.UnprocessableEntity(c, "ERROR", err.Error())
+		return
+	}
+
+	response.NoContent(c)
+}
+
+func (h *ProductionHandler) ResumeWorkOrder(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid work order ID format")
+		return
+	}
+
+	if err := h.svc.ResumeWorkOrder(c.Request.Context(), id); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			response.NotFound(c, "work order")
+			return
+		}
+		response.UnprocessableEntity(c, "ERROR", err.Error())
+		return
+	}
+
+	response.NoContent(c)
+}
+
+func (h *ProductionHandler) StreamWorkOrders(c *gin.Context) {
+	clientID := uuid.New().String()
+	updateCh := h.svc.SubscribeWorkOrders(clientID)
+	defer h.svc.UnsubscribeWorkOrders(clientID)
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	heartbeat := time.NewTicker(30 * time.Second)
+	defer heartbeat.Stop()
+
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case dtoWo, ok := <-updateCh:
+			if !ok {
+				return
+			}
+			h.writeSSEEvent(c.Writer, "work_order_update", dtoWo)
+		case <-heartbeat.C:
+			fmt.Fprintf(c.Writer, ": heartbeat\n\n")
+			c.Writer.Flush()
+		}
+	}
+}

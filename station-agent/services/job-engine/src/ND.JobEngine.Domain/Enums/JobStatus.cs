@@ -13,7 +13,7 @@ public static class JobStatus
 
 public static class AttemptStatus
 {
-    public const string Success = "SUCCESS";
+    public const string Success = "COMPLETED";  // Normalized: aligns with JobStatus.Completed / StepStatus.Completed
     public const string Failed = "FAILED";
     public const string Cancelled = "CANCELLED";
 }

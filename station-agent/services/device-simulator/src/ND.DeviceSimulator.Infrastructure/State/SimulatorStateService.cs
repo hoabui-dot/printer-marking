@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Linq;
 using ND.DeviceSimulator.Application.Abstractions;
 using ND.DeviceSimulator.Application.Dtos;
 
@@ -63,6 +64,31 @@ public sealed class SimulatorStateService : ISimulatorStateService
     private volatile string? _activeJobId;
 
     // ── Printer ───────────────────────────────────────────────────────────────
+    private readonly List<SimulatedPrinter> _printers = new()
+    {
+        new() { PrinterCode = "Printer-01", Port = 9100, Name = "Zebra Industrial A", MediaLevel = 94, RibbonLevel = 86 },
+        new() { PrinterCode = "Printer-02", Port = 9101, Name = "Zebra Industrial B", MediaLevel = 98, RibbonLevel = 91 },
+        new() { PrinterCode = "Printer-03", Port = 9102, Name = "Zebra Desktop C", MediaLevel = 88, RibbonLevel = 80 }
+    };
+
+    public IReadOnlyList<SimulatedPrinterDto> GetPrinters() => _printers.Select(p => new SimulatedPrinterDto(
+        p.PrinterCode,
+        p.Name,
+        p.Port,
+        p.IpAddress,
+        p.Status,
+        p.Online,
+        p.MediaLevel,
+        p.RibbonLevel,
+        p.LastZplPreview,
+        p.LastResult,
+        p.LastJobAt,
+        p.JobCount,
+        p.SimulatorMode
+    )).ToList();
+
+    public IReadOnlyList<SimulatedPrinter> GetInternalPrinters() => _printers;
+
     public void SetPrinterOnline(bool online) => _printerOnline = online;
 
     public void RecordPrinterJob(string? zplContent, string result)
@@ -178,5 +204,5 @@ public sealed class SimulatorStateService : ISimulatorStateService
     // ── Snapshot ──────────────────────────────────────────────────────────────
     public SimulatorStatusDto GetStatus() => new(
         GetPrinterState(), GetLaserState(), GetVisionState(),
-        GetPlcState(), GetGatewayState());
+        GetPlcState(), GetGatewayState(), GetPrinters());
 }

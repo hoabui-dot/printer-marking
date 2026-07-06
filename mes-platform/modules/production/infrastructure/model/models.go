@@ -8,19 +8,29 @@ import (
 
 // ProductionOrderModel is the GORM model for production_orders.
 type ProductionOrderModel struct {
-	ID             uuid.UUID  `gorm:"type:uuid;primaryKey"`
-	OrderNumber    string     `gorm:"type:varchar(100);uniqueIndex;not null"`
-	ProductName    string     `gorm:"type:varchar(255);not null"`
-	Quantity       int        `gorm:"not null;default:1"`
-	Priority       int        `gorm:"not null;default:50"`
-	Status         string     `gorm:"type:varchar(50);not null;default:'draft';index"`
-	OperationType  string     `gorm:"type:varchar(50);not null;default:'PRINT_ONLY'"`
-	Station        string     `gorm:"type:varchar(100);not null;default:''"`
-	GatewayOrderID *string    `gorm:"type:varchar(100);default:null;index"`
-	DueDate        *time.Time `gorm:"type:date;index"`
-	Notes          string     `gorm:"type:text"`
-	CreatedAt      time.Time  `gorm:"autoCreateTime"`
-	UpdatedAt      time.Time  `gorm:"autoUpdateTime"`
+	ID                uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	OrderNumber       string     `gorm:"type:varchar(100);uniqueIndex;not null"`
+	Customer          string     `gorm:"type:varchar(255);not null;default:''"`
+	Product           string     `gorm:"type:varchar(255);not null;default:''"`
+	ProductRevision   string     `gorm:"type:varchar(50);not null;default:''"`
+	WorkflowID        *uuid.UUID `gorm:"type:uuid;default:null;index"`
+	Quantity          int        `gorm:"not null;default:1"`
+	Priority          int        `gorm:"not null;default:50"`
+	Status            string     `gorm:"type:varchar(50);not null;default:'draft';index"`
+	ApprovalStatus    string     `gorm:"type:varchar(50);not null;default:'draft'"`
+	ProductionStatus  string     `gorm:"type:varchar(50);not null;default:'planned'"`
+	OperationType     *string    `gorm:"type:varchar(50);default:null"`
+	Station           *string    `gorm:"type:varchar(100);default:null"`
+	GatewayOrderID    *string    `gorm:"type:varchar(100);default:null;index"`
+	DueDate           *time.Time `gorm:"type:date;index"`
+	Notes             string     `gorm:"type:text"`
+	QuantityCompleted int        `gorm:"not null;default:0"`
+	QuantityRunning   int        `gorm:"not null;default:0"`
+	QuantityFailed    int        `gorm:"not null;default:0"`
+	QuantityCancelled int        `gorm:"not null;default:0"`
+	ScrapQuantity     int        `gorm:"not null;default:0"`
+	CreatedAt         time.Time  `gorm:"autoCreateTime"`
+	UpdatedAt         time.Time  `gorm:"autoUpdateTime"`
 }
 
 func (ProductionOrderModel) TableName() string { return "production_orders" }
@@ -79,9 +89,85 @@ type WorkOrderModel struct {
 	CompletedAt       *time.Time `gorm:"default:null"`
 	CreatedAt         time.Time  `gorm:"autoCreateTime"`
 	UpdatedAt         time.Time  `gorm:"autoUpdateTime"`
+
+	// Extended fields
+	DispatchPlanID    *uuid.UUID `gorm:"type:uuid;default:null;index"`
+	SerialNumber      string     `gorm:"type:varchar(100);uniqueIndex;default:''"`
+	Barcode           string     `gorm:"type:varchar(100);default:''"`
+	QRCode            string     `gorm:"type:varchar(100);default:''"`
+	CurrentStep       string     `gorm:"type:varchar(100);default:''"`
+	CurrentAttempt    int        `gorm:"not null;default:1"`
+	AssignedStation   string     `gorm:"type:varchar(100);default:''"`
+	AssignedTeam      string     `gorm:"type:varchar(100);default:''"`
+	TraceID           string     `gorm:"type:varchar(100);default:''"`
+	RetryHistory      string     `gorm:"type:text;default:'[]'"`
+	GatewayJobID      *string    `gorm:"type:varchar(100);default:null;index"`
+	CurrentOperation  string                    `gorm:"type:varchar(100);default:''"`
+	WorkflowProgress  int                       `gorm:"not null;default:0"`
+	Operations        []WorkOrderOperationModel `gorm:"foreignKey:WorkOrderID;constraint:OnDelete:CASCADE"`
 }
 
 func (WorkOrderModel) TableName() string { return "production_work_orders" }
+
+// WorkOrderOperationModel is the GORM model for work_order_operations.
+type WorkOrderOperationModel struct {
+	ID                   uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	WorkOrderID          uuid.UUID  `gorm:"type:uuid;not null;index"`
+	Sequence             int        `gorm:"not null"`
+	OperationName        string     `gorm:"type:varchar(255);not null;default:''"`
+	OperationType        string     `gorm:"type:varchar(100);not null"`
+	Status               string     `gorm:"type:varchar(50);not null;default:'pending'"`
+	EstimatedDuration    int        `gorm:"not null;default:0"`
+	RetryLimit           int        `gorm:"not null;default:0"`
+	IsRequired           bool       `gorm:"not null;default:true"`
+	RequiresStation      bool       `gorm:"not null;default:true"`
+	DefaultStationType   string     `gorm:"type:varchar(100);not null;default:''"`
+	QualityCheckRequired bool       `gorm:"not null;default:false"`
+	IsFinalOperation     bool       `gorm:"not null;default:false"`
+	StartedAt            *time.Time `gorm:"default:null"`
+	CompletedAt          *time.Time `gorm:"default:null"`
+	AssignedStation      string     `gorm:"type:varchar(100);not null;default:''"`
+	AssignedTeam         string     `gorm:"type:varchar(100);not null;default:''"`
+	Duration             int        `gorm:"not null;default:0"`
+	RetryCount           int        `gorm:"not null;default:0"`
+	Telemetry            string     `gorm:"type:text;not null;default:''"`
+	Result               string     `gorm:"type:varchar(100);not null;default:''"`
+	Comments             string     `gorm:"type:text;not null;default:''"`
+	CreatedAt            time.Time  `gorm:"autoCreateTime"`
+	UpdatedAt            time.Time  `gorm:"autoUpdateTime"`
+}
+
+func (WorkOrderOperationModel) TableName() string { return "work_order_operations" }
+
+// DispatchPlanModel is the GORM model for production_dispatch_plans.
+type DispatchPlanModel struct {
+	ID                uuid.UUID `gorm:"type:uuid;primaryKey"`
+	ProductionOrderID uuid.UUID `gorm:"type:uuid;not null;index"`
+	Quantity          int       `gorm:"not null"`
+	Station           string    `gorm:"type:varchar(100);not null"`
+	ExecutionTeam     string    `gorm:"type:varchar(100);not null"`
+	DispatchStrategy  string    `gorm:"type:varchar(50);not null;default:'Serial'"`
+	BatchSize         int       `gorm:"not null;default:1"`
+	Status            string    `gorm:"type:varchar(50);not null;default:'pending'"`
+	GeneratedCount    int       `gorm:"not null;default:0"`
+	CreatedAt         time.Time `gorm:"autoCreateTime"`
+	UpdatedAt         time.Time `gorm:"autoUpdateTime"`
+}
+
+func (DispatchPlanModel) TableName() string { return "production_dispatch_plans" }
+
+// WorkOrderTimelineModel is the GORM model for production_work_order_timelines.
+type WorkOrderTimelineModel struct {
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey"`
+	WorkOrderID uuid.UUID `gorm:"type:uuid;not null;index"`
+	Stage       string    `gorm:"type:varchar(100);not null"`
+	Status      string    `gorm:"type:varchar(50);not null"`
+	Detail      string    `gorm:"type:text;not null"`
+	OccurredAt  time.Time `gorm:"not null"`
+	CreatedAt   time.Time `gorm:"autoCreateTime"`
+}
+
+func (WorkOrderTimelineModel) TableName() string { return "production_work_order_timelines" }
 
 // OutboxEventModel is the GORM model for production_outbox_events.
 type OutboxEventModel struct {

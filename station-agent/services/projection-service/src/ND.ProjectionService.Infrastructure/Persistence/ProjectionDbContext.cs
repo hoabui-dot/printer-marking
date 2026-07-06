@@ -12,6 +12,8 @@ public sealed class ProjectionDbContext : DbContext, IUnitOfWork
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<DeviceStatus> DeviceStatuses => Set<DeviceStatus>();
     public DbSet<ProductionRecord> ProductionRecords => Set<ProductionRecord>();
+    public DbSet<Alarm> Alarms => Set<Alarm>();
+    public DbSet<ProductionOrderView> ProductionOrders => Set<ProductionOrderView>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -56,6 +58,7 @@ public sealed class ProjectionDbContext : DbContext, IUnitOfWork
             e.Property(x => x.DeviceType).HasColumnName("device_type").IsRequired();
             e.Property(x => x.IsOnline).HasColumnName("is_online").IsRequired();
             e.Property(x => x.LastSeenAt).HasColumnName("last_seen_at").IsRequired();
+            e.Property(x => x.LifecycleState).HasColumnName("lifecycle_state").HasDefaultValue("Offline");
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         });
 
@@ -72,6 +75,42 @@ public sealed class ProjectionDbContext : DbContext, IUnitOfWork
             e.Property(x => x.JobType).HasColumnName("job_type").IsRequired();
             e.Property(x => x.CurrentStatus).HasColumnName("current_status").IsRequired();
             e.Property(x => x.StationId).HasColumnName("station_id").IsRequired();
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at").IsRequired();
+            e.Property(x => x.AssignedPrinter).HasColumnName("assigned_printer");
+            e.Property(x => x.StartTime).HasColumnName("start_time");
+            e.Property(x => x.EndTime).HasColumnName("end_time");
+            e.Property(x => x.RetryCount).HasColumnName("retry_count").HasDefaultValue(0);
+            e.Property(x => x.ErrorMessage).HasColumnName("error_message");
+        });
+
+        modelBuilder.Entity<Alarm>(e =>
+        {
+            e.ToTable("projection_alarms");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.Severity).HasColumnName("severity").IsRequired();
+            e.Property(x => x.Source).HasColumnName("source").IsRequired();
+            e.Property(x => x.Message).HasColumnName("message").IsRequired();
+            e.Property(x => x.DeviceId).HasColumnName("device_id");
+            e.Property(x => x.IsAcknowledged).HasColumnName("is_acknowledged").IsRequired();
+            e.Property(x => x.AcknowledgedBy).HasColumnName("acknowledged_by");
+            e.Property(x => x.AcknowledgedAt).HasColumnName("acknowledged_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+        });
+
+        modelBuilder.Entity<ProductionOrderView>(e =>
+        {
+            e.ToTable("projection_production_orders");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.OrderNo).HasColumnName("order_no").IsRequired();
+            e.HasIndex(x => x.OrderNo).IsUnique();
+            e.Property(x => x.ProductCode).HasColumnName("product_code").IsRequired();
+            e.Property(x => x.PlannedQty).HasColumnName("planned_qty").IsRequired();
+            e.Property(x => x.CompletedQty).HasColumnName("completed_qty").IsRequired();
+            e.Property(x => x.RemainingQty).HasColumnName("remaining_qty").IsRequired();
+            e.Property(x => x.Status).HasColumnName("status").IsRequired();
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at").IsRequired();
         });

@@ -7,7 +7,7 @@ namespace ND.JobEngine.Application.Queries;
 
 public record GetJobByIdQuery(string JobId);
 public record GetJobByJobNoQuery(string JobNo);
-public record GetJobsQuery(int Page = 1, int PageSize = 20, string? StatusFilter = null);
+public record GetJobsQuery(int Page = 1, int PageSize = 20, string? StatusFilter = null, string? SerialFilter = null);
 public record GetJobHistoryQuery(string JobId);
 public record GetJobAttemptsQuery(string JobId);
 public record GetPendingOverwriteRequestsQuery;
@@ -47,7 +47,7 @@ public sealed class GetJobQueryHandler
 
     public async Task<PagedResult<JobDto>> HandleGetPagedAsync(GetJobsQuery query, CancellationToken cancellationToken = default)
     {
-        var result = await _jobRepository.GetPagedAsync(query.Page, query.PageSize, query.StatusFilter, cancellationToken);
+        var result = await _jobRepository.GetPagedAsync(query.Page, query.PageSize, query.StatusFilter, query.SerialFilter, cancellationToken);
         return new PagedResult<JobDto>(
             result.Items.Select(MapJobToDto).ToList(),
             result.Total, result.Page, result.PageSize);
@@ -143,5 +143,6 @@ public sealed class GetJobQueryHandler
         job.CurrentStatus, job.ProductCode, job.ProductSerial,
         job.Priority, job.CreatedAt, job.CompletedAt,
         job.ParentJobId, job.RootJobId, job.RetrySequence, job.ExecutionType,
-        job.TriggeredByUserId, job.ReasonCode, job.ReasonDescription);
+        job.TriggeredByUserId, job.ReasonCode, job.ReasonDescription,
+        job.PayloadJson);
 }

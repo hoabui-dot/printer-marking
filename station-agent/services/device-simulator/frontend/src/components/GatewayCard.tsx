@@ -32,9 +32,25 @@ export default function GatewayCard({ state, events }: Props) {
   }
 
   const sendJob = async (url: string) => {
+    let body: any = undefined;
+    if (url === '/api/gateway/send-print-job') {
+      const input = window.prompt("Nhập số lượng sản phẩm cần in (pcs):", "100");
+      if (input === null) return; // User cancelled
+      const pcs = parseInt(input, 10);
+      if (isNaN(pcs) || pcs <= 0) {
+        window.alert("Số lượng sản phẩm phải lớn hơn 0!");
+        return;
+      }
+      body = { pcs };
+    }
+
     setPublishing(true)
     try {
-      await fetch(url, { method: 'POST' })
+      await fetch(url, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined
+      })
     } catch (err) {
       console.error(err)
     } finally {

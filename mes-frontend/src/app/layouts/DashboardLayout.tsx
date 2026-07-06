@@ -44,7 +44,6 @@ const NAV_ITEMS = [
     children: [
       { id: 'orders', path: '/production/orders' },
       { id: 'workOrders', path: '/production/work-orders' },
-      { id: 'routings', path: '/production/routings' },
     ],
   },
   {

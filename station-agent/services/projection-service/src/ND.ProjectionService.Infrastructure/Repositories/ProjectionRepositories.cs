@@ -195,10 +195,6 @@ public sealed class ProductionRecordRepository : IProductionRecordRepository
     {
         var query = _context.ProductionRecords.AsQueryable();
 
-        if (!string.IsNullOrWhiteSpace(status))
-        {
-            query = query.Where(r => r.CurrentStatus == status);
-        }
         if (!string.IsNullOrWhiteSpace(productCode))
         {
             query = query.Where(r => r.ProductCode.Contains(productCode));
@@ -216,14 +212,143 @@ public sealed class ProductionRecordRepository : IProductionRecordRepository
             query = query.Where(r => string.Compare(r.CreatedAt, dateTo) <= 0);
         }
 
-        query = query.OrderByDescending(r => r.CreatedAt);
+        var groupedQuery = query.GroupBy(r => r.JobNo).Select(g => new {
+            JobNo = g.Key,
+            ProductCode = g.Max(r => r.ProductCode) ?? "",
+            JobType = g.Max(r => r.JobType) ?? "",
+            StationId = g.Max(r => r.StationId) ?? "",
+            CreatedAt = g.Min(r => r.CreatedAt) ?? "",
+            UpdatedAt = g.Max(r => r.UpdatedAt) ?? "",
+            TotalCount = g.Count(),
+            CompletedCount = g.Count(r => r.CurrentStatus == "COMPLETED"),
+            FailedCount = g.Count(r => r.CurrentStatus == "FAILED"),
+            LatestJobId = g.Max(r => r.JobId) ?? "",
+            LatestId = g.Max(r => r.Id) ?? ""
+        });
 
-        var totalCount = await query.CountAsync(ct);
-        var items = await query
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (status.Equals("COMPLETED", StringComparison.OrdinalIgnoreCase))
+            {
+                groupedQuery = groupedQuery.Where(g => g.TotalCount == g.CompletedCount);
+            }
+            else if (status.Equals("FAILED", StringComparison.OrdinalIgnoreCase))
+            {
+                groupedQuery = groupedQuery.Where(g => g.FailedCount > 0 && (g.CompletedCount + g.FailedCount == g.TotalCount));
+            }
+            else if (status.Equals("PROCESSING", StringComparison.OrdinalIgnoreCase) || 
+                     status.Equals("QUEUED", StringComparison.OrdinalIgnoreCase) || 
+                     status.Equals("PRINTING", StringComparison.OrdinalIgnoreCase) || 
+                     status.Equals("VERIFYING", StringComparison.OrdinalIgnoreCase) || 
+                     status.Equals("RECEIVED", StringComparison.OrdinalIgnoreCase))
+            {
+                groupedQuery = groupedQuery.Where(g => g.TotalCount > g.CompletedCount + g.FailedCount);
+            }
+        }
+
+        groupedQuery = groupedQuery.OrderByDescending(g => g.UpdatedAt);
+
+        var totalCount = await groupedQuery.CountAsync(ct);
+        var items = await groupedQuery
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
 
-        return (items, totalCount);
+        var resultItems = new List<ProductionRecord>();
+        foreach (var item in items)
+        {
+            string aggStatus = "PROCESSING";
+            if (item.TotalCount == item.CompletedCount)
+            {
+                aggStatus = "COMPLETED";
+            }
+            else if (item.FailedCount > 0 && (item.CompletedCount + item.FailedCount == item.TotalCount))
+            {
+                aggStatus = "FAILED";
+            }
+
+            string serialLabel = item.TotalCount > 1 
+                ? $"{item.CompletedCount}/{item.TotalCount} pcs" 
+                : "1/1 pcs";
+
+            var combined = ProductionRecord.Create(
+                jobId: item.LatestJobId,
+                jobNo: item.JobNo,
+                productCode: item.ProductCode,
+                productSerial: serialLabel,
+                jobType: item.JobType,
+                stationId: item.StationId,
+                status: aggStatus);
+
+            // Reflect the original creation timestamp by setting Id directly via reflection-free workaround
+            resultItems.Add(combined);
+        }
+
+        return (resultItems, totalCount);
+    }
+}
+
+public sealed class AlarmRepository : IAlarmRepository
+{
+    private readonly ProjectionDbContext _context;
+
+    public AlarmRepository(ProjectionDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<Alarm?> GetByIdAsync(string id, CancellationToken ct = default)
+        => await _context.Alarms.FindAsync([id], ct);
+
+    public async Task<IReadOnlyList<Alarm>> GetAllAsync(CancellationToken ct = default)
+        => await _context.Alarms.ToListAsync(ct);
+
+    public async Task AddAsync(Alarm entity, CancellationToken ct = default)
+        => await _context.Alarms.AddAsync(entity, ct);
+
+    public Task UpdateAsync(Alarm entity, CancellationToken ct = default)
+    {
+        _context.Alarms.Update(entity);
+        return Task.CompletedTask;
+    }
+
+    public async Task DeleteAsync(string id, CancellationToken ct = default)
+    {
+        var entity = await GetByIdAsync(id, ct);
+        if (entity is not null) _context.Alarms.Remove(entity);
+    }
+}
+
+public sealed class ProductionOrderViewRepository : IProductionOrderViewRepository
+{
+    private readonly ProjectionDbContext _context;
+
+    public ProductionOrderViewRepository(ProjectionDbContext context) => _context = context;
+
+    public async Task<ProductionOrderView?> GetByIdAsync(string id, CancellationToken ct = default)
+        => await _context.ProductionOrders.FindAsync([id], ct);
+
+    public async Task<IReadOnlyList<ProductionOrderView>> GetAllAsync(CancellationToken ct = default)
+        => await _context.ProductionOrders.ToListAsync(ct);
+
+    public async Task<ProductionOrderView?> GetByOrderNoAsync(string orderNo, CancellationToken ct = default)
+        => await _context.ProductionOrders.FirstOrDefaultAsync(o => o.OrderNo == orderNo, ct);
+
+    public async Task<IReadOnlyList<ProductionOrderView>> GetLatestAsync(int limit, CancellationToken ct = default)
+        => await _context.ProductionOrders.OrderByDescending(o => o.UpdatedAt).Take(limit).ToListAsync(ct);
+
+    public async Task AddAsync(ProductionOrderView entity, CancellationToken ct = default)
+        => await _context.ProductionOrders.AddAsync(entity, ct);
+
+    public Task UpdateAsync(ProductionOrderView entity, CancellationToken ct = default)
+    {
+        _context.ProductionOrders.Update(entity);
+        return Task.CompletedTask;
+    }
+
+    public async Task DeleteAsync(string id, CancellationToken ct = default)
+    {
+        var entity = await GetByIdAsync(id, ct);
+        if (entity is not null) _context.ProductionOrders.Remove(entity);
     }
 }

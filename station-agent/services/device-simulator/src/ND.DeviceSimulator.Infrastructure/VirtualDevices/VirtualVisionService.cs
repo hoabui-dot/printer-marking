@@ -52,6 +52,39 @@ public sealed class VirtualVisionService
 
         VisionResult entity;
         var scenario = _state.GetJobScenario(jobId);
+        if (string.IsNullOrEmpty(scenario) && jobId.Contains(':'))
+        {
+            var parts = jobId.Split(':');
+            scenario = _state.GetJobScenario(parts[0]);
+        }
+
+        if (string.IsNullOrEmpty(scenario))
+        {
+            try
+            {
+                await using var scope = _scopeFactory.CreateAsyncScope();
+                var db = scope.ServiceProvider.GetRequiredService<SimulatorDbContext>();
+                var mapping = await db.ProductionOrderMappings
+                    .Where(m => m.OrderNumber == jobId || m.ProductionOrderId == jobId || m.EventId == jobId)
+                    .OrderByDescending(m => m.OccurredAt)
+                    .FirstOrDefaultAsync(ct);
+
+                if (mapping != null)
+                {
+                    scenario = _state.GetJobScenario(mapping.EventId);
+                    if (string.IsNullOrEmpty(scenario) && mapping.EventId.Contains(':'))
+                    {
+                        var parts = mapping.EventId.Split(':');
+                        scenario = _state.GetJobScenario(parts[0]);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to look up production order mapping in VirtualVisionService");
+            }
+        }
+
         if (!string.IsNullOrEmpty(scenario))
         {
             _logger.LogInformation("Vision verification for Job {JobId} using scenario {Scenario}", jobId, scenario);

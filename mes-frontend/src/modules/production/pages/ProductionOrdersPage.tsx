@@ -1,14 +1,18 @@
 import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Plus, Search, Layers, Clipboard, AlertCircle, Play, CheckCircle, Send, XCircle, History } from 'lucide-react'
+import { 
+  Plus, Search, Layers, Clipboard, AlertCircle, Play, CheckCircle, Send, XCircle, History,
+  AlertTriangle, Clock, Calendar, User, Package, Cpu, ArrowRight, BookOpen, Layers2
+} from 'lucide-react'
 import { PageHeader, PermissionGuard, Spinner, EmptyState } from '@/components/common'
 import { StatusBadge } from '@/components/industrial/StatusComponents'
 import { apiGet, apiPost, apiPatch } from '@/services/api-client'
 import { PERMISSIONS } from '@/utils/permissions'
 import { formatRelative } from '@/utils/date'
-import type { ProductionOrderDTO } from '@/types/domain'
 import { toast } from '@/stores/toast.store'
+import { useAuthStore } from '@/stores/auth.store'
+import { cn } from '@/utils/cn'
 import {
   Dialog,
   DialogContent,
@@ -17,9 +21,87 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 
+// Local types to override standard domain DTOs to fit planning refactoring
+interface ProductionOrderEventDTO {
+  id: string
+  production_order_id: string
+  event_type: string
+  status: string
+  message: string
+  occurred_at: string
+}
+
+interface ProductionOrderDTO {
+  id: string
+  order_number: string
+  customer: string
+  product: string
+  product_revision: string
+  workflow_id?: string
+  quantity: number
+  priority: number
+  status: string
+  approval_status: string
+  production_status: string
+  operation_type?: string
+  station?: string
+  gateway_order_id?: string
+  due_date?: string
+  notes?: string
+  quantity_completed: number
+  quantity_running: number
+  quantity_failed: number
+  quantity_cancelled: number
+  scrap_quantity: number
+  events?: ProductionOrderEventDTO[]
+  work_orders?: any[]
+  created_at: string
+  updated_at: string
+}
+
+interface WorkflowOperationDTO {
+  id: string
+  workflowId: string
+  sequence: number
+  operationType: string
+  stationType: string
+  estimatedDuration: number
+  retryLimit: number
+  isRequired: boolean
+  metadata: Record<string, any>
+  operationName: string
+  requiresStation: boolean
+  defaultStationType: string
+  qualityCheckRequired: boolean
+  isFinalOperation: boolean
+  requiredSkills: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+interface WorkflowDTO {
+  id: string
+  workflowCode: string
+  workflowName: string
+  description: string
+  productFamily: string
+  version: number
+  status: string
+  publishedAt?: string
+  archivedAt?: string
+  revision: number
+  createdBy: string
+  updatedBy: string
+  createdAt: string
+  updatedAt: string
+  operations: WorkflowOperationDTO[]
+}
+
 export function ProductionOrdersPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const { user } = useAuthStore()
+  
   const [searchTerm, setSearchTerm] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<string>('draft')
   const [dateFilter, setDateFilter] = React.useState<string>('today')
@@ -70,14 +152,20 @@ export function ProductionOrdersPage() {
   // Dialog state
   const [isCreateOpen, setIsCreateOpen] = React.useState(false)
   const [formOrderNumber, setFormOrderNumber] = React.useState('')
-  const [formProductName, setFormProductName] = React.useState('')
+  const [formCustomer, setFormCustomer] = React.useState('')
+  const [formProduct, setFormProduct] = React.useState('')
+  const [formRevision, setFormRevision] = React.useState('')
+  const [formWorkflowId, setFormWorkflowId] = React.useState('')
   const [formQuantity, setFormQuantity] = React.useState(100)
-  const [formPriority, setFormPriority] = React.useState<'low' | 'normal' | 'high' | 'urgent'>('normal')
-  const [formOperationType, setFormOperationType] = React.useState<'PRINT_ONLY' | 'MARK_ONLY' | 'PRINT_AND_MARK'>('PRINT_AND_MARK')
-  const [formStation, setFormStation] = React.useState('Station-Combined-01')
   const [formDueDate, setFormDueDate] = React.useState('')
+  const [formPriority, setFormPriority] = React.useState<number>(40)
   const [formNotes, setFormNotes] = React.useState('')
 
+  // UI state for workflow search and timeline expand
+  const [workflowSearch, setWorkflowSearch] = React.useState('')
+  const [isWorkflowExpanded, setIsWorkflowExpanded] = React.useState(false)
+
+  // Fetch production orders
   const { data: res, isLoading } = useQuery({
     queryKey: ['production-orders'],
     queryFn: () => apiGet<ProductionOrderDTO[]>('/production-orders'),
@@ -85,9 +173,17 @@ export function ProductionOrdersPage() {
 
   const orders = res?.data ?? []
 
+  // Fetch workflows templates
+  const { data: workflowsRes } = useQuery({
+    queryKey: ['workflows-all'],
+    queryFn: () => apiGet<WorkflowDTO[]>('/workflows?pageSize=1000'),
+  })
+  const workflows = workflowsRes?.data ?? []
+
   const filteredOrders = orders.filter((o) => {
     const matchesSearch = o.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          o.product_name.toLowerCase().includes(searchTerm.toLowerCase())
+                          o.product.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          (o.customer && o.customer.toLowerCase().includes(searchTerm.toLowerCase()))
     const matchesStatus = statusFilter === 'all' || o.status === statusFilter
 
     let matchesDate = true
@@ -156,6 +252,17 @@ export function ProductionOrdersPage() {
     }
   }, [selectedOrderId, queryClient])
 
+  // Query individual work orders for progress tracking
+  const { data: woRes } = useQuery({
+    queryKey: ['production-order-work-orders', selectedOrderId],
+    queryFn: () => {
+      if (!selectedOrderId) return null
+      return apiGet<any[]>(`/work-orders?production_order_id=${selectedOrderId}&page_size=1000`)
+    },
+    enabled: !!selectedOrderId,
+  })
+  const orderWorkOrders = (woRes?.data as any) ?? []
+
   // Mutations
   const { mutate: createOrder, isPending: isCreating } = useMutation({
     mutationFn: (data: any) => apiPost('/production-orders', data),
@@ -165,13 +272,16 @@ export function ProductionOrdersPage() {
       toast.success('Đã tạo đơn hàng sản xuất mới thành công!')
       // Reset form
       setFormOrderNumber('')
-      setFormProductName('')
+      setFormCustomer('')
+      setFormProduct('')
+      setFormRevision('')
+      setFormWorkflowId('')
       setFormQuantity(100)
-      setFormPriority('normal')
-      setFormOperationType('PRINT_AND_MARK')
-      setFormStation('Station-Combined-01')
       setFormDueDate('')
+      setFormPriority(40)
       setFormNotes('')
+      setWorkflowSearch('')
+      setIsWorkflowExpanded(false)
     },
     onError: (err: any) => {
       toast.error(err?.response?.data?.error?.message || err?.message || 'Không thể tạo đơn hàng')
@@ -200,25 +310,94 @@ export function ProductionOrdersPage() {
     }
   })
 
+  // Selected workflow template object
+  const selectedWf = workflows.find((w: any) => w.id === formWorkflowId)
+
+  // Inline Validation warnings
+  const getValidationWarnings = () => {
+    const warnings: string[] = []
+    
+    if (!formOrderNumber.trim()) {
+      warnings.push(t('orders_module.orderNumRequired'))
+    }
+    if (!formCustomer.trim()) {
+      warnings.push(t('orders_module.customerRequired'))
+    }
+    if (!formProduct.trim()) {
+      warnings.push(t('orders_module.productRequired'))
+    }
+    
+    if (!formWorkflowId) {
+      warnings.push(t('orders_module.workflowRequired'))
+    }
+    
+    if (formQuantity <= 0) {
+      warnings.push(t('orders_module.quantityMinWarning'))
+    }
+    
+    if (formDueDate) {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const due = new Date(formDueDate)
+      if (due < today) {
+        warnings.push(t('orders_module.duePastWarning'))
+      }
+    } else {
+      warnings.push(t('orders_module.dueRequired'))
+    }
+
+    if (selectedWf) {
+      if (selectedWf.status !== 'published') {
+        warnings.push(t('orders_module.workflowUnpublishedWarning'))
+      }
+      if (!selectedWf.operations || selectedWf.operations.length === 0) {
+        warnings.push(t('orders_module.workflowNoOpsWarning'))
+      }
+      
+      // Warning if estimated completion exceeds due date (simplified check assuming 1 op takes its duration per unit in sequence)
+      if (formDueDate) {
+        const totalSecs = selectedWf.operations?.reduce((acc: number, op: any) => acc + (op.estimatedDuration ?? 0), 0) ?? 0
+        const totalDurationMs = totalSecs * formQuantity * 1000
+        const estimatedCompletionDate = new Date(Date.now() + totalDurationMs)
+        const dueDateObj = new Date(formDueDate)
+        dueDateObj.setHours(23, 59, 59, 999)
+        if (estimatedCompletionDate > dueDateObj) {
+          warnings.push(t('orders_module.dueDateCycleWarning'))
+        }
+      }
+    }
+    
+    return warnings
+  }
+
+  const validationWarnings = getValidationWarnings()
+  const isValid = validationWarnings.length === 0
+
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    // Map priority to numeric
-    let priorityNum = 40
-    if (formPriority === 'low') priorityNum = 10
-    else if (formPriority === 'high') priorityNum = 70
-    else if (formPriority === 'urgent') priorityNum = 100
+    if (!isValid) {
+      toast.error("Vui lòng xử lý các lỗi/cảnh báo kế hoạch trước khi lưu.")
+      return
+    }
 
     createOrder({
       order_number: formOrderNumber,
-      product_name: formProductName,
+      customer: formCustomer,
+      product: formProduct,
+      product_revision: formRevision,
+      workflow_id: formWorkflowId,
       quantity: formQuantity,
-      priority: priorityNum,
-      operation_type: formOperationType,
-      station: formStation,
+      priority: formPriority,
       due_date: formDueDate ? formDueDate : undefined,
       notes: formNotes,
     })
   }
+
+  const filteredWorkflows = workflows.filter((wf: any) => 
+    wf.workflowName.toLowerCase().includes(workflowSearch.toLowerCase()) ||
+    wf.workflowCode.toLowerCase().includes(workflowSearch.toLowerCase()) ||
+    wf.productFamily.toLowerCase().includes(workflowSearch.toLowerCase())
+  )
 
   return (
     <div className="fade-in">
@@ -326,11 +505,11 @@ export function ProductionOrdersPage() {
                       <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{o.order_number}</span>
                       <StatusBadge status={o.status} label={t(`order_status.${o.status}`, { defaultValue: o.status })} />
                     </div>
-                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{o.product_name}</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{o.product}</div>
                     
                     <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 12 }}>
-                      <span>Type: <strong style={{ color: 'var(--color-text-secondary)' }}>{t(`operation_type.${o.operation_type}`, { defaultValue: o.operation_type })}</strong></span>
-                      <span>Station: <strong style={{ color: 'var(--color-text-secondary)' }}>{o.station}</strong></span>
+                      <span>Khách hàng: <strong style={{ color: 'var(--color-text-secondary)' }}>{o.customer}</strong></span>
+                      <span>Phiên bản: <strong style={{ color: 'var(--color-text-secondary)' }}>{o.product_revision || 'N/A'}</strong></span>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 6 }}>
@@ -357,7 +536,7 @@ export function ProductionOrdersPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--color-border-subtle)', paddingBottom: 16 }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{selectedOrder.order_number}</h3>
-                  <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 4 }}>{selectedOrder.product_name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 4 }}>Khách hàng: {selectedOrder.customer}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <StatusBadge status={selectedOrder.status} label={t(`order_status.${selectedOrder.status}`, { defaultValue: selectedOrder.status })} />
@@ -368,22 +547,24 @@ export function ProductionOrdersPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
                 <div className="card" style={{ padding: 12 }}>
                   <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{t('orders_module.targetQty')}</div>
-                  <div style={{ fontSize: 15, fontWeight: 700, marginTop: 4 }}>{selectedOrder.quantity} {selectedOrder.unit || 'pcs'}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, marginTop: 4 }}>{selectedOrder.quantity} pcs</div>
                 </div>
                 <div className="card" style={{ padding: 12 }}>
-                  <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{t('orders_module.integrationType')}</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4, color: 'var(--color-text-secondary)' }}>{t(`operation_type.${selectedOrder.operation_type}`, { defaultValue: selectedOrder.operation_type })}</div>
+                  <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Sản phẩm (Product)</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4, color: 'var(--color-text-secondary)' }}>{selectedOrder.product} ({selectedOrder.product_revision || 'N/A'})</div>
                 </div>
                 <div className="card" style={{ padding: 12 }}>
-                  <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{t('orders_module.integrationStation')}</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, marginTop: 4, color: 'var(--color-text-secondary)' }}>{selectedOrder.station}</div>
+                  <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Độ ưu tiên / Hạn giao</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginTop: 4, color: 'var(--color-text-secondary)' }}>
+                    P: {selectedOrder.priority} • {selectedOrder.due_date ? new Date(selectedOrder.due_date).toLocaleDateString() : 'N/A'}
+                  </div>
                 </div>
               </div>
 
               {selectedOrder.gateway_order_id && (
                 <div className="card" style={{ padding: '12px 16px', background: 'rgba(249, 115, 22, 0.05)', border: '1px solid rgba(249, 115, 22, 0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--color-brand-orange)' }}>Gateway Order ID (MQTT correlation)</div>
+                    <div style={{ fontSize: 11, color: 'var(--color-brand-orange)' }}>Gateway Correlation ID</div>
                     <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-mono)', marginTop: 2 }}>{selectedOrder.gateway_order_id}</div>
                   </div>
                   <div style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(249, 115, 22, 0.1)', color: 'var(--color-brand-orange)', fontWeight: 600 }}>
@@ -494,120 +675,392 @@ export function ProductionOrdersPage() {
         </div>
       </div>
 
-      {/* Radix Create Order Dialog */}
+      {/* Refactored Enterprise UX Create Order Dialog */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader>
-            <DialogTitle>Tạo đơn hàng sản xuất mới</DialogTitle>
+        <DialogContent 
+          style={{ maxWidth: '950px' }}
+          className="max-h-[90vh] flex flex-col p-0 bg-slate-50 border border-slate-200 rounded-2xl shadow-2xl overflow-hidden focus:outline-none"
+        >
+          {/* Fixed Header */}
+          <DialogHeader className="bg-white border-b border-slate-150 px-8 py-5 flex items-center justify-between shrink-0">
+            <DialogTitle className="flex items-center gap-2.5 text-2xl font-bold tracking-tight text-slate-800">
+              <Clipboard size={22} className="text-orange-500" />
+              {t('orders_module.dialogTitle')}
+            </DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleCreateSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 12 }}>
-            <div className="form-group">
-              <label className="label">Mã đơn hàng (Order Number)</label>
-              <input 
-                className="input" 
-                value={formOrderNumber}
-                onChange={(e) => setFormOrderNumber(e.target.value)}
-                placeholder="Ví dụ: PO-2026-0001" 
-                required 
-              />
+
+          {/* Scrollable Body */}
+          <form onSubmit={handleCreateSubmit} className="flex-1 overflow-y-auto p-8 space-y-8 min-h-0">
+            
+            {/* Section 1: Order Information */}
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <BookOpen className="text-slate-555" size={18} />
+                <h3 className="text-base font-bold text-slate-800">{t('orders_module.secOrderInfo')}</h3>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-slate-600 block">{t('orders_module.orderNumber')} <span className="text-red-500">*</span></label>
+                  <input 
+                    className="input w-full bg-slate-50 border-slate-200 hover:border-slate-350 focus:bg-white text-[15px] h-10 px-3 rounded-lg font-mono font-medium transition-all" 
+                    value={formOrderNumber}
+                    onChange={(e) => setFormOrderNumber(e.target.value)}
+                    placeholder="PO-2026-0001" 
+                    required 
+                  />
+                  {!formOrderNumber.trim() && (
+                    <span className="text-xs text-red-500 font-semibold mt-1 block">{t('orders_module.orderNumRequired')}</span>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-slate-600 block">{t('orders_module.customer')} <span className="text-red-500">*</span></label>
+                  <input 
+                    className="input w-full bg-slate-50 border-slate-200 hover:border-slate-350 focus:bg-white text-[15px] h-10 px-3 rounded-lg font-medium transition-all" 
+                    value={formCustomer}
+                    onChange={(e) => setFormCustomer(e.target.value)}
+                    placeholder="Won Seal Tech" 
+                    required 
+                  />
+                  {!formCustomer.trim() && (
+                    <span className="text-xs text-red-500 font-semibold mt-1 block">{t('orders_module.customerRequired')}</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-slate-600 block">{t('orders_module.productCode')} <span className="text-red-500">*</span></label>
+                  <input 
+                    className="input w-full bg-slate-50 border-slate-200 hover:border-slate-350 focus:bg-white text-[15px] h-10 px-3 rounded-lg font-mono font-medium transition-all" 
+                    value={formProduct}
+                    onChange={(e) => setFormProduct(e.target.value)}
+                    placeholder="BEARING-SEAL-01" 
+                    required 
+                  />
+                  {!formProduct.trim() && (
+                    <span className="text-xs text-red-500 font-semibold mt-1 block">{t('orders_module.productRequired')}</span>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-slate-600 block">{t('orders_module.revision')}</label>
+                  <input 
+                    className="input w-full bg-slate-50 border-slate-200 hover:border-slate-350 focus:bg-white text-[15px] h-10 px-3 rounded-lg font-mono font-medium transition-all" 
+                    value={formRevision}
+                    onChange={(e) => setFormRevision(e.target.value)}
+                    placeholder="Rev A" 
+                  />
+                </div>
+              </div>
             </div>
 
-            <div className="form-group">
-              <label className="label">Tên sản phẩm (Product Name)</label>
-              <input 
-                className="input" 
-                value={formProductName}
-                onChange={(e) => setFormProductName(e.target.value)}
-                placeholder="Ví dụ: FC-WP-RO100G-B" 
-                required 
-              />
+            {/* Section 2: Manufacturing Workflow */}
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <Layers className="text-slate-555" size={18} />
+                <h3 className="text-base font-bold text-slate-800">{t('orders_module.secWorkflow')}</h3>
+              </div>
+
+              {/* Search Box */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-600 block">{t('orders_module.searchWorkflowPlaceholder')}</label>
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input
+                    type="text"
+                    className="input pl-11 w-full bg-slate-50 border-slate-200 hover:border-slate-350 focus:bg-white text-[15px] h-10 px-3 rounded-lg transition-all"
+                    placeholder={t('orders_module.searchWorkflowPlaceholder')}
+                    value={workflowSearch}
+                    onChange={(e) => setWorkflowSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Workflow Cards */}
+              <div className="grid grid-cols-2 gap-4 max-h-[260px] overflow-y-auto pr-1">
+                {filteredWorkflows.map((wf: any) => {
+                  const isSelected = formWorkflowId === wf.id
+                  const opCount = wf.operations?.length ?? 0
+                  const totalDurationSecs = wf.operations?.reduce((acc: number, op: any) => acc + (op.estimatedDuration ?? 0), 0) ?? 0
+                  const durationMinutes = Math.ceil(totalDurationSecs / 60)
+
+                  return (
+                    <div
+                      key={wf.id}
+                      onClick={() => setFormWorkflowId(wf.id)}
+                      className={cn(
+                        "p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between h-full bg-white text-left",
+                        isSelected 
+                          ? "border-orange-500 bg-orange-50/10 shadow-sm" 
+                          : "border-slate-200 hover:border-slate-350 hover:bg-slate-50/50"
+                      )}
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between items-start gap-2">
+                          <h4 className="text-[15px] font-bold text-slate-800 leading-snug">
+                            {t(`workflows.${wf.workflowName}`, { defaultValue: wf.workflowName })}
+                          </h4>
+                          <span className={cn(
+                            "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shrink-0 border",
+                            wf.status === 'published' 
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                              : "bg-slate-100 text-slate-600 border-slate-200"
+                          )}>
+                            {wf.status === 'published' ? t('orders_module.statusPublished', { defaultValue: 'Published' }) : t('orders_module.statusDraft', { defaultValue: 'Draft' })}
+                          </span>
+                        </div>
+                        <p className="text-[13px] text-slate-450 leading-relaxed line-clamp-2">
+                          {t(`workflows.${wf.description}`, { defaultValue: wf.description || t('orders_module.noDescription', { defaultValue: 'No description' }) })}
+                        </p>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap gap-y-2 justify-between text-xs text-slate-500">
+                        <div>{t('orders_module.productFamilyLabel')}: <strong className="text-slate-700 font-semibold">{t(`workflows.${wf.productFamily}`, { defaultValue: wf.productFamily })}</strong></div>
+                        <div className="flex gap-2 font-medium">
+                          <span>v{wf.version}</span>
+                          <span>•</span>
+                          <span>{opCount} {t('orders_module.stepsLabel')}</span>
+                          <span>•</span>
+                          <span>{durationMinutes} {t('common.minutes', { defaultValue: 'phút' })}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+                {filteredWorkflows.length === 0 && (
+                  <div className="col-span-2 py-8 text-center text-slate-450 text-[13px]">
+                    {t('orders_module.noWorkflowsFound')}
+                  </div>
+                )}
+              </div>
+              {!formWorkflowId && (
+                <span className="text-xs text-red-500 font-semibold block">{t('orders_module.workflowRequired')}</span>
+              )}
+
+              {/* Selected Workflow Summary Card */}
+              {selectedWf && (() => {
+                const opCount = selectedWf.operations?.length ?? 0
+                const totalDurationSecs = selectedWf.operations?.reduce((acc: number, op: any) => acc + (op.estimatedDuration ?? 0), 0) ?? 0
+                const durationMinutes = Math.ceil(totalDurationSecs / 60)
+
+                return (
+                  <div className="p-5 bg-orange-50/20 border border-orange-150 rounded-xl space-y-4 text-left">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className="text-xs font-bold text-orange-600 uppercase tracking-wide">{t('orders_module.selectedWorkflowLabel')}</span>
+                        <h4 className="text-[15px] font-bold text-slate-800 mt-0.5">
+                          {t(`workflows.${selectedWf.workflowName}`, { defaultValue: selectedWf.workflowName })}
+                        </h4>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline border-orange-250 text-orange-700 hover:bg-orange-50 font-bold px-3 py-1 rounded-lg text-xs"
+                        onClick={() => setIsWorkflowExpanded(!isWorkflowExpanded)}
+                      >
+                        {isWorkflowExpanded ? t('orders_module.collapseDiagram') : t('orders_module.expandDiagram')}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-y-3 gap-x-4 text-[13px] border-t border-orange-100/50 pt-3">
+                      <div>
+                        <span className="text-slate-550 block">{t('orders_module.productFamilyLabel')}</span>
+                        <strong className="text-slate-700 font-bold text-[14px]">
+                          {t(`workflows.${selectedWf.productFamily}`, { defaultValue: selectedWf.productFamily })}
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">{t('orders_module.versionLabel')}</span>
+                        <strong className="text-slate-700 font-bold text-[14px]">v{selectedWf.version} (Rev {selectedWf.revision})</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-550 block">{t('orders_module.statusLabel')}</span>
+                        <strong className="text-slate-700 font-bold text-[14px] uppercase tracking-wider">
+                          {selectedWf.status === 'published' ? t('orders_module.statusPublished', { defaultValue: 'Published' }) : t('orders_module.statusDraft', { defaultValue: 'Draft' })}
+                        </strong>
+                      </div>
+                      <div className="mt-1">
+                        <span className="text-slate-550 block">{t('orders_module.stepsLabel')}</span>
+                        <strong className="text-orange-600 font-bold text-[14px]">{opCount} {t('orders_module.stepsLabel')}</strong>
+                      </div>
+                      <div className="mt-1">
+                        <span className="text-slate-555 block">{t('orders_module.durationLabel')}</span>
+                        <strong className="text-orange-600 font-bold text-[14px]">{durationMinutes} {t('common.minutes', { defaultValue: 'phút' })} ({totalDurationSecs}s)</strong>
+                      </div>
+                    </div>
+
+                    {/* Timeline detail */}
+                    {isWorkflowExpanded && (
+                      <div className="pt-4 border-t border-orange-100/50 space-y-4">
+                        <h5 className="text-xs font-bold text-slate-750 uppercase tracking-wider">{t('orders_module.timelineTitle')}</h5>
+                        <div className="relative pl-6 space-y-4 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-0.5 before:bg-orange-200">
+                          {selectedWf.operations?.map((op: any, index: number) => (
+                            <div key={op.id || index} className="relative flex gap-3 items-start text-[13px]">
+                              <div className="absolute -left-[20px] top-1.5 w-2 h-2 rounded-full bg-orange-500 border-2 border-white shadow-sm shrink-0 z-10" />
+                              <div className="flex-1 bg-white p-3 rounded-lg border border-slate-150 shadow-sm flex justify-between items-center">
+                                <div>
+                                  <strong className="text-slate-750 font-bold block">
+                                    {t(`operation_type.${op.operationType}`, { defaultValue: op.operationName || op.operationType })}
+                                  </strong>
+                                  <span className="text-xs text-slate-450 block mt-0.5">
+                                    {t('orders_module.stationReqLabel')}: <strong className="text-slate-650 font-semibold">{op.requiresStation !== false ? (op.defaultStationType || op.stationType || 'Station') : t('orders_module.manualLabel')}</strong>
+                                  </span>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <span className="text-orange-600 font-mono font-bold block">{op.estimatedDuration}s</span>
+                                  <span className="text-[11px] text-slate-400 block mt-0.5">
+                                    {t('orders_module.skillsLabel')}: {op.requiredSkills && op.requiredSkills.length > 0 ? op.requiredSkills.map((s: string) => t(`skills.${s}`, { defaultValue: s })).join(', ') : t('orders_module.noneLabel')}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div className="form-group">
-                <label className="label">Số lượng</label>
-                <input 
-                  type="number"
-                  className="input" 
-                  value={formQuantity}
-                  onChange={(e) => setFormQuantity(Number(e.target.value))}
-                  min={1}
-                  required 
+            {/* Section 3: Production Planning */}
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <Calendar className="text-slate-555" size={18} />
+                <h3 className="text-base font-bold text-slate-800">{t('orders_module.secPlanning')}</h3>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-slate-600 block">{t('orders_module.targetQty')} <span className="text-red-500">*</span></label>
+                  <input 
+                    type="number"
+                    className="input w-full bg-slate-50 border-slate-200 hover:border-slate-350 focus:bg-white text-[15px] h-10 px-3 rounded-lg font-bold" 
+                    value={formQuantity}
+                    onChange={(e) => setFormQuantity(Number(e.target.value))}
+                    min={1}
+                    required 
+                  />
+                  {formQuantity <= 0 && (
+                    <span className="text-xs text-red-500 font-semibold mt-1 block">{t('orders_module.quantityMinWarning')}</span>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-slate-600 block">{t('orders_module.dueDate')} <span className="text-red-500">*</span></label>
+                  <input 
+                    type="date"
+                    className="input w-full bg-slate-50 border-slate-200 hover:border-slate-350 focus:bg-white text-[15px] h-10 px-3 rounded-lg transition-all" 
+                    value={formDueDate}
+                    onChange={(e) => setFormDueDate(e.target.value)}
+                    required
+                  />
+                  {(() => {
+                    if (!formDueDate) {
+                      return <span className="text-xs text-red-500 font-semibold mt-1 block">{t('orders_module.dueRequired')}</span>
+                    }
+                    const today = new Date()
+                    today.setHours(0,0,0,0)
+                    const due = new Date(formDueDate)
+                    if (due < today) {
+                      return <span className="text-xs text-red-500 font-semibold mt-1 block">{t('orders_module.duePastWarning')}</span>
+                    }
+                    return null
+                  })()}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-slate-600 block">{t('orders_module.priorityLabel')} <span className="text-red-500">*</span></label>
+                  <input 
+                    type="number"
+                    className="input w-full bg-slate-50 border-slate-200 hover:border-slate-350 focus:bg-white text-[15px] h-10 px-3 rounded-lg transition-all" 
+                    value={formPriority}
+                    onChange={(e) => setFormPriority(Number(e.target.value))}
+                    min={1}
+                    max={100}
+                    required 
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-slate-600 block">{t('orders_module.plannerLabel')}</label>
+                  <div className="relative">
+                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input 
+                      className="input w-full bg-slate-100 border-slate-200 text-slate-550 text-[15px] h-10 pl-11 pr-3 rounded-lg cursor-not-allowed transition-all" 
+                      value={user?.username || 'Planner'}
+                      readOnly
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-slate-600 block">{t('orders_module.notes')}</label>
+                <textarea 
+                  className="input w-full bg-slate-50 border-slate-200 hover:border-slate-350 focus:bg-white text-[15px] p-3 rounded-lg transition-all font-medium" 
+                  value={formNotes}
+                  onChange={(e) => setFormNotes(e.target.value)}
+                  rows={2}
+                  placeholder={t('orders_module.notesPlaceholder')}
                 />
               </div>
-
-              <div className="form-group">
-                <label className="label">Độ ưu tiên</label>
-                <select 
-                  className="select" 
-                  value={formPriority}
-                  onChange={(e: any) => setFormPriority(e.target.value)}
-                >
-                  <option value="low">Thấp (Low)</option>
-                  <option value="normal">Bình thường (Normal)</option>
-                  <option value="high">Cao (High)</option>
-                  <option value="urgent">Khẩn cấp (Urgent)</option>
-                </select>
-              </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
-              <div className="form-group">
-                <label className="label">Loại tích hợp (Operation)</label>
-                <select 
-                  className="select" 
-                  value={formOperationType}
-                  onChange={(e: any) => setFormOperationType(e.target.value)}
-                >
-                  <option value="PRINT_ONLY">PRINT_ONLY (In nhãn)</option>
-                  <option value="MARK_ONLY">MARK_ONLY (Khắc laser)</option>
-                  <option value="PRINT_AND_MARK">PRINT_AND_MARK (In & Khắc)</option>
-                </select>
+            {/* Section 4: Review & Confirmation */}
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <Cpu className="text-slate-555" size={18} />
+                <h3 className="text-base font-bold text-slate-800">{t('orders_module.secReview')}</h3>
               </div>
 
-              <div className="form-group">
-                <label className="label">Trạm tích hợp</label>
-                <select 
-                  className="select" 
-                  value={formStation}
-                  onChange={(e) => setFormStation(e.target.value)}
-                >
-                  <option value="Station-Combined-01">Station-Combined-01</option>
-                  <option value="STATION-01">STATION-01</option>
-                </select>
+              <div className="grid grid-cols-2 gap-y-3 gap-x-6 text-[13px] bg-slate-50 p-4 rounded-xl border border-slate-150">
+                <div>{t('orders_module.summarySelectedWf')} <strong className="text-slate-700 text-[14px] font-bold">{selectedWf ? t(`workflows.${selectedWf.workflowName}`, { defaultValue: selectedWf.workflowName }) : t('common.notSelected', { defaultValue: '(Chưa chọn)' })}</strong></div>
+                <div>{t('orders_module.summaryQty')} <strong className="text-slate-700 text-[14px] font-bold">{formQuantity} pcs</strong></div>
+                <div>{t('orders_module.summaryOps')} <strong className="text-slate-700 text-[14px] font-bold">{selectedWf?.operations?.length ?? 0} {t('orders_module.stepsLabel')}</strong></div>
+                <div>{t('orders_module.summaryCycle')} <strong className="text-slate-700 text-[14px] font-bold">{selectedWf ? Math.ceil((selectedWf.operations?.reduce((acc: number, op: any) => acc + (op.estimatedDuration ?? 0), 0) ?? 0) / 60) : 0} {t('common.minutes', { defaultValue: 'phút' })}</strong></div>
+                <div className="col-span-2">{t('orders_module.summaryDueDate')} <strong className="text-slate-700 text-[14px] font-bold">{formDueDate || t('common.notSelected', { defaultValue: '(Chưa chọn)' })}</strong></div>
               </div>
+
+              {/* Warnings listing */}
+              {validationWarnings.length > 0 && (
+                <div className="p-4 bg-amber-50 border border-amber-250 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2 text-amber-800 font-bold text-sm">
+                    <AlertTriangle size={18} className="text-amber-600" />
+                    <span>{t('orders_module.warningsTitle')}</span>
+                  </div>
+                  <ul className="list-disc list-inside text-xs text-amber-700 space-y-1.5 pl-1.5 leading-normal">
+                    {validationWarnings.map((w, index) => (
+                      <li key={index} className="font-medium">{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
-            <div className="form-group">
-              <label className="label">Hạn hoàn thành (Due Date)</label>
-              <input 
-                type="date"
-                className="input" 
-                value={formDueDate}
-                onChange={(e) => setFormDueDate(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="label">Ghi chú (Notes)</label>
-              <textarea 
-                className="input" 
-                value={formNotes}
-                onChange={(e) => setFormNotes(e.target.value)}
-                rows={3}
-                placeholder="Ghi chú sản xuất..."
-              />
-            </div>
-
-            <DialogFooter className="mt-4">
-              <button type="button" className="btn btn-outline" onClick={() => setIsCreateOpen(false)}>
-                Hủy
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={isCreating}>
-                {isCreating ? 'Đang tạo...' : 'Tạo đơn hàng'}
-              </button>
-            </DialogFooter>
           </form>
+
+          {/* Sticky Fixed Footer */}
+          <DialogFooter className="bg-white border-t border-slate-150 p-6 flex justify-end gap-3 shrink-0 z-10">
+            <button 
+              type="button" 
+              className="btn btn-outline border-slate-200 text-slate-700 hover:bg-slate-50 font-bold h-10 px-5 rounded-lg text-xs" 
+              onClick={() => setIsCreateOpen(false)}
+            >
+              {t('orders_module.cancelButton')}
+            </button>
+            <button 
+              type="submit" 
+              className="btn btn-primary bg-orange-500 hover:bg-orange-600 text-white font-bold h-10 px-6 rounded-lg text-xs shadow-md transition-all" 
+              disabled={isCreating || !isValid}
+              onClick={handleCreateSubmit}
+            >
+              {isCreating ? t('orders_module.savingButton') : t('orders_module.submitButton')}
+            </button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

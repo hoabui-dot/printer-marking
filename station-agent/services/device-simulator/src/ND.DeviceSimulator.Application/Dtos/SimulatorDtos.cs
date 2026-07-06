@@ -42,12 +42,28 @@ public record GatewayStateDto(
     string? LastEventAt,
     string? LastTopic);
 
+public record SimulatedPrinterDto(
+    string PrinterCode,
+    string Name,
+    int Port,
+    string IpAddress,
+    string Status,
+    bool Online,
+    int MediaLevel,
+    int RibbonLevel,
+    string? LastZplPreview,
+    string? LastResult,
+    string? LastJobAt,
+    int JobCount,
+    string SimulatorMode);
+
 public record SimulatorStatusDto(
     PrinterStateDto Printer,
     LaserStateDto Laser,
     VisionStateDto Vision,
     PlcStateDto Plc,
-    GatewayStateDto Gateway);
+    GatewayStateDto Gateway,
+    System.Collections.Generic.IReadOnlyList<SimulatedPrinterDto> Printers);
 
 // ── Event DTOs (broadcast via SignalR) ───────────────────────────────────────
 

@@ -34,6 +34,7 @@ builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 
 // ── Hosted consumers ─────────────────────────────────────────────────────────
 builder.Services.AddHostedService<JobMarkingConsumer>();
+builder.Services.AddHostedService<HeartbeatHostedService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();

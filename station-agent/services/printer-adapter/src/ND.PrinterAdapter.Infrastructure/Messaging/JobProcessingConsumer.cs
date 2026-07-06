@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.Sqlite;
 using ND.Infrastructure.Messaging;
 using ND.PrinterAdapter.Application.Interfaces;
 using ND.PrinterAdapter.Domain.Entities;
@@ -18,6 +19,7 @@ public sealed class JobProcessingConsumer : BackgroundService
     private readonly IRabbitMqConsumer _consumer;
     private readonly IPrintQueue _printQueue;
     private readonly IRabbitMqPublisher _publisher;
+    private readonly ILabelRenderer _labelRenderer;
     private readonly ILogger<JobProcessingConsumer> _logger;
 
     private const string Exchange = "station.events";
@@ -34,13 +36,15 @@ public sealed class JobProcessingConsumer : BackgroundService
         IRabbitMqConsumer consumer,
         IPrintQueue printQueue,
         IRabbitMqPublisher publisher,
-        ILogger<JobProcessingConsumer> logger)
+        ILabelRenderer labelRenderer,
+        ILogger<JobProcessingConsumer> _logger)
     {
         _scopeFactory = scopeFactory;
         _consumer = consumer;
         _printQueue = printQueue;
         _publisher = publisher;
-        _logger = logger;
+        _labelRenderer = labelRenderer;
+        this._logger = _logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -55,6 +59,62 @@ public sealed class JobProcessingConsumer : BackgroundService
             cancellationToken: stoppingToken);
 
         await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
+    }
+
+    private async Task<LabelTemplate> EnsureDefaultTemplateAsync(PrinterDbContext db, CancellationToken ct)
+    {
+        var template = await db.LabelTemplates.FirstOrDefaultAsync(t => t.IsActive, ct);
+        if (template is not null)
+            return template;
+
+        // Seed default template
+        var defaultJson = @"
+{
+  ""width"": 100,
+  ""height"": 60,
+  ""dpi"": 203,
+  ""elements"": [
+    { ""type"": ""text"", ""x"": 50, ""y"": 40, ""fontSize"": 18, ""text"": ""PRODUCT:"" },
+    { ""type"": ""text"", ""x"": 220, ""y"": 40, ""fontSize"": 18, ""binding"": ""product_name"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 80, ""fontSize"": 14, ""text"": ""SKU:"" },
+    { ""type"": ""text"", ""x"": 120, ""y"": 80, ""fontSize"": 14, ""binding"": ""product_code"" },
+    { ""type"": ""text"", ""x"": 280, ""y"": 80, ""fontSize"": 14, ""text"": ""REV:"" },
+    { ""type"": ""text"", ""x"": 340, ""y"": 80, ""fontSize"": 14, ""binding"": ""revision"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 120, ""fontSize"": 14, ""text"": ""LOT:"" },
+    { ""type"": ""text"", ""x"": 120, ""y"": 120, ""fontSize"": 14, ""binding"": ""lot_number"" },
+    { ""type"": ""text"", ""x"": 280, ""y"": 120, ""fontSize"": 14, ""text"": ""BATCH:"" },
+    { ""type"": ""text"", ""x"": 360, ""y"": 120, ""fontSize"": 14, ""binding"": ""batch_number"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 160, ""fontSize"": 14, ""text"": ""PO:"" },
+    { ""type"": ""text"", ""x"": 120, ""y"": 160, ""fontSize"": 14, ""binding"": ""production_order"" },
+    { ""type"": ""text"", ""x"": 280, ""y"": 160, ""fontSize"": 14, ""text"": ""WO:"" },
+    { ""type"": ""text"", ""x"": 340, ""y"": 160, ""fontSize"": 14, ""binding"": ""work_order"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 200, ""fontSize"": 14, ""text"": ""SERIAL:"" },
+    { ""type"": ""text"", ""x"": 150, ""y"": 200, ""fontSize"": 14, ""binding"": ""serial_number"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 240, ""fontSize"": 14, ""text"": ""MFG DATE:"" },
+    { ""type"": ""text"", ""x"": 180, ""y"": 240, ""fontSize"": 14, ""binding"": ""manufacture_date"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 280, ""fontSize"": 14, ""text"": ""OPERATOR:"" },
+    { ""type"": ""text"", ""x"": 180, ""y"": 280, ""fontSize"": 14, ""binding"": ""operator"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 320, ""fontSize"": 14, ""text"": ""STATION:"" },
+    { ""type"": ""text"", ""x"": 160, ""y"": 320, ""fontSize"": 14, ""binding"": ""station"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 360, ""fontSize"": 14, ""text"": ""ORIGIN:"" },
+    { ""type"": ""text"", ""x"": 150, ""y"": 360, ""fontSize"": 14, ""binding"": ""country"" },
+    { ""type"": ""datamatrix"", ""x"": 500, ""y"": 100, ""magnification"": 6, ""binding"": ""trace_id"" },
+    { ""type"": ""barcode"", ""x"": 50, ""y"": 420, ""height"": 60, ""symbology"": ""Code128"", ""binding"": ""serial_number"" }
+  ]
+}
+";
+        var defaultTemplate = LabelTemplate.Create(
+            "Standard Industrial Rubber Label",
+            "Professional standard template containing ECC200 Data Matrix, Code 128 barcode, and planning variables.",
+            203,
+            100,
+            60,
+            defaultJson
+        );
+
+        await db.LabelTemplates.AddAsync(defaultTemplate, ct);
+        await db.SaveChangesAsync(ct);
+        return defaultTemplate;
     }
 
     private async Task HandleMessageAsync(string payloadJson, CancellationToken cancellationToken)
@@ -96,23 +156,126 @@ public sealed class JobProcessingConsumer : BackgroundService
         }
 
         // Fetch registered printer
-        var printer = await db.Printers.FirstOrDefaultAsync(p => p.PrinterCode == "printer-01", cancellationToken);
+        var targetPrinterCode = evt.TargetPrinter ?? "Printer-01";
+        var printer = await db.Printers.FirstOrDefaultAsync(p => p.PrinterCode == targetPrinterCode, cancellationToken);
         if (printer is null)
         {
-            _logger.LogError("Default printer (printer-01) not found in database — cannot print");
+            _logger.LogError("Printer {Code} not found in database — cannot print", targetPrinterCode);
             return;
         }
 
-        // Render simple ZPL content
-        var renderedZpl = $"^XA\n^FO50,50^A0N,36,36^FDJob: {evt.JobNo}^FS\n^FO50,100^A0N,36,36^FDSKU: {evt.ProductCode}^FS\n^FO50,150^A0N,36,36^FDSerial: {evt.ProductSerial ?? "N/A"}^FS\n^XZ";
+        // 1. Ensure active template is seeded & loaded
+        var template = await EnsureDefaultTemplateAsync(db, cancellationToken);
 
-        var printerJob = PrinterJob.Create(evt.JobId, evt.EventId, printer.Id, "STANDARD_ZPL", renderedZpl, copies: 1);
+        // 2. Read payload json variables directly from event payload
+        var variables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string payloadJsonFromDb = evt.PayloadJson ?? "";
+
+        if (!string.IsNullOrWhiteSpace(payloadJsonFromDb))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(payloadJsonFromDb);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("event_id", out var evId))
+                    variables["trace_id"] = evId.GetString() ?? "";
+
+                if (root.TryGetProperty("data", out var dataArr) && dataArr.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in dataArr.EnumerateArray())
+                    {
+                        var tag = item.TryGetProperty("tag", out var tProp) ? tProp.GetString() : null;
+                        var val = item.TryGetProperty("value", out var vProp) ? vProp.GetString() : null;
+                        if (!string.IsNullOrEmpty(tag))
+                        {
+                            variables[tag] = val ?? "";
+                            var simpleName = tag.Split('.').Last();
+                            if (!variables.ContainsKey(simpleName))
+                                variables[simpleName] = val ?? "";
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse payload_json from job database");
+            }
+        }
+
+        // Build resolved dictionary
+        var resolvedData = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["production_order"] = evt.JobNo,
+            ["work_order"] = evt.ProductSerial ?? "N/A",
+            ["workflow"] = "Default Workflow",
+            ["operation"] = evt.JobType,
+            ["station"] = "STATION-01",
+            ["team"] = "Team A",
+            ["operator"] = "admin.operator",
+            ["product_name"] = evt.ProductCode + " Industrial Part",
+            ["product_code"] = evt.ProductCode,
+            ["revision"] = "Rev A",
+            ["customer"] = "Won Seal Tech",
+            ["material"] = "NBR-70",
+            ["rubber_type"] = "Synthetic Rubber",
+            ["lot_number"] = "LOT-2026-07-A",
+            ["batch_number"] = "BATCH-01",
+            ["manufacture_date"] = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+            ["expiry_date"] = DateTime.UtcNow.AddYears(2).ToString("yyyy-MM-dd"),
+            ["country"] = "Vietnam",
+            ["serial_number"] = evt.ProductSerial ?? "N/A",
+            ["trace_id"] = evt.JobId
+        };
+
+        foreach (var kvp in variables)
+        {
+            var simpleKey = kvp.Key.Split('.').Last();
+            resolvedData[kvp.Key] = kvp.Value;
+            resolvedData[simpleKey] = kvp.Value;
+        }
+
+        // Apply explicit standard overrides
+        if (variables.TryGetValue("production.order_number", out var poNum)) resolvedData["production_order"] = poNum;
+        if (variables.TryGetValue("production.workflow", out var wfName)) resolvedData["workflow"] = wfName;
+        if (variables.TryGetValue("product.name", out var prodName)) resolvedData["product_name"] = prodName;
+        if (variables.TryGetValue("product.revision", out var prodRev)) resolvedData["revision"] = prodRev;
+        if (variables.TryGetValue("customer.name", out var custName)) resolvedData["customer"] = custName;
+        if (variables.TryGetValue("product.material", out var mat)) resolvedData["material"] = mat;
+        if (variables.TryGetValue("product.rubber_type", out var rub)) resolvedData["rubber_type"] = rub;
+        if (variables.TryGetValue("product.lot", out var lotVal)) resolvedData["lot_number"] = lotVal;
+        if (variables.TryGetValue("product.batch", out var batVal)) resolvedData["batch_number"] = batVal;
+        if (variables.TryGetValue("product.mfg_date", out var mfgVal)) resolvedData["manufacture_date"] = mfgVal;
+        if (variables.TryGetValue("product.exp_date", out var expVal)) resolvedData["expiry_date"] = expVal;
+        if (variables.TryGetValue("product.country", out var countVal)) resolvedData["country"] = countVal;
+        if (variables.TryGetValue("marking.serial", out var serVal)) resolvedData["serial_number"] = serVal;
+        if (variables.TryGetValue("trace_id", out var trId)) resolvedData["trace_id"] = trId;
+
+        // Render ZPL dynamically using template & resolvedData
+        var renderedZpl = _labelRenderer.Render(template.TemplateJson, resolvedData);
+
+        var printerJob = PrinterJob.Create(evt.JobId, evt.EventId, printer.Id, template.Name, renderedZpl, copies: 1);
         await db.PrinterJobs.AddAsync(printerJob, cancellationToken);
         printerJob.MarkSent();
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Queuing ZPL print command for Job {JobNo}...", evt.JobNo);
+        // Audit print history
+        var runtimeDataJson = JsonSerializer.Serialize(resolvedData, JsonSerializerOptions);
+        var printHistory = PrintHistory.Create(
+            template.Id,
+            template.Name,
+            template.Version,
+            printer.PrinterCode,
+            runtimeDataJson,
+            renderedZpl,
+            evt.JobId,
+            evt.EventId
+        );
+        await db.PrintHistories.AddAsync(printHistory, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
+        _logger.LogInformation("Queuing ZPL print command for Job {JobNo} using template '{Template}'...", evt.JobNo, template.Name);
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var tcs = new TaskCompletionSource<bool>();
         var queuedJob = new PrintJob(
             printer.PrinterCode,
@@ -121,7 +284,7 @@ public sealed class JobProcessingConsumer : BackgroundService
             renderedZpl,
             evt.JobId,
             evt.EventId,
-            "STANDARD_ZPL",
+            template.Name,
             1,
             Guid.NewGuid().ToString("N"),
             Guid.NewGuid().ToString("N"),
@@ -129,15 +292,18 @@ public sealed class JobProcessingConsumer : BackgroundService
 
         await _printQueue.QueuePrintJobAsync(queuedJob);
         var success = await tcs.Task;
+        stopwatch.Stop();
 
         if (success)
         {
             printerJob.MarkSuccess();
+            printHistory.MarkSuccess(stopwatch.ElapsedMilliseconds, "Printed successfully");
             _logger.LogInformation("Successfully printed label for Job {JobNo}.", evt.JobNo);
         }
         else
         {
             printerJob.MarkFailed("Connection failed / socket timeout / queue print error");
+            printHistory.MarkFailed(stopwatch.ElapsedMilliseconds, "Connection failed / socket timeout / queue print error");
             _logger.LogError("Failed to send ZPL print command to printer for Job {JobNo}.", evt.JobNo);
         }
 
@@ -164,8 +330,6 @@ public sealed class JobProcessingConsumer : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to publish PrinterPrintedEvent for Job {JobNo}", evt.JobNo);
-            // We do not fail the processing of the original message because the print was already sent to hardware,
-            // but in production, outbox pattern is preferred.
         }
     }
 }

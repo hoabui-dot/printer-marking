@@ -34,6 +34,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IJobStateTransitionRepository, JobStateTransitionRepository>();
         services.AddScoped<IOverwriteRequestRepository, OverwriteRequestRepository>();
         services.AddScoped<IJobEngineOutboxRepository, JobEngineOutboxRepository>();
+        services.AddScoped<IProductionOrderRepository, ProductionOrderRepository>();
+        services.AddScoped<IProductionItemRepository, ProductionItemRepository>();
 
         // Redis
         var redisConnection = configuration["REDIS_CONNECTION_STRING"] ?? "localhost:6379";
@@ -56,12 +58,14 @@ public static class ServiceCollectionExtensions
 
         // Background Workers / Hosted Services
         services.AddHostedService<MqttMessageReceivedConsumer>();
+        services.AddHostedService<ND.JobEngine.Infrastructure.Scheduling.JobQueueScheduler>();
         services.AddHostedService<JobEngineOutboxProcessorWorker>();
         services.AddHostedService<PrinterPrintedConsumer>();
         services.AddHostedService<LaserMarkedConsumer>();
         services.AddHostedService<ManualOverrideConsumer>();
         services.AddHostedService<VisionVerificationConsumer>();
         services.AddHostedService<PlcRejectConsumer>();
+        services.AddHostedService<HeartbeatHostedService>();
 
         return services;
     }

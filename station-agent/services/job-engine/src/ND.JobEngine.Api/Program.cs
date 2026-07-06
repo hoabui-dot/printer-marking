@@ -70,6 +70,22 @@ using (var scope = app.Services.CreateScope())
 
         command.CommandText = "ALTER TABLE job_engine_jobs ADD COLUMN reason_description TEXT NULL;";
         try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        // Steps tracking columns
+        command.CommandText = "ALTER TABLE job_engine_job_steps ADD COLUMN execution_duration_ms INTEGER NOT NULL DEFAULT 0;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        command.CommandText = "ALTER TABLE job_engine_job_steps ADD COLUMN retry_count_step INTEGER NOT NULL DEFAULT 0;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        command.CommandText = "ALTER TABLE job_engine_job_steps ADD COLUMN payload_json_step TEXT NULL;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        command.CommandText = "ALTER TABLE job_engine_job_steps ADD COLUMN assigned_device_id TEXT NULL;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
+
+        command.CommandText = "ALTER TABLE job_engine_job_steps ADD COLUMN execution_result TEXT NULL;";
+        try { await command.ExecuteNonQueryAsync(); } catch { }
     }
 }
 

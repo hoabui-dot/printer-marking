@@ -12,6 +12,7 @@ using ND.DeviceSimulator.Application.Dtos;
 using ND.DeviceSimulator.Domain.Entities;
 using ND.DeviceSimulator.Infrastructure.Hubs;
 using ND.DeviceSimulator.Infrastructure.Persistence;
+using ND.DeviceSimulator.Infrastructure.State;
 
 namespace ND.DeviceSimulator.Infrastructure.VirtualDevices;
 
@@ -40,34 +41,17 @@ public enum PrinterSimulatorMode
 /// </summary>
 public sealed class VirtualPrinterServer : BackgroundService
 {
-    private const int DefaultPort = 9100;
     private static readonly Random Rng = new();
 
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ISimulatorStateService _state;
+    private readonly SimulatorStateService _state;
     private readonly IHubContext<SimulatorHub, ISimulatorClient> _hub;
     private readonly IConfiguration _config;
     private readonly ILogger<VirtualPrinterServer> _logger;
 
-    private TcpListener? _listener;
-    private volatile bool _forceDisconnected = false;
-
-    // Configurable failure mode (thread-safe volatile)
-    private volatile int _simulatorMode = (int)PrinterSimulatorMode.Success;
-
-    public PrinterSimulatorMode SimulatorMode
-    {
-        get => (PrinterSimulatorMode)_simulatorMode;
-        set
-        {
-            _simulatorMode = (int)value;
-            _logger.LogInformation("Printer simulator mode changed to: {Mode}", value);
-        }
-    }
-
     public VirtualPrinterServer(
         IServiceScopeFactory scopeFactory,
-        ISimulatorStateService state,
+        SimulatorStateService state,
         IHubContext<SimulatorHub, ISimulatorClient> hub,
         IConfiguration config,
         ILogger<VirtualPrinterServer> logger)
@@ -79,104 +63,126 @@ public sealed class VirtualPrinterServer : BackgroundService
         _logger = logger;
     }
 
-    public async Task ConnectPrinterAsync(CancellationToken ct = default)
+    public async Task ConnectPrinterAsync(string? code = null, CancellationToken ct = default)
     {
-        _forceDisconnected = false;
-        _logger.LogInformation("Virtual Printer connection enabled via API");
+        var printers = _state.GetInternalPrinters();
+        foreach (var p in printers)
+        {
+            if (code == null || p.PrinterCode.Equals(code, StringComparison.OrdinalIgnoreCase))
+            {
+                p.ForceDisconnected = false;
+                p.Online = true;
+                _logger.LogInformation("Virtual Printer [{Code}] connection enabled", p.PrinterCode);
+            }
+        }
+        await BroadcastStatusUpdateAsync();
     }
 
-    public async Task DisconnectPrinterAsync(CancellationToken ct = default)
+    public async Task DisconnectPrinterAsync(string? code = null, CancellationToken ct = default)
     {
-        _forceDisconnected = true;
-        try
+        var printers = _state.GetInternalPrinters();
+        foreach (var p in printers)
         {
-            _listener?.Stop();
+            if (code == null || p.PrinterCode.Equals(code, StringComparison.OrdinalIgnoreCase))
+            {
+                p.ForceDisconnected = true;
+                p.Online = false;
+                try
+                {
+                    p.Listener?.Stop();
+                    p.Listener = null;
+                }
+                catch { }
+                _logger.LogInformation("Virtual Printer [{Code}] connection disabled", p.PrinterCode);
+            }
         }
-        catch { }
-        _state.SetPrinterOnline(false);
-        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
-        _logger.LogInformation("Virtual Printer manually disconnected via API");
+        await BroadcastStatusUpdateAsync();
+    }
+
+    public void SetPrinterMode(string code, string modeStr)
+    {
+        if (Enum.TryParse<PrinterSimulatorMode>(modeStr, true, out var mode))
+        {
+            var printers = _state.GetInternalPrinters();
+            var p = printers.FirstOrDefault(x => x.PrinterCode.Equals(code, StringComparison.OrdinalIgnoreCase));
+            if (p != null)
+            {
+                p.SimulatorMode = modeStr;
+                _logger.LogInformation("Printer [{Code}] mode changed to {Mode}", code, modeStr);
+            }
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var printers = _state.GetInternalPrinters();
+        var tasks = printers.Select(p => RunPrinterListenerAsync(p, stoppingToken)).ToList();
+        await Task.WhenAll(tasks);
+        _logger.LogInformation("All virtual printer servers stopped");
+    }
+
+    private async Task RunPrinterListenerAsync(SimulatedPrinter printer, CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                if (_forceDisconnected)
+                if (printer.ForceDisconnected || !printer.Online || printer.SimulatorMode.Equals("Offline", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (_listener != null)
+                    if (printer.Listener != null)
                     {
-                        _listener.Stop();
-                        _listener = null;
-                        _state.SetPrinterOnline(false);
-                        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+                        printer.Listener.Stop();
+                        printer.Listener = null;
+                        await BroadcastStatusUpdateAsync();
                     }
                     await Task.Delay(500, stoppingToken);
                     continue;
                 }
 
-                // If mode is Offline or TcpConnectionRefused, don't listen
-                if (SimulatorMode == PrinterSimulatorMode.Offline)
+                if (printer.Listener == null)
                 {
-                    if (_listener != null)
-                    {
-                        _listener.Stop();
-                        _listener = null;
-                        _state.SetPrinterOnline(false);
-                        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
-                    }
-                    await Task.Delay(500, stoppingToken);
-                    continue;
+                    printer.Listener = new TcpListener(IPAddress.Any, printer.Port);
+                    printer.Listener.Start();
+                    _logger.LogInformation("VirtualPrinterServer [{Code}] listening on TCP :{Port} (mode: {Mode})", 
+                        printer.PrinterCode, printer.Port, printer.SimulatorMode);
+                    await BroadcastStatusUpdateAsync();
                 }
 
-                if (_listener == null)
-                {
-                    var port = int.TryParse(GetConfig("PRINTER_PORT", "9100"), out var p) ? p : DefaultPort;
-                    _listener = new TcpListener(IPAddress.Any, port);
-                    _listener.Start();
-                    _state.SetPrinterOnline(true);
-                    _logger.LogInformation("VirtualPrinterServer listening on TCP :{Port} (mode: {Mode})", port, SimulatorMode);
-                    await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
-                }
-
-                var client = await _listener.AcceptTcpClientAsync(stoppingToken);
-                _ = HandleClientAsync(client, stoppingToken);
+                var client = await printer.Listener.AcceptTcpClientAsync(stoppingToken);
+                _ = HandleClientAsync(printer, client, stoppingToken);
             }
-            catch (OperationCanceledException) { break; }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                if (!_forceDisconnected)
+                if (!printer.ForceDisconnected)
                 {
-                    _logger.LogError(ex, "VirtualPrinterServer accept error");
+                    _logger.LogError(ex, "VirtualPrinterServer [{Code}] accept error", printer.PrinterCode);
                     await Task.Delay(1000, stoppingToken);
                 }
             }
         }
 
-        _listener?.Stop();
-        _state.SetPrinterOnline(false);
-        _logger.LogInformation("VirtualPrinterServer stopped");
+        printer.Listener?.Stop();
+        printer.Listener = null;
     }
 
-    private async Task HandleClientAsync(TcpClient client, CancellationToken ct)
+    private async Task HandleClientAsync(SimulatedPrinter printer, TcpClient client, CancellationToken ct)
     {
-        var mode = SimulatorMode;
+        var modeStr = printer.SimulatorMode;
+        Enum.TryParse<PrinterSimulatorMode>(modeStr, true, out var mode);
 
         // TcpConnectionRefused — immediately close the connection with no data
         if (mode == PrinterSimulatorMode.TcpConnectionRefused)
         {
-            _logger.LogWarning("Printer simulator: TcpConnectionRefused — dropping connection immediately");
+            _logger.LogWarning("Printer simulator [{Code}]: TcpConnectionRefused — dropping connection immediately", printer.PrinterCode);
             client.Close();
-            await PersistAndBroadcastAsync(null, "FAILED", "TCP Connection Refused (simulated)", 0, ct);
+            await RecordAndBroadcastJobAsync(printer, null, "FAILED", "TCP Connection Refused (simulated)", 0, ct);
             return;
         }
 
         using (client)
         {
             var remote = client.Client.RemoteEndPoint;
-            _logger.LogDebug("Printer: connection from {Remote} (mode: {Mode})", remote, mode);
+            _logger.LogDebug("Printer [{Code}]: connection from {Remote} (mode: {Mode})", printer.PrinterCode, remote, mode);
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             string? zplContent = null;
@@ -208,7 +214,10 @@ public sealed class VirtualPrinterServer : BackgroundService
                 {
                     var jobNo = ExtractJobNoFromZpl(zplContent);
                     if (!string.IsNullOrEmpty(jobNo))
+                    {
+                        printer.ActiveJobId = jobNo;
                         _state.SetActiveJobId(jobNo);
+                    }
                 }
 
                 // Simulate mode-specific behavior
@@ -227,6 +236,9 @@ public sealed class VirtualPrinterServer : BackgroundService
 
                 if (status == "_PROCESS")
                 {
+                    printer.Status = "BUSY";
+                    await BroadcastStatusUpdateAsync();
+
                     var delayMs = int.TryParse(GetConfig("PRINTER_DELAY_MS", "800"), out var d) ? d : 800;
                     await Task.Delay(delayMs, ct);
 
@@ -254,7 +266,9 @@ public sealed class VirtualPrinterServer : BackgroundService
 
             sw.Stop();
             var duration = (int)sw.ElapsedMilliseconds;
-            await PersistAndBroadcastAsync(zplContent, status, error, duration, ct);
+
+            printer.Status = "IDLE";
+            await RecordAndBroadcastJobAsync(printer, zplContent, status, error, duration, ct);
         }
     }
 
@@ -273,18 +287,28 @@ public sealed class VirtualPrinterServer : BackgroundService
         };
     }
 
-    private async Task PersistAndBroadcastAsync(string? zplContent, string status, string? error, int duration, CancellationToken ct)
+    private async Task RecordAndBroadcastJobAsync(SimulatedPrinter printer, string? zplContent, string status, string? error, int duration, CancellationToken ct)
     {
+        printer.JobCount++;
+        printer.LastZplPreview = zplContent != null ? zplContent[..Math.Min(200, zplContent.Length)] : null;
+        printer.LastResult = status;
+        printer.LastJobAt = DateTime.UtcNow.ToString("o");
+
+        // Maintain backwards compatibility
         _state.RecordPrinterJob(zplContent, status);
+
         var job = PrinterJob.Create(zplContent, duration, status, error);
         await PersistAsync(job, ct);
+
         var dto = new PrinterJobDto(job.Id, status, zplContent?[..Math.Min(200, zplContent?.Length ?? 0)], duration, job.ReceivedAt);
         await _hub.Clients.All.PrinterJobReceived(dto);
-        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+        await BroadcastStatusUpdateAsync();
+
         await AddTimelineAsync("PRINTER_EXECUTED", status == "PRINTED" ? "OK" : "FAILED",
-            $"Print job — {zplContent?.Length ?? 0} bytes — {status}{(error != null ? ": " + error : "")}", ct);
-        _logger.LogInformation("Printer job {Status} — {Bytes} bytes — {Duration}ms{Error}",
-            status, zplContent?.Length ?? 0, duration, error != null ? " — " + error : "");
+            $"Print job [{printer.PrinterCode}] — {zplContent?.Length ?? 0} bytes — {status}{(error != null ? ": " + error : "")}", ct);
+
+        _logger.LogInformation("Printer [{Code}] job {Status} — {Bytes} bytes — {Duration}ms{Error}",
+            printer.PrinterCode, status, zplContent?.Length ?? 0, duration, error != null ? " — " + error : "");
     }
 
     private async Task PersistAsync(PrinterJob job, CancellationToken ct)
@@ -310,6 +334,11 @@ public sealed class VirtualPrinterServer : BackgroundService
         await db.SaveChangesAsync(ct);
         var dto = new TimelineEventDto(evt.Id, evt.Stage, evt.Status, evt.Detail, evt.OccurredAt);
         await _hub.Clients.All.TimelineEventAdded(dto);
+    }
+
+    private async Task BroadcastStatusUpdateAsync()
+    {
+        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
     }
 
     private string GetConfig(string key, string @default)

@@ -45,6 +45,36 @@
   --radius:            0.5rem;
 }
 
+.light {
+  /* ── Backgrounds (synchronized with light mode in mes-frontend) ── */
+  --background:    210 40% 98%;  /* #F8FAFC */
+  --surface:       0 0% 100%;    /* #FFFFFF */
+  --surface-2:     210 40% 96%;  /* #F1F5F9 */
+  --surface-3:     210 30% 90%;  /* #E2E8F0 */
+
+  /* ── Foregrounds ── */
+  --foreground:    222 47% 11%;  /* #0F172A */
+  --muted-fg:      215 25% 35%;  /* #475569 */
+  --subtle-fg:     215 16% 47%;  /* #64748B */
+
+  /* ── Borders ── */
+  --border:        214 32% 91%;  /* #E2E8F0 */
+  --border-strong: 215 20% 80%;  /* #CBD5E1 */
+
+  /* ── shadcn token overrides ── */
+  --card:              var(--surface);
+  --card-foreground:   var(--foreground);
+  --popover:           var(--surface-2);
+  --popover-foreground:var(--foreground);
+  --primary-foreground:0 0% 100%;
+  --secondary:         var(--surface-2);
+  --secondary-foreground:var(--foreground);
+  --muted:             var(--surface-2);
+  --muted-foreground:  var(--muted-fg);
+  --accent-foreground: 0 0% 100%;
+  --input:             var(--surface-2);
+}
+
 @theme {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));

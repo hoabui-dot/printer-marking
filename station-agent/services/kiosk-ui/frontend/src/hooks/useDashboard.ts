@@ -28,6 +28,7 @@ export interface DeviceStatus {
   deviceType: string
   isOnline: boolean
   lastSeenAt: string
+  lifecycleState?: string
 }
 
 export interface ProductionRecord {
@@ -43,11 +44,24 @@ export interface ProductionRecord {
   updatedAt: string
 }
 
+export interface Alarm {
+  id: string
+  severity: string
+  source: string
+  message: string
+  deviceId?: string
+  isAcknowledged: boolean
+  acknowledgedBy?: string
+  acknowledgedAt?: string
+  createdAt: string
+}
+
 export function useDashboard(stationId: string) {
   const [production, setProduction] = useState<ProductionView | null>(null)
   const [activities, setActivities] = useState<ActivityLog[]>([])
   const [devices, setDevices] = useState<DeviceStatus[]>([])
   const [todayRecords, setTodayRecords] = useState<ProductionRecord[]>([])
+  const [alarms, setAlarms] = useState<Alarm[]>([])
   const [isConnected, setIsConnected] = useState(false)
 
   // Resolve absolute API / Hub URLs for the projection service proxy (routing through Kiosk UI backend)
@@ -57,11 +71,12 @@ export function useDashboard(stationId: string) {
     // 1. Initial REST fetch from projection service
     const fetchInitialData = async () => {
       try {
-        const [prodRes, actRes, devRes, todayRecsRes] = await Promise.all([
+        const [prodRes, actRes, devRes, todayRecsRes, alarmsRes] = await Promise.all([
           axios.get<ProductionView>(`${baseUrl}/api/projection/production?stationId=${stationId}`).catch(() => null),
           axios.get<ActivityLog[]>(`${baseUrl}/api/projection/activities?limit=10`).catch(() => ({ data: [] })),
           axios.get<DeviceStatus[]>(`${baseUrl}/api/projection/devices`).catch(() => ({ data: [] })),
-          axios.get<{ items: ProductionRecord[], totalCount: number }>(`${baseUrl}/api/projection/records/today?page=1&pageSize=100`).catch(() => ({ data: { items: [], totalCount: 0 } }))
+          axios.get<{ items: ProductionRecord[], totalCount: number }>(`${baseUrl}/api/projection/records/today?page=1&pageSize=100`).catch(() => ({ data: { items: [], totalCount: 0 } })),
+          axios.get<Alarm[]>(`${baseUrl}/api/projection/alarms`).catch(() => ({ data: [] }))
         ])
 
         if (prodRes && prodRes.data) {
@@ -75,6 +90,9 @@ export function useDashboard(stationId: string) {
         }
         if (todayRecsRes && todayRecsRes.data?.items) {
           setTodayRecords(todayRecsRes.data.items)
+        }
+        if (alarmsRes && alarmsRes.data) {
+          setAlarms(alarmsRes.data)
         }
       } catch (err) {
         console.error('Error fetching initial projection data:', err)
@@ -124,6 +142,17 @@ export function useDashboard(stationId: string) {
       })
     })
 
+    conn.on('OnAlarmRaised', (data: Alarm) => {
+      setAlarms((prev) => {
+        const exists = prev.some((a) => a.id === data.id)
+        if (exists) {
+          return prev.map((a) => (a.id === data.id ? data : a))
+        } else {
+          return [data, ...prev]
+        }
+      })
+    })
+
     conn.start()
       .then(async () => {
         setIsConnected(true)
@@ -139,5 +168,5 @@ export function useDashboard(stationId: string) {
     }
   }, [stationId, baseUrl])
 
-  return { isConnected, production, activities, devices, todayRecords }
+  return { isConnected, production, activities, devices, todayRecords, alarms, setAlarms }
 }

@@ -14,100 +14,97 @@ namespace ND.ProjectionService.Infrastructure.BackgroundServices;
 
 public sealed class DeviceStatusPoller : BackgroundService
 {
-    private readonly IHttpClientFactory _httpClientFactory;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IHubContext<ProductionHub> _hubContext;
     private readonly ILogger<DeviceStatusPoller> _logger;
-    private readonly string _simulatorUrl;
+    private readonly string _stationId = "station-01";
 
     public DeviceStatusPoller(
-        IHttpClientFactory httpClientFactory,
         IServiceScopeFactory scopeFactory,
         IHubContext<ProductionHub> hubContext,
-        IConfiguration configuration,
         ILogger<DeviceStatusPoller> logger)
     {
-        _httpClientFactory = httpClientFactory;
         _scopeFactory = scopeFactory;
         _hubContext = hubContext;
         _logger = logger;
-        _simulatorUrl = configuration["SIMULATOR_URL"] ?? "http://localhost:5000";
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("DeviceStatusPoller starting. Polling target: {Target}", _simulatorUrl);
-
-        using var client = _httpClientFactory.CreateClient();
+        _logger.LogInformation("DeviceStatusPoller (Timeout Monitor) starting. Checking every 3s.");
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var response = await client.GetAsync($"{_simulatorUrl}/api/status", stoppingToken);
-                if (response.IsSuccessStatusCode)
-                {
-                    var status = await response.Content.ReadFromJsonAsync<SimulatorStatusResponse>(cancellationToken: stoppingToken);
-                    if (status != null)
-                    {
-                        await UpdateDeviceStatusesAsync(status, stoppingToken);
-                    }
-                }
-                else
-                {
-                    _logger.LogWarning("Polled simulator status but got status code {StatusCode}", response.StatusCode);
-                }
+                await MonitorHeartbeatTimeoutsAsync(stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogError(ex, "Error occurred while polling device simulator status");
+                _logger.LogError(ex, "Error occurred during device heartbeat timeout check");
             }
 
             await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);
         }
     }
 
-    private async Task UpdateDeviceStatusesAsync(SimulatorStatusResponse status, CancellationToken ct)
+    private async Task MonitorHeartbeatTimeoutsAsync(CancellationToken ct)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
         var repo = scope.ServiceProvider.GetRequiredService<IDeviceStatusRepository>();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-        var mapping = new Dictionary<string, bool>
-        {
-            ["printer-01"] = status.Printer.Online,
-            ["laser-01"] = status.Laser.Online,
-            ["camera-01"] = status.Vision.Online,
-            ["plc-01"] = status.Plc.Online,
-            ["gateway-01"] = status.Gateway.Connected
-        };
-
-        var nowStr = DateTime.UtcNow.ToString("o");
+        var devices = await repo.GetAllAsync(ct);
+        var now = DateTime.UtcNow;
         var hasChanges = false;
 
-        foreach (var kvp in mapping)
+        foreach (var device in devices)
         {
-            var device = await repo.GetByDeviceIdAsync(kvp.Key, ct);
-            if (device == null)
+            if (!device.IsOnline) continue;
+
+            if (DateTime.TryParse(device.LastSeenAt, out var lastSeen))
             {
-                var type = kvp.Key == "printer-01" ? "PRINTER" :
-                           kvp.Key == "laser-01" ? "LASER" :
-                           kvp.Key == "camera-01" ? "VISION_CAMERA" :
-                           kvp.Key == "plc-01" ? "PLC" : "GATEWAY";
+                if ((now - lastSeen).TotalSeconds > 10)
+                {
+                    _logger.LogWarning("Device {DeviceId} heartbeat timed out (> 10s). Marking Offline.", device.DeviceId);
+                    device.UpdateStatus(false, device.LastSeenAt, "Offline");
+                    await repo.UpdateAsync(device, ct);
+                    hasChanges = true;
 
-                device = DeviceStatus.Create(kvp.Key, type, kvp.Value, nowStr);
-                await repo.AddAsync(device, ct);
-                hasChanges = true;
+                    // Raise Critical Alarm for device offline
+                    try
+                    {
+                        var alarmRepo = scope.ServiceProvider.GetRequiredService<IAlarmRepository>();
+                        var alarm = Alarm.Create(
+                            "Critical",
+                            "Device",
+                            $"Thiết bị {device.DeviceId} ({device.DeviceType}) đã mất kết nối heartbeat!",
+                            device.DeviceId
+                        );
+                        await alarmRepo.AddAsync(alarm, ct);
+                        
+                        // Push alarm to UI
+                        var alarmDto = new AlarmDto(
+                            alarm.Id, alarm.Severity, alarm.Source, alarm.Message, alarm.DeviceId,
+                            alarm.IsAcknowledged, alarm.AcknowledgedBy, alarm.AcknowledgedAt, alarm.CreatedAt
+                        );
+                        await _hubContext.Clients.Group(_stationId).SendAsync("OnAlarmRaised", alarmDto, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to raise offline alarm for device {DeviceId}", device.DeviceId);
+                    }
 
-                await BroadcastUpdateAsync(device);
-            }
-            else if (device.IsOnline != kvp.Value)
-            {
-                device.UpdateStatus(kvp.Value, nowStr);
-                await repo.UpdateAsync(device, ct);
-                hasChanges = true;
-
-                await BroadcastUpdateAsync(device);
+                    // Push status update to UI
+                    var dto = new DeviceStatusDto(
+                        device.DeviceId,
+                        device.DeviceType,
+                        device.IsOnline,
+                        device.LastSeenAt,
+                        device.LifecycleState
+                    );
+                    await _hubContext.Clients.Group(_stationId).SendAsync("OnDeviceStatusUpdate", dto, ct);
+                }
             }
         }
 
@@ -116,27 +113,6 @@ public sealed class DeviceStatusPoller : BackgroundService
             await unitOfWork.SaveChangesAsync(ct);
         }
     }
-
-    private async Task BroadcastUpdateAsync(DeviceStatus device)
-    {
-        await _hubContext.Clients.All.SendAsync("OnDeviceStatusUpdate", new DeviceStatusDto(
-            device.DeviceId,
-            device.DeviceType,
-            device.IsOnline,
-            device.LastSeenAt
-        ));
-    }
 }
 
-public record SimulatorStatusResponse(
-    PrinterStateResponse Printer,
-    LaserStateResponse Laser,
-    VisionStateResponse Vision,
-    PlcStateResponse Plc,
-    GatewayStateResponse Gateway);
 
-public record PrinterStateResponse(bool Online);
-public record LaserStateResponse(bool Online);
-public record VisionStateResponse(bool Online);
-public record PlcStateResponse(bool Online);
-public record GatewayStateResponse(bool Connected);

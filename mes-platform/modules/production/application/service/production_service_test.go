@@ -2,9 +2,12 @@ package service_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
+	"github.com/google/uuid"
 	"github.com/nd/mes-platform/modules/production/application/dto"
 	"github.com/nd/mes-platform/modules/production/application/service"
 	"github.com/nd/mes-platform/modules/production/domain/entity"
@@ -38,9 +41,21 @@ func (m *MockGatewayClient) SendProductionOrder(ctx context.Context, order *enti
 	return "mock-gateway-order-id", nil
 }
 
+func (m *MockGatewayClient) SendWorkOrder(ctx context.Context, req any) (string, error) {
+	return "mock-gateway-job-id", nil
+}
+
+func (m *MockGatewayClient) GetWorkOrderDetail(ctx context.Context, jobNo string) (map[string]interface{}, error) {
+	return map[string]interface{}{"status": "COMPLETED"}, nil
+}
+
 func setupProductionSvc(t *testing.T) (*gorm.DB, *MockOutboxRepository, *service.ProductionService) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
+
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
 
 	err = db.AutoMigrate(
 		&model.ProductionOrderModel{},
@@ -49,6 +64,11 @@ func setupProductionSvc(t *testing.T) (*gorm.DB, *MockOutboxRepository, *service
 		&model.OperationModel{},
 		&model.WorkOrderModel{},
 		&model.OutboxEventModel{},
+		&model.DispatchPlanModel{},
+		&model.WorkOrderTimelineModel{},
+		&model.ProductionWorkflowModel{},
+		&model.WorkflowOperationModel{},
+		&model.WorkOrderOperationModel{},
 	)
 	require.NoError(t, err)
 
@@ -56,68 +76,81 @@ func setupProductionSvc(t *testing.T) (*gorm.DB, *MockOutboxRepository, *service
 	workRepo := persistence.NewGormWorkOrderRepository(db)
 	routingRepo := persistence.NewGormRoutingRepository(db)
 	eventRepo := persistence.NewGormProductionOrderEventRepository(db)
+	planRepo := persistence.NewGormDispatchPlanRepository(db)
+	timelineRepo := persistence.NewGormWorkOrderTimelineRepository(db)
+	workflowRepo := persistence.NewGormWorkflowRepository(db)
 	outboxRepo := &MockOutboxRepository{}
 	log := logger.NewNop()
 	gatewayCli := &MockGatewayClient{}
 
-	svc := service.NewProductionService(orderRepo, workRepo, routingRepo, eventRepo, outboxRepo, gatewayCli, log)
+	svc := service.NewProductionService(orderRepo, workRepo, routingRepo, eventRepo, outboxRepo, gatewayCli, planRepo, timelineRepo, workflowRepo, log)
 	return db, outboxRepo, svc
 }
 
-func createTestRouting(t *testing.T, svc *service.ProductionService, name string) *dto.RoutingDTO {
-	t.Helper()
-	r, err := svc.CreateRouting(context.Background(), dto.CreateRoutingRequest{
-		Name:        name,
-		Description: "Test routing",
-		Operations: []dto.CreateOperationRequest{
-			{Sequence: 1, Name: "Plate Making", MachineType: "CTP", EstimatedMinutes: 60, MinOperators: 1, MaxOperators: 2},
-			{Sequence: 2, Name: "Printing", MachineType: "Offset Press", EstimatedMinutes: 90, MinOperators: 2, MaxOperators: 4, RequiredSkills: []string{"LO1"}},
+func createTestWorkflow(t *testing.T, db *gorm.DB) string {
+	workflowID := uuid.New()
+	wf := model.ProductionWorkflowModel{
+		ID:            workflowID,
+		WorkflowCode:  "WF-TEST",
+		WorkflowName:  "Test Workflow",
+		ProductFamily: "Bearing Seal",
+		Version:       1,
+		Status:        "published",
+		Operations: []model.WorkflowOperationModel{
+			{
+				ID:                   uuid.New(),
+				WorkflowID:           workflowID,
+				Sequence:             10,
+				OperationName:        "Mixing",
+				OperationType:        "MIX",
+				EstimatedDuration:    60,
+				RetryLimit:           3,
+				IsRequired:           true,
+				RequiresStation:      true,
+				DefaultStationType:   "MIXING_STATION",
+				QualityCheckRequired: false,
+				MetadataJSON:         "{}",
+				RequiredSkillsJSON:   "[]",
+			},
+			{
+				ID:                   uuid.New(),
+				WorkflowID:           workflowID,
+				Sequence:             20,
+				OperationName:        "Marking",
+				OperationType:        "MARK",
+				EstimatedDuration:    30,
+				RetryLimit:           2,
+				IsRequired:           true,
+				RequiresStation:      true,
+				DefaultStationType:   "MARK_STATION",
+				QualityCheckRequired: true,
+				MetadataJSON:         "{}",
+				RequiredSkillsJSON:   "[]",
+			},
 		},
-	})
+	}
+	err := db.Create(&wf).Error
 	require.NoError(t, err)
-	return r
-}
-
-// ─── Routing Tests ────────────────────────────────────────────────────────────
-
-func TestProductionService_CreateRouting(t *testing.T) {
-	_, _, svc := setupProductionSvc(t)
-
-	r, err := svc.CreateRouting(context.Background(), dto.CreateRoutingRequest{
-		Name:        "Offset Standard",
-		Description: "Standard offset print workflow",
-		Operations: []dto.CreateOperationRequest{
-			{Sequence: 1, Name: "Pre-press", EstimatedMinutes: 45, MinOperators: 1, MaxOperators: 2},
-		},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, "Offset Standard", r.Name)
-	assert.Equal(t, 1, len(r.Operations))
-	assert.Equal(t, 45, r.TotalEstimatedMinutes)
-
-	// Conflict
-	_, err = svc.CreateRouting(context.Background(), dto.CreateRoutingRequest{
-		Name:       "Offset Standard",
-		Operations: []dto.CreateOperationRequest{{Sequence: 1, Name: "Op", MinOperators: 1, MaxOperators: 1}},
-	})
-	assert.ErrorIs(t, err, service.ErrConflict)
+	return workflowID.String()
 }
 
 // ─── Production Order Tests ───────────────────────────────────────────────────
 
 func TestProductionService_CreateProductionOrder(t *testing.T) {
-	_, outboxRepo, svc := setupProductionSvc(t)
+	db, outboxRepo, svc := setupProductionSvc(t)
+	wfID := createTestWorkflow(t, db)
 
 	dueDate := "2026-08-01"
 	order, err := svc.CreateProductionOrder(context.Background(), dto.CreateProductionOrderRequest{
-		OrderNumber:   "PO-2026-001",
-		ProductName:   "Wedding Invitation Cards",
-		Quantity:      500,
-		Priority:      80,
-		OperationType: "PRINT_AND_MARK",
-		Station:       "Station-Combined-01",
-		DueDate:       &dueDate,
-		Notes:         "High priority customer",
+		OrderNumber:     "PO-2026-001",
+		Customer:        "Won Seal Customer",
+		Product:         "Wedding Invitation Cards",
+		ProductRevision: "A",
+		WorkflowID:      &wfID,
+		Quantity:        500,
+		Priority:        80,
+		DueDate:         &dueDate,
+		Notes:           "High priority customer",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "PO-2026-001", order.OrderNumber)
@@ -130,26 +163,29 @@ func TestProductionService_CreateProductionOrder(t *testing.T) {
 
 	// Conflict on duplicate order number
 	_, err = svc.CreateProductionOrder(context.Background(), dto.CreateProductionOrderRequest{
-		OrderNumber:   "PO-2026-001",
-		ProductName:   "Duplicate",
-		Quantity:      1,
-		Priority:      1,
-		OperationType: "PRINT_AND_MARK",
-		Station:       "Station-Combined-01",
+		OrderNumber:     "PO-2026-001",
+		Customer:        "Duplicate",
+		Product:         "Duplicate",
+		ProductRevision: "A",
+		WorkflowID:      &wfID,
+		Quantity:        1,
+		Priority:        1,
 	})
 	assert.ErrorIs(t, err, service.ErrConflict)
 }
 
 func TestProductionService_OrderLifecycle(t *testing.T) {
-	_, outboxRepo, svc := setupProductionSvc(t)
+	db, outboxRepo, svc := setupProductionSvc(t)
+	wfID := createTestWorkflow(t, db)
 
 	order, err := svc.CreateProductionOrder(context.Background(), dto.CreateProductionOrderRequest{
-		OrderNumber:   "PO-LIFE-001",
-		ProductName:   "Brochures",
-		Quantity:      1000,
-		Priority:      50,
-		OperationType: "PRINT_AND_MARK",
-		Station:       "Station-Combined-01",
+		OrderNumber:     "PO-LIFE-001",
+		Customer:        "Won Seal Customer",
+		Product:         "Brochures",
+		ProductRevision: "A",
+		WorkflowID:      &wfID,
+		Quantity:        1000,
+		Priority:        50,
 	})
 	require.NoError(t, err)
 	outboxRepo.Events = nil
@@ -163,7 +199,7 @@ func TestProductionService_OrderLifecycle(t *testing.T) {
 	// Verify status
 	got, err := svc.GetProductionOrder(context.Background(), order.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "sent_to_gateway", got.Status)
+	assert.Equal(t, "released", got.Status)
 
 	outboxRepo.Events = nil
 
@@ -177,48 +213,38 @@ func TestProductionService_OrderLifecycle(t *testing.T) {
 // ─── Work Order Tests ─────────────────────────────────────────────────────────
 
 func TestProductionService_WorkOrder_Lifecycle(t *testing.T) {
-	_, outboxRepo, svc := setupProductionSvc(t)
-
-	// Create routing
-	routing := createTestRouting(t, svc, "WO Test Routing")
+	db, outboxRepo, svc := setupProductionSvc(t)
+	wfID := createTestWorkflow(t, db)
 
 	// Create & release production order
 	order, err := svc.CreateProductionOrder(context.Background(), dto.CreateProductionOrderRequest{
-		OrderNumber:   "PO-WO-001",
-		ProductName:   "Flyers",
-		Quantity:      200,
-		Priority:      60,
-		OperationType: "PRINT_AND_MARK",
-		Station:       "Station-Combined-01",
+		OrderNumber:     "PO-WO-001",
+		Customer:        "Won Seal Customer",
+		Product:         "Flyers",
+		ProductRevision: "A",
+		WorkflowID:      &wfID,
+		Quantity:        5,
+		Priority:        60,
 	})
 	require.NoError(t, err)
 	require.NoError(t, svc.ReleaseProductionOrder(context.Background(), order.ID))
 	outboxRepo.Events = nil
 
-	// Create work order
-	wo, err := svc.CreateWorkOrder(context.Background(), dto.CreateWorkOrderRequest{
-		ProductionOrderID: order.ID.String(),
-		RoutingID:         routing.ID.String(),
-		Sequence:          1,
-	})
+	// Wait for asynchronous generation
+	workOrders, err := waitForWorkOrders(svc, order.ID, 5)
 	require.NoError(t, err)
+	assert.Len(t, workOrders, 5)
+
+	wo := workOrders[0]
 	assert.Equal(t, "pending", wo.Status)
-	assert.Len(t, outboxRepo.Events, 1)
-	assert.Equal(t, "mes.production.WorkOrderCreated", outboxRepo.Events[0].EventName)
-	outboxRepo.Events = nil
 
 	// Start work order
 	err = svc.StartWorkOrder(context.Background(), wo.ID)
 	require.NoError(t, err)
-	assert.Len(t, outboxRepo.Events, 1)
-	assert.Equal(t, "mes.production.WorkOrderStarted", outboxRepo.Events[0].EventName)
-	outboxRepo.Events = nil
 
 	// Complete work order
 	err = svc.CompleteWorkOrder(context.Background(), wo.ID)
 	require.NoError(t, err)
-	assert.Len(t, outboxRepo.Events, 1)
-	assert.Equal(t, "mes.production.WorkOrderCompleted", outboxRepo.Events[0].EventName)
 
 	// Verify final state
 	got, err := svc.GetWorkOrder(context.Background(), wo.ID)
@@ -229,64 +255,64 @@ func TestProductionService_WorkOrder_Lifecycle(t *testing.T) {
 }
 
 func TestProductionService_WorkOrder_DraftOrderBlocked(t *testing.T) {
-	_, _, svc := setupProductionSvc(t)
-
-	routing := createTestRouting(t, svc, "Blocked Routing")
+	db, _, svc := setupProductionSvc(t)
+	wfID := createTestWorkflow(t, db)
 
 	order, err := svc.CreateProductionOrder(context.Background(), dto.CreateProductionOrderRequest{
-		OrderNumber:   "PO-BLOCKED",
-		ProductName:   "Test",
-		Quantity:      1,
-		Priority:      1,
-		OperationType: "PRINT_AND_MARK",
-		Station:       "Station-Combined-01",
+		OrderNumber:     "PO-BLOCKED",
+		Customer:        "Won Seal Customer",
+		Product:         "Test",
+		ProductRevision: "A",
+		WorkflowID:      &wfID,
+		Quantity:        1,
+		Priority:        1,
 	})
 	require.NoError(t, err)
 
-	// Cannot create work order on draft production order
-	_, err = svc.CreateWorkOrder(context.Background(), dto.CreateWorkOrderRequest{
-		ProductionOrderID: order.ID.String(),
-		RoutingID:         routing.ID.String(),
-		Sequence:          1,
-	})
-	assert.ErrorIs(t, err, service.ErrTransition)
-}
-
-func TestProductionService_ListWorkOrders_ByProductionOrder(t *testing.T) {
-	_, _, svc := setupProductionSvc(t)
-
-	routing := createTestRouting(t, svc, "List Routing")
-	order, _ := svc.CreateProductionOrder(context.Background(), dto.CreateProductionOrderRequest{
-		OrderNumber:   "PO-LIST-001",
-		ProductName:   "Test",
-		Quantity:      100,
-		Priority:      50,
-		OperationType: "PRINT_AND_MARK",
-		Station:       "Station-Combined-01",
-	})
-	svc.ReleaseProductionOrder(context.Background(), order.ID)
-
-	// Create 2 work orders
-	svc.CreateWorkOrder(context.Background(), dto.CreateWorkOrderRequest{
-		ProductionOrderID: order.ID.String(),
-		RoutingID:         routing.ID.String(),
-		Sequence:          1,
-	})
-	svc.CreateWorkOrder(context.Background(), dto.CreateWorkOrderRequest{
-		ProductionOrderID: order.ID.String(),
-		RoutingID:         routing.ID.String(),
-		Sequence:          2,
-	})
-
-	// List by production order ID
-	list, total, err := svc.ListWorkOrders(context.Background(), repository.WorkOrderFilter{
+	// No work orders generated on draft orders
+	list, _, err := svc.ListWorkOrders(context.Background(), repository.WorkOrderFilter{
 		ProductionOrderID: &order.ID,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, int64(2), total)
-	assert.Len(t, list, 2)
+	assert.Len(t, list, 0)
+}
+
+func TestProductionService_ListWorkOrders_ByProductionOrder(t *testing.T) {
+	db, _, svc := setupProductionSvc(t)
+	wfID := createTestWorkflow(t, db)
+
+	order, _ := svc.CreateProductionOrder(context.Background(), dto.CreateProductionOrderRequest{
+		OrderNumber:     "PO-LIST-001",
+		Customer:        "Won Seal Customer",
+		Product:         "Test",
+		ProductRevision: "A",
+		WorkflowID:      &wfID,
+		Quantity:        3,
+		Priority:        50,
+	})
+	svc.ReleaseProductionOrder(context.Background(), order.ID)
+
+	// Wait for asynchronous generation
+	list, err := waitForWorkOrders(svc, order.ID, 3)
+	require.NoError(t, err)
+	assert.Len(t, list, 3)
 
 	// Verify ordered by sequence
 	assert.Equal(t, 1, list[0].Sequence)
 	assert.Equal(t, 2, list[1].Sequence)
+	assert.Equal(t, 3, list[2].Sequence)
+}
+
+func waitForWorkOrders(svc *service.ProductionService, orderID uuid.UUID, expected int) ([]*dto.WorkOrderDTO, error) {
+	deadline := time.Now().Add(1000 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		list, _, err := svc.ListWorkOrders(context.Background(), repository.WorkOrderFilter{
+			ProductionOrderID: &orderID,
+		})
+		if err == nil && len(list) == expected {
+			return list, nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("timeout waiting for work orders")
 }

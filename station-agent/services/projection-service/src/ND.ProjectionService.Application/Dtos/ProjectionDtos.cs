@@ -23,7 +23,8 @@ public record DeviceStatusDto(
     string DeviceId,
     string DeviceType,
     bool IsOnline,
-    string LastSeenAt);
+    string LastSeenAt,
+    string LifecycleState = "Offline");
 
 public record ProductionRecordDto(
     string Id,
@@ -45,4 +46,13 @@ public record PagedResult<T>(
 {
     public int TotalPages => (int)Math.Ceiling((double)TotalCount / PageSize);
 }
-
+public record AlarmDto(
+    string Id,
+    string Severity,
+    string Source,
+    string Message,
+    string? DeviceId,
+    bool IsAcknowledged,
+    string? AcknowledgedBy,
+    string? AcknowledgedAt,
+    string CreatedAt);

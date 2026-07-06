@@ -55,8 +55,17 @@ public sealed class ProcessJobHandler
 
     public async Task HandleAsync(ProcessJobCommand command, CancellationToken cancellationToken = default)
     {
-        var lockKey = $"lock:job:{command.JobId}";
+        // 1. Lock the station queue to prevent race conditions during status checks
+        var queueLockKey = "lock:station:queue";
+        await using var queueLockHandle = await _distributedLock.TryAcquireAsync(queueLockKey, TimeSpan.FromSeconds(30), cancellationToken);
+        if (queueLockHandle is null)
+        {
+            _logger.LogWarning("Could not acquire station queue lock. Aborting process command for job {JobId}.", command.JobId);
+            return;
+        }
 
+        // 2. Lock the specific job
+        var lockKey = $"lock:job:{command.JobId}";
         await using var lockHandle = await _distributedLock.TryAcquireAsync(lockKey, TimeSpan.FromSeconds(30), cancellationToken);
         if (lockHandle is null)
         {
@@ -66,6 +75,25 @@ public sealed class ProcessJobHandler
 
         var job = await _jobRepository.GetByIdAsync(command.JobId, cancellationToken)
             ?? throw new JobNotFoundException(command.JobId);
+
+        // If the job is already PROCESSING or has finished, don't run it again
+        if (job.CurrentStatus == JobStatus.Processing || 
+            job.CurrentStatus == JobStatus.Completed || 
+            job.CurrentStatus == JobStatus.Failed || 
+            job.CurrentStatus == JobStatus.Cancelled)
+        {
+            _logger.LogInformation("Job {JobId} is already in status {Status}. Skipping start.", job.Id, job.CurrentStatus);
+            return;
+        }
+
+        // Check if there is already an active job in PROCESSING status on the same assigned printer
+        var activeJobs = await _jobRepository.GetByStatusAsync(JobStatus.Processing, cancellationToken);
+        var otherActiveJobsOnSamePrinter = activeJobs.Where(j => j.Id != command.JobId && j.AssignedPrinter == job.AssignedPrinter).ToList();
+        if (otherActiveJobsOnSamePrinter.Any())
+        {
+            _logger.LogInformation("Job {JobId} is queued because another job {ActiveJobId} is currently processing on printer {Printer}.", command.JobId, otherActiveJobsOnSamePrinter[0].Id, job.AssignedPrinter);
+            return;
+        }
 
         var oldStatus = job.CurrentStatus;
         job.StartProcessing();
@@ -91,7 +119,14 @@ public sealed class ProcessJobHandler
         var firstStep = steps.OrderBy(s => s.StepOrder).FirstOrDefault();
         if (firstStep is not null)
         {
-            firstStep.Start();
+            var deviceId = firstStep.StepName.ToUpperInvariant() switch {
+                "PRINT_LABEL" => job.AssignedPrinter ?? "printer-01",
+                "LASER_MARK" => "laser-01",
+                "VISION_CHECK" => "camera-01",
+                "PLC_REJECT" => "plc-01",
+                _ => null
+            };
+            firstStep.Start(deviceId, job.PayloadJson);
         }
 
         foreach (var step in steps)
@@ -128,7 +163,9 @@ public sealed class ProcessJobHandler
             job.ProductCode,
             job.ProductSerial,
             job.SourceSystem,
-            attempt.AttemptNo);
+            attempt.AttemptNo,
+            payloadJson: job.PayloadJson,
+            targetPrinter: job.AssignedPrinter);
 
         var routingKey = firstStep is not null 
             ? CompleteJobStepHandler.GetStepRoutingKey(firstStep.StepName) 

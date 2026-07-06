@@ -2,6 +2,8 @@ using ND.JobEngine.Application.Commands;
 using ND.JobEngine.Application.Queries;
 using ND.JobEngine.Application.Interfaces;
 using ND.JobEngine.Application.Dtos;
+using Microsoft.EntityFrameworkCore;
+using ND.JobEngine.Infrastructure.Persistence;
 
 namespace ND.JobEngine.Api.Endpoints;
 
@@ -15,11 +17,12 @@ public static class JobEndpointExtensions
             int page,
             int pageSize,
             string? status,
+            string? serial,
             GetJobQueryHandler handler,
             CancellationToken ct) =>
         {
             var result = await handler.HandleGetPagedAsync(
-                new GetJobsQuery(page, pageSize, status), ct);
+                new GetJobsQuery(page, pageSize, status, serial), ct);
             return Results.Ok(result);
         });
 
@@ -52,8 +55,34 @@ public static class JobEndpointExtensions
             var steps = await repo.GetByAttemptIdAsync(attemptId, ct);
             var dtos = steps.Select(s => new JobStepDto(
                 s.Id, s.AttemptId, s.StepName, s.StepOrder, s.Status,
-                s.StartedAt, s.FinishedAt, s.ErrorMessage, s.ResultJson)).ToList();
+                s.StartedAt, s.FinishedAt, s.ErrorMessage, s.ResultJson,
+                s.ExecutionDurationMs, s.RetryCount, s.PayloadJsonStep, s.AssignedDeviceId, s.ExecutionResult)).ToList();
             return Results.Ok(dtos);
+        });
+
+        group.MapGet("/metrics", async (JobEngineDbContext db, CancellationToken ct) =>
+        {
+            var steps = await db.JobSteps
+                .Where(s => s.Status == "Completed")
+                .ToListAsync(ct);
+
+            var averages = steps
+                .GroupBy(s => s.StepName)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Average(s => s.ExecutionDurationMs)
+                );
+
+            var totalJobs = await db.Jobs.CountAsync(ct);
+            var completedJobs = await db.Jobs.CountAsync(j => j.CurrentStatus == "Completed", ct);
+            var failedJobs = await db.Jobs.CountAsync(j => j.CurrentStatus == "Failed", ct);
+
+            return Results.Ok(new {
+                averages,
+                totalJobs,
+                completedJobs,
+                failedJobs
+            });
         });
 
         group.MapPost("/", async (CreateJobCommand command, CreateJobHandler handler, CancellationToken ct) =>

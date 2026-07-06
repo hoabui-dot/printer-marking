@@ -14,6 +14,9 @@ The **Station Agent** is an edge manufacturing system that handles local orchest
 4. **Outbox Pattern**: Outbound messages are stored in an outbox table and dispatched asynchronously to guarantee delivery even after app crashes.
 5. **No Business Logic in Presentation**: All controllers and API endpoints must delegate business operations to the Application layer.
 6. **Graceful SQLite Path Checking**: Always verify write permissions to the SQLite DB target path. If not writable (e.g. `/data` directory on local Windows/macOS), catch the error and fallback to a local directory like `data/` within `ContentRootPath`.
+7. **ProductionRecord Lifecycle Ownership (Projection Service)**: `ProductionRecord` rows are owned exclusively by `job.created` events — one record per real Job, carrying a unique `JobId` and `ProductSerial`. The `HandleMqttEventAsync` handler in `ProjectionEventConsumer` **must NOT** create `ProductionRecord` rows for batch production orders (`plannedQty > 1`). For single-item jobs (`plannedQty == 1`) it may create a temporary record using `EventId` as the `JobId` which is promoted to the real `JobId` when `job.created` arrives. Violating this rule causes ghost "Đã nhận yêu cầu" rows (duplicate phantom records) that are never resolved, making `N` items appear as `2N` in the Kiosk UI.
+
+
 
 ---
 

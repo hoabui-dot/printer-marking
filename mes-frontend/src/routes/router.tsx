@@ -69,9 +69,7 @@ const ProductionOrdersPage = React.lazy(() =>
 const WorkOrdersPage = React.lazy(() =>
   import('@/modules/production/pages/WorkOrdersPage').then((m) => ({ default: m.WorkOrdersPage }))
 )
-const RoutingsPage = React.lazy(() =>
-  import('@/modules/production/pages/RoutingsPage').then((m) => ({ default: m.RoutingsPage }))
-)
+
 
 // Assignment
 const AssignmentProposalsPage = React.lazy(() =>
@@ -290,11 +288,7 @@ const workOrdersRoute = createRoute({
   component: () => <PageSuspense><WorkOrdersPage /></PageSuspense>,
 })
 
-const routingsRoute = createRoute({
-  getParentRoute: () => protectedRoute,
-  path: '/production/routings',
-  component: () => <PageSuspense><RoutingsPage /></PageSuspense>,
-})
+
 
 // Assignment
 const assignmentProposalsRoute = createRoute({
@@ -384,7 +378,6 @@ export const router = createRouter({
       planningOvertimeRoute,
       productionOrdersRoute,
       workOrdersRoute,
-      routingsRoute,
       assignmentProposalsRoute,
       assignmentHistoryRoute,
       notificationsRoute,

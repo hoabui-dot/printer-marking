@@ -39,3 +39,13 @@ public interface IProductionRecordRepository : IRepository<ProductionRecord>
         CancellationToken cancellationToken = default);
 }
 
+public interface IAlarmRepository : IRepository<Alarm>
+{
+}
+
+public interface IProductionOrderViewRepository : IRepository<ProductionOrderView>
+{
+    Task<ProductionOrderView?> GetByOrderNoAsync(string orderNo, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ProductionOrderView>> GetLatestAsync(int limit, CancellationToken cancellationToken = default);
+}
+

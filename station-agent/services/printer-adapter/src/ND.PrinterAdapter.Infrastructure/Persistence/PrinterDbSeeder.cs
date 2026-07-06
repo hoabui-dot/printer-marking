@@ -9,9 +9,22 @@ public static class PrinterDbSeeder
     {
         if (!await db.Printers.AnyAsync())
         {
-            var printer = Printer.Create("printer-01", "Zebra Kiosk Printer", host, port, "ZPL", "ZEBRA");
-            printer.SetOnline();
-            await db.Printers.AddAsync(printer);
+            var p1 = Printer.Create("Printer-01", "Zebra Industrial A", host, 9100, "ZPL", "ZEBRA");
+            p1.SetOnline();
+            await db.Printers.AddAsync(p1);
+
+            var p2 = Printer.Create("Printer-02", "Zebra Industrial B", host, 9101, "ZPL", "ZEBRA");
+            p2.SetOnline();
+            await db.Printers.AddAsync(p2);
+
+            var p3 = Printer.Create("Printer-03", "Zebra Desktop C", host, 9102, "ZPL", "ZEBRA");
+            p3.SetOnline();
+            await db.Printers.AddAsync(p3);
+
+            var pLegacy = Printer.Create("printer-01", "Zebra Kiosk Printer (Legacy)", host, 9100, "ZPL", "ZEBRA");
+            pLegacy.SetOnline();
+            await db.Printers.AddAsync(pLegacy);
+
             await db.SaveChangesAsync();
         }
     }

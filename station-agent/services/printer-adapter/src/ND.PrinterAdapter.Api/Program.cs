@@ -56,6 +56,7 @@ builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 
 // Register hosted consumer
 builder.Services.AddHostedService<JobProcessingConsumer>();
+builder.Services.AddHostedService<HeartbeatHostedService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
@@ -104,6 +105,93 @@ app.MapGet("/api/label-templates", async (
         t.LabelWidth, t.LabelHeight, t.TemplateJson, t.Version,
         t.IsActive, t.CreatedAt, t.UpdatedAt
     }));
+});
+
+// GET /api/label-templates/active
+app.MapGet("/api/label-templates/active", async (
+    PrinterDbContext db,
+    CancellationToken ct) =>
+{
+    var template = await db.LabelTemplates.FirstOrDefaultAsync(t => t.IsActive, ct);
+    if (template is null)
+    {
+        // Seed default template if none exists
+        var defaultJson = @"
+{
+  ""width"": 100,
+  ""height"": 60,
+  ""dpi"": 203,
+  ""elements"": [
+    { ""type"": ""text"", ""x"": 50, ""y"": 40, ""fontSize"": 18, ""text"": ""PRODUCT:"" },
+    { ""type"": ""text"", ""x"": 220, ""y"": 40, ""fontSize"": 18, ""binding"": ""product_name"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 80, ""fontSize"": 14, ""text"": ""SKU:"" },
+    { ""type"": ""text"", ""x"": 120, ""y"": 80, ""fontSize"": 14, ""binding"": ""product_code"" },
+    { ""type"": ""text"", ""x"": 280, ""y"": 80, ""fontSize"": 14, ""text"": ""REV:"" },
+    { ""type"": ""text"", ""x"": 340, ""y"": 80, ""fontSize"": 14, ""binding"": ""revision"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 120, ""fontSize"": 14, ""text"": ""LOT:"" },
+    { ""type"": ""text"", ""x"": 120, ""y"": 120, ""fontSize"": 14, ""binding"": ""lot_number"" },
+    { ""type"": ""text"", ""x"": 280, ""y"": 120, ""fontSize"": 14, ""text"": ""BATCH:"" },
+    { ""type"": ""text"", ""x"": 360, ""y"": 120, ""fontSize"": 14, ""binding"": ""batch_number"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 160, ""fontSize"": 14, ""text"": ""PO:"" },
+    { ""type"": ""text"", ""x"": 120, ""y"": 160, ""fontSize"": 14, ""binding"": ""production_order"" },
+    { ""type"": ""text"", ""x"": 280, ""y"": 160, ""fontSize"": 14, ""text"": ""WO:"" },
+    { ""type"": ""text"", ""x"": 340, ""y"": 160, ""fontSize"": 14, ""binding"": ""work_order"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 200, ""fontSize"": 14, ""text"": ""SERIAL:"" },
+    { ""type"": ""text"", ""x"": 150, ""y"": 200, ""fontSize"": 14, ""binding"": ""serial_number"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 240, ""fontSize"": 14, ""text"": ""MFG DATE:"" },
+    { ""type"": ""text"", ""x"": 180, ""y"": 240, ""fontSize"": 14, ""binding"": ""manufacture_date"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 280, ""fontSize"": 14, ""text"": ""OPERATOR:"" },
+    { ""type"": ""text"", ""x"": 180, ""y"": 280, ""fontSize"": 14, ""binding"": ""operator"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 320, ""fontSize"": 14, ""text"": ""STATION:"" },
+    { ""type"": ""text"", ""x"": 160, ""y"": 320, ""fontSize"": 14, ""binding"": ""station"" },
+    { ""type"": ""text"", ""x"": 50, ""y"": 360, ""fontSize"": 14, ""text"": ""ORIGIN:"" },
+    { ""type"": ""text"", ""x"": 150, ""y"": 360, ""fontSize"": 14, ""binding"": ""country"" },
+    { ""type"": ""datamatrix"", ""x"": 500, ""y"": 100, ""magnification"": 6, ""binding"": ""trace_id"" },
+    { ""type"": ""barcode"", ""x"": 50, ""y"": 420, ""height"": 60, ""symbology"": ""Code128"", ""binding"": ""serial_number"" }
+  ]
+}
+";
+        template = LabelTemplate.Create(
+            "Standard Industrial Rubber Label",
+            "Professional standard template containing ECC200 Data Matrix, Code 128 barcode, and planning variables.",
+            203,
+            100,
+            60,
+            defaultJson
+        );
+
+        await db.LabelTemplates.AddAsync(template, ct);
+        await db.SaveChangesAsync(ct);
+    }
+    return Results.Ok(template);
+});
+
+// POST /api/label-templates/preview
+
+app.MapPost("/api/label-templates/preview", async (LabelPreviewRequest req, CancellationToken ct) =>
+{
+    try
+    {
+        using var client = new HttpClient();
+        var dpiStr = req.Dpi == 300 ? "300dpmm" : "8dpmm";
+        var url = $"http://api.labelary.com/v1/printers/{dpiStr}/labels/{req.Width}x{req.Height}/0/";
+        
+        using var content = new StringContent(req.Zpl, System.Text.Encoding.UTF8, "application/x-www-form-urlencoded");
+        client.DefaultRequestHeaders.Add("Accept", "image/png");
+        
+        var response = await client.PostAsync(url, content, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            return Results.BadRequest(new { error = $"Labelary returned error: {response.StatusCode}" });
+        }
+        
+        var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+        return Results.File(bytes, "image/png");
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = $"Failed to proxy preview request: {ex.Message}" });
+    }
 });
 
 // GET /api/label-templates/{id}
@@ -359,3 +447,5 @@ app.MapGet("/api/print-history/{id}", async (string id, IPrintHistoryRepository 
 
 
 app.Run();
+
+public record LabelPreviewRequest(string Zpl, int Dpi = 203, double Width = 4, double Height = 2.4);
