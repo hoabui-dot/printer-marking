@@ -3,7 +3,6 @@ import { templateApi, printerApi } from '@/api/client'
 import { LabelPreview } from '@/components/LabelPreview'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog'
@@ -14,12 +13,9 @@ import {
   Table as TableEl, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import {
-  Card, CardContent, CardHeader, CardTitle, CardDescription,
-} from '@/components/ui/card'
-import {
-  FileText, Plus, Search, RefreshCw, Star, StarOff, Archive, CheckCircle2,
+  FileText, Plus, Search, RefreshCw, Star, Archive, CheckCircle2,
   Download, Upload, Copy, Trash2, Edit2, Eye, Printer as PrinterIcon,
-  History, ChevronDown, ChevronUp, AlertTriangle, X, Check, Settings2,
+  History, AlertTriangle, Check, Settings2,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────

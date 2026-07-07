@@ -752,10 +752,6 @@ app.MapGet("/api/print-history/{id}", async (string id, IPrintHistoryRepository 
 
 app.Run();
 
-// ── Request records ─────────────────────────────────────────────────────────
-public record LabelPreviewRequest(string Zpl, int Dpi = 203, double Width = 4, double Height = 2.4);
-public record AssignPrinterRequest(string PrinterCode, string TemplateId, string? AssignedBy = null);
-
 // ── Default template seeder ─────────────────────────────────────────────────
 static async Task SeedDefaultTemplatesAsync(PrinterDbContext db)
 {
@@ -829,3 +825,7 @@ static async Task SeedDefaultTemplatesAsync(PrinterDbContext db)
     }
     if (changed) await db.SaveChangesAsync();
 }
+
+// ── Request records ─────────────────────────────────────────────────────────
+public record LabelPreviewRequest(string Zpl, int Dpi = 203, double Width = 4, double Height = 2.4);
+public record AssignPrinterRequest(string PrinterCode, string TemplateId, string? AssignedBy = null);
