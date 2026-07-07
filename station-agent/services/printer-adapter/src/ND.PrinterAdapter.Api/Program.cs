@@ -195,25 +195,41 @@ app.MapGet("/api/label-templates/active", async (
     PrinterDbContext db,
     CancellationToken ct) =>
 {
-    var targetTemplate = await db.LabelTemplates.FirstOrDefaultAsync(t => t.Name == "Basic Product Barcode", ct);
+    var targetTemplate = await db.LabelTemplates.FirstOrDefaultAsync(t => t.Name == "Industrial Product QR Label", ct);
     if (targetTemplate is null)
     {
         var defaultJson = @"
 {
-  ""width"": 100,
-  ""height"": 60,
+  ""width"": 50,
+  ""height"": 30,
   ""dpi"": 203,
   ""elements"": [
-    { ""type"": ""barcode"", ""x"": 100, ""y"": 140, ""height"": 180, ""symbology"": ""Code128"", ""binding"": ""serial_number"" }
+    { ""type"": ""text"", ""x"": 15, ""y"": 15, ""fontSize"": 10, ""text"": ""WON SEAL TECH CO., LTD."" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 55, ""fontSize"": 10, ""binding"": ""product_name"", ""defaultValue"": ""Bearing Seal"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 95, ""fontSize"": 9, ""text"": ""Product :"" },
+    { ""type"": ""text"", ""x"": 100, ""y"": 95, ""fontSize"": 9, ""binding"": ""product_code"", ""defaultValue"": ""BEARING-SEAL-01"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 140, ""fontSize"": 9, ""text"": ""Serial  :"" },
+    { ""type"": ""text"", ""x"": 100, ""y"": 140, ""fontSize"": 9, ""binding"": ""serial_number"", ""defaultValue"": ""SN-PO-2026-0001-000001"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 185, ""fontSize"": 9, ""text"": ""Batch   :"" },
+    { ""type"": ""text"", ""x"": 100, ""y"": 185, ""fontSize"": 9, ""binding"": ""batch_number"", ""defaultValue"": ""BATCH-01"" },
+    { ""type"": ""text"", ""x"": 220, ""y"": 185, ""fontSize"": 9, ""text"": ""Rev :"" },
+    { ""type"": ""text"", ""x"": 280, ""y"": 185, ""fontSize"": 9, ""binding"": ""revision"", ""defaultValue"": ""A"" },
+    {
+      ""type"": ""qr"",
+      ""x"": 280,
+      ""y"": 15,
+      ""magnification"": 4,
+      ""payloadTemplate"": ""{\n  \""serial\"": \""{serial_number}\"",\n  \""product\"": \""{product_code}\"",\n  \""revision\"": \""{revision}\"",\n  \""batch\"": \""{batch_number}\""\n}""
+    }
   ]
 }
 ";
         targetTemplate = LabelTemplate.Create(
-            "Basic Product Barcode",
-            "Clean label template displaying only a 1D Code128 barcode and its human-readable serial number.",
+            "Industrial Product QR Label",
+            "Won Seal Tech Co., Ltd. 50x30mm Professional QR Code manufacturing label.",
             203,
-            100,
-            60,
+            50,
+            30,
             defaultJson
         );
 
@@ -226,7 +242,7 @@ app.MapGet("/api/label-templates/active", async (
         var allTemplates = await db.LabelTemplates.ToListAsync(ct);
         foreach (var t in allTemplates)
         {
-            if (t.Name == "Basic Product Barcode")
+            if (t.Name == "Industrial Product QR Label")
                 t.Activate();
             else
                 t.Deactivate();
@@ -235,13 +251,13 @@ app.MapGet("/api/label-templates/active", async (
     }
     else
     {
-        var otherActive = await db.LabelTemplates.AnyAsync(t => t.Name != "Basic Product Barcode" && t.IsActive, ct);
+        var otherActive = await db.LabelTemplates.AnyAsync(t => t.Name != "Industrial Product QR Label" && t.IsActive, ct);
         if (otherActive)
         {
             var allTemplates = await db.LabelTemplates.ToListAsync(ct);
             foreach (var t in allTemplates)
             {
-                if (t.Name == "Basic Product Barcode")
+                if (t.Name == "Industrial Product QR Label")
                     t.Activate();
                 else
                     t.Deactivate();

@@ -8,7 +8,7 @@ import { DispatchDialog, DispatchTarget } from '@/components/DispatchDialog'
 import { useAuth } from '@/context/AuthContext'
 import { PROTECTED_ADMIN_USERNAME, CREATABLE_ROLES } from '@/constants/roles'
 import { translatePermission, translateRole, translateJobType } from '@/lib/utils'
-import { BarcodePreview } from '@/components/BarcodePreview'
+import { LabelPreview } from '@/components/LabelPreview'
 
 // Icons
 import {
@@ -592,7 +592,7 @@ export default function DashboardPage() {
   }, [production?.jobId, production?.jobStatus])
 
 
-  // Note: barcode preview is now rendered client-side by <BarcodePreview> using JsBarcode.
+  // Note: label preview is now rendered client-side by <LabelPreview> from template JSON.
   // The Labelary HTTP pipeline (render → preview) has been removed — no state or effects needed.
 
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false)
@@ -1430,18 +1430,27 @@ export default function DashboardPage() {
                         <span>DPI: {activeTemplate?.dpi || 203} | Code128</span>
                       </div>
 
-                      {/* Barcode preview — rendered by JsBarcode, no external API */}
-                      <div className="w-full min-h-[160px] flex items-center justify-center border border-dashed border-border/60 rounded-lg bg-white dark:bg-zinc-950/30 shadow-inner p-3">
+                      {/* Label preview — rendered client-side from template JSON, no external API */}
+                      <div className="w-full min-h-[200px] flex items-center justify-center border border-dashed border-border/60 rounded-lg p-2 bg-slate-50 dark:bg-zinc-950/40 shadow-inner relative">
                         {(() => {
-                          const barcodeValue = activeJobDetails?.productSerial || ''
+                          const resolvedData = getResolvedData()
+                          const hasData = !!activeJobDetails?.productSerial
+                          
+                          if (!hasData) {
+                            return (
+                              <div className="text-center p-4 text-muted-fg text-sm flex flex-col items-center gap-2">
+                                <PrinterIcon className="h-10 w-10 text-muted-fg/40" />
+                                Chưa có thông tin kết xuất nhãn in hiện tại.
+                              </div>
+                            )
+                          }
+
                           return (
-                            <BarcodePreview
-                              value={barcodeValue}
-                              symbology="CODE128"
-                              showText={true}
-                              lineWidth={1.6}
-                              height={55}
-                              className="w-full"
+                            <LabelPreview
+                              template={activeTemplate}
+                              data={resolvedData}
+                              width={300}
+                              className="rounded-md border border-border shadow-md"
                             />
                           )
                         })()}
@@ -1450,7 +1459,7 @@ export default function DashboardPage() {
                       {/* Serial info row */}
                       {activeJobDetails?.productSerial && (
                         <div className="mt-2 flex items-center justify-between text-xs">
-                          <span className="text-muted-fg">Serial (mã vạch):</span>
+                          <span className="text-muted-fg">Serial (mã vạch/QR):</span>
                           <span className="font-mono font-bold text-foreground text-[11px]">
                             {activeJobDetails.productSerial}
                           </span>
@@ -1458,7 +1467,7 @@ export default function DashboardPage() {
                       )}
 
                       <div className="w-full text-center text-xs text-muted-fg mt-2 italic">
-                        * Bản xem trước được kết xuất trực tiếp từ serial — giống hệt mã vạch in thực tế.
+                        * Bản xem trước tự động cập nhật từ cấu hình Template ZPL.
                       </div>
                     </CardContent>
                   </Card>
@@ -2685,19 +2694,26 @@ export default function DashboardPage() {
                 <span className="col-span-2 font-mono text-foreground">{selectedRecord.productSerial || '—'}</span>
               </div>
 
-              {/* Barcode preview — same value as physically printed label */}
+              {/* Label preview — client-side rendering from active template */}
               {selectedRecord.productSerial && (
-                <div className="border border-border/50 rounded-lg bg-white overflow-hidden">
-                  <div className="px-3 pt-2 text-xs font-semibold text-muted-fg uppercase tracking-wider border-b border-border/30">
-                    Xem trước mã vạch (Code 128)
+                <div className="border border-border/50 rounded-lg bg-slate-50/50 overflow-hidden flex flex-col items-center p-3">
+                  <div className="w-full px-1 pb-2 text-xs font-semibold text-muted-fg uppercase tracking-wider border-b border-border/30 mb-3 text-left">
+                    Xem trước nhãn in thực tế (QR 50x30)
                   </div>
-                  <BarcodePreview
-                    value={selectedRecord.productSerial}
-                    symbology="CODE128"
-                    showText={true}
-                    lineWidth={1.6}
-                    height={50}
-                    className="w-full py-1"
+                  <LabelPreview
+                    template={activeTemplate}
+                    data={{
+                      production_order: selectedRecord.jobNo || '—',
+                      work_order: selectedRecord.productSerial || 'N/A',
+                      product_name: (selectedRecord.productCode || '—') + ' Bearing Seal',
+                      product_code: selectedRecord.productCode || '—',
+                      revision: 'Rev A',
+                      lot_number: 'LOT-2026-07-A',
+                      batch_number: 'BATCH-01',
+                      serial_number: selectedRecord.productSerial || 'N/A',
+                    }}
+                    width={320}
+                    className="rounded-md border border-border shadow-md"
                   />
                 </div>
               )}
@@ -3042,16 +3058,23 @@ export default function DashboardPage() {
                             <StatusBadge status={piece.currentStatus} jobType={piece.jobType} />
                           </div>
 
-                          {/* Barcode preview — client-side JsBarcode, same value as physical print */}
+                          {/* Label preview — client-side dynamic rendering from active template */}
                           {piece.productSerial && (
-                            <div className="bg-white rounded-md border border-border/40 overflow-hidden">
-                              <BarcodePreview
-                                value={piece.productSerial}
-                                symbology="CODE128"
-                                showText={true}
-                                lineWidth={1.2}
-                                height={36}
-                                className="w-full"
+                            <div className="flex justify-center bg-white rounded-md border border-border/40 overflow-hidden p-1">
+                              <LabelPreview
+                                template={activeTemplate}
+                                data={{
+                                  production_order: selectedDetailRecord?.jobNo || '—',
+                                  work_order: piece.productSerial || 'N/A',
+                                  product_name: (selectedDetailRecord?.productCode || '—') + ' Bearing Seal',
+                                  product_code: selectedDetailRecord?.productCode || '—',
+                                  revision: 'Rev A',
+                                  lot_number: 'LOT-2026-07-A',
+                                  batch_number: 'BATCH-01',
+                                  serial_number: piece.productSerial || 'N/A',
+                                }}
+                                width={180}
+                                className="rounded border border-border/50"
                               />
                             </div>
                           )}

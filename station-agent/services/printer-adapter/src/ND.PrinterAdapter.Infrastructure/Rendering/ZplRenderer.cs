@@ -138,11 +138,27 @@ public sealed class ZplRenderer : ILabelRenderer
         var y = GetInt(el, "y", 0);
         var magnification = GetInt(el, "magnification", 4);
         var errorCorrection = el.TryGetProperty("errorCorrection", out var ec) ? ec.GetString() ?? "M" : "M";
-        var value = ResolveBinding(el, data);
+        var value = ResolveQrPayload(el, data);
 
         // ^BQ: QR Code. Format: ^BQa,b where a=model(2=QRCode), b=magnification(1-10)
         // Then ^FD followed by error correction level + A (Auto) + data + ^FS
         return $"^FO{x},{y}^BQN,2,{magnification}^FD{errorCorrection}A,{EscapeZpl(value)}^FS\n";
+    }
+
+    private string ResolveQrPayload(JsonElement el, IDictionary<string, string> data)
+    {
+        if (el.TryGetProperty("payloadTemplate", out var ptProp) && !string.IsNullOrWhiteSpace(ptProp.GetString()))
+        {
+            var template = ptProp.GetString()!;
+            var sb = new StringBuilder(template);
+            foreach (var kvp in data)
+            {
+                sb.Replace("{" + kvp.Key + "}", kvp.Value);
+            }
+            return sb.ToString();
+        }
+
+        return ResolveBinding(el, data);
     }
 
     private string RenderDataMatrix(JsonElement el, IDictionary<string, string> data, int dpi)
