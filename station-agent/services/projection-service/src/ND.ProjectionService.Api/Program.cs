@@ -356,8 +356,9 @@ app.MapGet("/api/projection/diagnostics/health", async (
     var mqttPort = 1883;
     report["mqtt"] = await CheckTcpAsync(mqttHost, mqttPort);
 
-    // 4. Printer
-    report["printer"] = await CheckTcpAsync("device-simulator", 9100);
+    // 4. Printer (now self-hosted in printer-adapter)
+    var printerAdapterHost = configuration["PRINTER_ADAPTER_HOST"] ?? "printer-adapter";
+    report["printer"] = await CheckTcpAsync(printerAdapterHost, 9100);
 
     // 5. Laser
     report["laser"] = await CheckTcpAsync("device-simulator", 8901);
@@ -472,6 +473,68 @@ app.MapPut("/api/projection/config/{key}", async (
     {
         return Results.Problem(ex.Message);
     }
+});
+
+// ── Printer Management Proxy ──────────────────────────────────────────────────
+// Forwards kiosk-ui printer management requests to printer-adapter.
+// printer-adapter is the single source of truth for all printer devices.
+
+app.MapGet("/api/projection/printers/ready", async (
+    IHttpClientFactory httpClientFactory, IConfiguration configuration, CancellationToken ct) =>
+{
+    var adapterUrl = configuration["PRINTER_ADAPTER_URL"] ?? "http://printer-adapter:5003";
+    using var client = httpClientFactory.CreateClient();
+    try
+    {
+        var res = await client.GetAsync($"{adapterUrl}/api/printers/ready", ct);
+        var body = await res.Content.ReadAsStringAsync(ct);
+        return Results.Content(body, "application/json", statusCode: (int)res.StatusCode);
+    }
+    catch (Exception ex) { return Results.Problem(ex.Message); }
+});
+
+app.MapGet("/api/projection/printers/active", async (
+    IHttpClientFactory httpClientFactory, IConfiguration configuration, CancellationToken ct) =>
+{
+    var adapterUrl = configuration["PRINTER_ADAPTER_URL"] ?? "http://printer-adapter:5003";
+    using var client = httpClientFactory.CreateClient();
+    try
+    {
+        var res = await client.GetAsync($"{adapterUrl}/api/printers/active", ct);
+        var body = await res.Content.ReadAsStringAsync(ct);
+        return Results.Content(body, "application/json", statusCode: (int)res.StatusCode);
+    }
+    catch (Exception ex) { return Results.Problem(ex.Message); }
+});
+
+app.MapPost("/api/projection/printers/{code}/activate", async (
+    string code, JsonElement reqBody,
+    IHttpClientFactory httpClientFactory, IConfiguration configuration, CancellationToken ct) =>
+{
+    var adapterUrl = configuration["PRINTER_ADAPTER_URL"] ?? "http://printer-adapter:5003";
+    using var client = httpClientFactory.CreateClient();
+    try
+    {
+        var res = await client.PostAsJsonAsync($"{adapterUrl}/api/printers/{code}/activate", reqBody, ct);
+        var body = await res.Content.ReadAsStringAsync(ct);
+        return Results.Content(body, "application/json", statusCode: (int)res.StatusCode);
+    }
+    catch (Exception ex) { return Results.Problem(ex.Message); }
+});
+
+app.MapPost("/api/projection/printers/{code}/deactivate", async (
+    string code,
+    IHttpClientFactory httpClientFactory, IConfiguration configuration, CancellationToken ct) =>
+{
+    var adapterUrl = configuration["PRINTER_ADAPTER_URL"] ?? "http://printer-adapter:5003";
+    using var client = httpClientFactory.CreateClient();
+    try
+    {
+        var res = await client.PostAsync($"{adapterUrl}/api/printers/{code}/deactivate", null, ct);
+        var body = await res.Content.ReadAsStringAsync(ct);
+        return Results.Content(body, "application/json", statusCode: (int)res.StatusCode);
+    }
+    catch (Exception ex) { return Results.Problem(ex.Message); }
 });
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "projection-service" }));

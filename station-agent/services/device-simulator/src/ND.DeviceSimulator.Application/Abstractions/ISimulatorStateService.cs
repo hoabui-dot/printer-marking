@@ -3,17 +3,11 @@ using ND.DeviceSimulator.Application.Dtos;
 namespace ND.DeviceSimulator.Application.Abstractions;
 
 /// <summary>
-/// Singleton in-memory state for all 5 virtual devices.
-/// Each virtual device reads/writes its own state slice.
+/// Singleton in-memory state for laser, vision, PLC, and gateway virtual devices.
+/// Printer simulation has been moved to printer-adapter (VirtualPrinterSimulator).
 /// </summary>
 public interface ISimulatorStateService
 {
-    // ── Printer ──────────────────────────────────────────────────────────────
-    void SetPrinterOnline(bool online);
-    void RecordPrinterJob(string? zplContent, string result);
-    PrinterStateDto GetPrinterState();
-    System.Collections.Generic.IReadOnlyList<SimulatedPrinterDto> GetPrinters();
-
     // ── Laser ─────────────────────────────────────────────────────────────────
     void SetLaserOnline(bool online);
     void RecordLaserCommand(string command, string result);

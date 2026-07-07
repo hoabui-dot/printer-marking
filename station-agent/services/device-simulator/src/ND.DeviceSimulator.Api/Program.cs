@@ -80,12 +80,10 @@ try
     builder.Services.AddSingleton<VirtualVisionService>();
     builder.Services.AddSingleton<VirtualFactoryGateway>();
     builder.Services.AddSingleton<VirtualPlcServer>();
-    builder.Services.AddSingleton<VirtualPrinterServer>();
     builder.Services.AddSingleton<VirtualLaserServer>();
 
     builder.Services.AddHostedService(sp => sp.GetRequiredService<VirtualFactoryGateway>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<VirtualPlcServer>());
-    builder.Services.AddHostedService(sp => sp.GetRequiredService<VirtualPrinterServer>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<VirtualLaserServer>());
     builder.Services.AddHostedService<ConnectionCheckWorker>();
     builder.Services.AddHostedService<MesEventForwarder>();
@@ -127,17 +125,6 @@ try
     // ── Status snapshot ───────────────────────────────────────────────────────
     app.MapGet("/api/status", (ISimulatorStateService state) =>
         Results.Ok(state.GetStatus()));
-
-    // ── Printer ───────────────────────────────────────────────────────────────
-    app.MapGet("/api/printer/jobs", async (SimulatorDbContext db, int limit = 50) =>
-    {
-        var jobs = await db.PrinterJobs
-            .OrderByDescending(j => j.ReceivedAt)
-            .Take(Math.Clamp(limit, 1, 500))
-            .ToListAsync();
-        return Results.Ok(jobs.Select(j => new PrinterJobDto(
-            j.Id, j.Status, j.ZplContent?[..Math.Min(200, j.ZplContent.Length)], j.DurationMs, j.ReceivedAt)));
-    });
 
     // ── Laser ─────────────────────────────────────────────────────────────────
     app.MapGet("/api/laser/commands", async (SimulatorDbContext db, int limit = 50) =>
@@ -223,53 +210,6 @@ try
     {
         await gateway.DisconnectGatewayAsync();
         return Results.Ok(new { status = "disconnected" });
-    });
-
-    // ── Printer Connect/Disconnect ───────────────────────────────────────────
-    app.MapGet("/api/devices/printers", (ISimulatorStateService state) =>
-    {
-        return Results.Ok(state.GetPrinters());
-    });
-
-    app.MapPost("/api/printer/connect", async (string? code, VirtualPrinterServer printer) =>
-    {
-        await printer.ConnectPrinterAsync(code);
-        return Results.Ok(new { status = "connected", code });
-    });
-
-    app.MapPost("/api/printer/disconnect", async (string? code, VirtualPrinterServer printer) =>
-    {
-        await printer.DisconnectPrinterAsync(code);
-        return Results.Ok(new { status = "disconnected", code });
-    });
-
-    // GET /api/printer/mode — returns current simulator failure mode (for compatibility, references Printer-01)
-    app.MapGet("/api/printer/mode", (string? code, ISimulatorStateService state) =>
-    {
-        var targetCode = code ?? "Printer-01";
-        var p = state.GetPrinters().FirstOrDefault(x => x.PrinterCode.Equals(targetCode, StringComparison.OrdinalIgnoreCase));
-        if (p == null) return Results.NotFound();
-        Enum.TryParse<ND.DeviceSimulator.Infrastructure.VirtualDevices.PrinterSimulatorMode>(p.SimulatorMode, true, out var mode);
-        return Results.Ok(new
-        {
-            code = targetCode,
-            mode = (int)mode,
-            modeName = p.SimulatorMode,
-            availableModes = Enum.GetValues<ND.DeviceSimulator.Infrastructure.VirtualDevices.PrinterSimulatorMode>()
-                .Select(m => new { value = (int)m, name = m.ToString() })
-        });
-    });
-
-    // POST /api/printer/mode — set simulator failure mode
-    app.MapPost("/api/printer/mode", (SetPrinterModeRequest req, string? code, VirtualPrinterServer printer) =>
-    {
-        if (!Enum.IsDefined(typeof(ND.DeviceSimulator.Infrastructure.VirtualDevices.PrinterSimulatorMode), req.Mode))
-            return Results.BadRequest(new { error = $"Invalid mode value: {req.Mode}. Valid range: 0-10" });
-
-        var targetCode = code ?? "Printer-01";
-        var modeName = ((ND.DeviceSimulator.Infrastructure.VirtualDevices.PrinterSimulatorMode)req.Mode).ToString();
-        printer.SetPrinterMode(targetCode, modeName);
-        return Results.Ok(new { code = targetCode, mode = req.Mode, modeName });
     });
 
     // ── Laser Connect/Disconnect ─────────────────────────────────────────────
@@ -1092,7 +1032,6 @@ try
     // ── Test Console Reset ───────────────────────────────────────────────────
     // Resets all virtual devices to online state for a clean test run
     app.MapPost("/api/test/reset", async (
-        VirtualPrinterServer printer,
         VirtualLaserServer laser,
         VirtualFactoryGateway gateway,
         ISimulatorStateService state,
@@ -1100,7 +1039,6 @@ try
     {
         try
         {
-            await printer.ConnectPrinterAsync();
             await laser.ConnectLaserAsync();
             state.SetVisionOnline(true);
 
@@ -1268,8 +1206,6 @@ public record TriggerJobRequest(
     string? Notes = null
 );
 
-
-public record SetPrinterModeRequest(int Mode);
 
 public record CreateGatewayOrderRequest(
     [property: System.Text.Json.Serialization.JsonPropertyName("production_order_id")] string ProductionOrderId,

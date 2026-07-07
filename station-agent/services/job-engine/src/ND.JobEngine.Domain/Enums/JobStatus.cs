@@ -4,6 +4,7 @@ public static class JobStatus
 {
     public const string Created = "CREATED";
     public const string Queued = "QUEUED";
+    public const string Waiting = "WAITING";
     public const string Processing = "PROCESSING";
     public const string WaitRework = "WAIT_REWORK";
     public const string Completed = "COMPLETED";

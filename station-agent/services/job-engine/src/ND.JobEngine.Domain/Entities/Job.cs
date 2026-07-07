@@ -79,7 +79,7 @@ public sealed class Job : AuditableEntity
 
     public void StartProcessing()
     {
-        if (CurrentStatus != JobStatus.Queued && CurrentStatus != JobStatus.WaitRework)
+        if (CurrentStatus != JobStatus.Queued && CurrentStatus != JobStatus.WaitRework && CurrentStatus != JobStatus.Waiting)
             throw new InvalidJobTransitionException(Id, CurrentStatus, JobStatus.Processing);
         CurrentStatus = JobStatus.Processing;
         Touch();
@@ -93,10 +93,19 @@ public sealed class Job : AuditableEntity
         Touch();
     }
 
-    public void Fail()
+    public void Fail(string? reasonCode = null, string? reasonDescription = null)
     {
         EnsureCanTransition(JobStatus.Failed);
         CurrentStatus = JobStatus.Failed;
+        ReasonCode = reasonCode;
+        ReasonDescription = reasonDescription;
+        Touch();
+    }
+
+    public void SetWaiting()
+    {
+        EnsureCanTransition(JobStatus.Waiting);
+        CurrentStatus = JobStatus.Waiting;
         Touch();
     }
 
@@ -126,9 +135,10 @@ public sealed class Job : AuditableEntity
     {
         var allowed = targetStatus switch
         {
-            JobStatus.Queued => CurrentStatus == JobStatus.Created,
+            JobStatus.Queued => CurrentStatus == JobStatus.Created || CurrentStatus == JobStatus.Waiting,
             JobStatus.Completed => CurrentStatus == JobStatus.Processing,
-            JobStatus.Failed => CurrentStatus == JobStatus.Processing,
+            JobStatus.Failed => CurrentStatus == JobStatus.Processing || CurrentStatus == JobStatus.Queued || CurrentStatus == JobStatus.Waiting,
+            JobStatus.Waiting => CurrentStatus == JobStatus.Queued || CurrentStatus == JobStatus.Created,
             _ => false
         };
 

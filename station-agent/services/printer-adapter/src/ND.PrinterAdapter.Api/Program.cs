@@ -8,6 +8,7 @@ using ND.PrinterAdapter.Infrastructure.DeviceAdapters;
 using ND.PrinterAdapter.Infrastructure.Messaging;
 using ND.PrinterAdapter.Infrastructure.Persistence;
 using ND.PrinterAdapter.Infrastructure.Rendering;
+using ND.PrinterAdapter.Infrastructure.Simulation;
 using ND.SharedKernel.Abstractions;
 using ND.SharedKernel.Time;
 using StackExchange.Redis;
@@ -61,6 +62,10 @@ builder.Services.AddHostedService<JobProcessingConsumer>();
 builder.Services.AddHostedService<HeartbeatHostedService>();
 builder.Services.AddHostedService<PrinterHealthService>();
 
+// Virtual printer simulator — self-hosted TCP listeners replacing device-simulator's printer TCP server
+builder.Services.AddSingleton<VirtualPrinterSimulator>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<VirtualPrinterSimulator>());
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
@@ -86,6 +91,11 @@ using (var scope = app.Services.CreateScope())
     {
         "ALTER TABLE printer_printers ADD COLUMN driver_type TEXT NOT NULL DEFAULT 'simulation'",
         "ALTER TABLE printer_printers ADD COLUMN cups_queue_name TEXT",
+        "ALTER TABLE printer_printers ADD COLUMN is_active_for_work INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE printer_printers ADD COLUMN active_template_id TEXT",
+        "ALTER TABLE printer_printers ADD COLUMN active_template_name TEXT",
+        "ALTER TABLE printer_printers ADD COLUMN activated_at TEXT",
+        "ALTER TABLE printer_printers ADD COLUMN activated_by TEXT",
         "ALTER TABLE label_templates ADD COLUMN status TEXT NOT NULL DEFAULT 'published'",
         "ALTER TABLE label_templates ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE label_templates ADD COLUMN created_by TEXT",
@@ -109,6 +119,16 @@ using (var scope = app.Services.CreateScope())
         }
         catch { /* Column/table already exists — safe to ignore */ }
     }
+
+    // Migrate any existing simulation printers still pointing to old device-simulator host -> localhost
+    try
+    {
+        using var migCmd = conn.CreateCommand();
+        migCmd.CommandText = "UPDATE printer_printers SET ip_address = 'localhost' WHERE driver_type = 'simulation' AND ip_address != 'localhost'";
+        await migCmd.ExecuteNonQueryAsync();
+    }
+    catch { /* ignore */ }
+
     await conn.CloseAsync();
 
     // Seed default printers (including the physical CUPS printer)
@@ -130,8 +150,103 @@ app.MapGet("/api/printers", async (PrinterDbContext db, CancellationToken ct) =>
     {
         p.Id, p.PrinterCode, p.DisplayName, p.IpAddress, p.Port,
         p.Protocol, p.Vendor, p.Status, p.DriverType, p.CupsQueueName,
-        p.GroupId, p.LastHeartbeatAt
+        p.GroupId, p.LastHeartbeatAt,
+        p.IsActiveForWork, p.ActiveTemplateId, p.ActiveTemplateName, p.ActivatedAt, p.ActivatedBy
     }).ToListAsync(ct)));
+
+// GET /api/printers/ready — printers that are online and available for work registration
+app.MapGet("/api/printers/ready", async (PrinterDbContext db, CancellationToken ct) =>
+    Results.Ok(await db.Printers
+        .Where(p => p.Status == "ONLINE" || p.Status == "IDLE" || p.Status == "Idle")
+        .Select(p => new
+        {
+            p.Id, p.PrinterCode, p.DisplayName, p.IpAddress, p.Port,
+            p.Protocol, p.Vendor, p.Status, p.DriverType, p.CupsQueueName,
+            p.LastHeartbeatAt, p.IsActiveForWork, p.ActiveTemplateId, p.ActiveTemplateName
+        }).ToListAsync(ct)));
+
+// GET /api/printers/active — printers activated for production work
+app.MapGet("/api/printers/active", async (PrinterDbContext db, CancellationToken ct) =>
+    Results.Ok(await db.Printers
+        .Where(p => p.IsActiveForWork)
+        .Select(p => new
+        {
+            p.Id, p.PrinterCode, p.DisplayName, p.IpAddress, p.Port,
+            p.Protocol, p.Vendor, p.Status, p.DriverType, p.CupsQueueName,
+            p.LastHeartbeatAt, p.IsActiveForWork, p.ActiveTemplateId, p.ActiveTemplateName,
+            p.ActivatedAt, p.ActivatedBy
+        }).ToListAsync(ct)));
+
+// POST /api/printers/{code}/activate — add printer to active work list with mandatory template
+app.MapPost("/api/printers/{code}/activate", async (
+    string code,
+    JsonElement body,
+    PrinterDbContext db,
+    IUnitOfWork uow,
+    CancellationToken ct) =>
+{
+    var printer = await db.Printers.FirstOrDefaultAsync(p => p.PrinterCode == code, ct);
+    if (printer is null)
+        return Results.NotFound(new { error = $"Printer '{code}' not found" });
+
+    if (!body.TryGetProperty("templateId", out var tidProp) || string.IsNullOrEmpty(tidProp.GetString()))
+        return Results.BadRequest(new { error = "templateId is required when activating a printer" });
+    var templateId = tidProp.GetString()!;
+
+    // Validate template exists
+    var template = await db.LabelTemplates.FirstOrDefaultAsync(t => t.Id == templateId, ct);
+    if (template is null)
+        return Results.BadRequest(new { error = $"Template '{templateId}' not found" });
+    if (template.Status == "archived")
+        return Results.BadRequest(new { error = "Cannot assign an archived template to a printer" });
+
+    var activatedBy = body.TryGetProperty("activatedBy", out var byProp) ? byProp.GetString() : null;
+    printer.Activate(templateId, template.Name, activatedBy);
+    await uow.SaveChangesAsync(ct);
+
+    return Results.Ok(new
+    {
+        printer.PrinterCode, printer.DisplayName, printer.IsActiveForWork,
+        printer.ActiveTemplateId, printer.ActiveTemplateName, printer.ActivatedAt
+    });
+});
+
+// POST /api/printers/{code}/deactivate — remove printer from active work list
+app.MapPost("/api/printers/{code}/deactivate", async (
+    string code,
+    PrinterDbContext db,
+    IUnitOfWork uow,
+    CancellationToken ct) =>
+{
+    var printer = await db.Printers.FirstOrDefaultAsync(p => p.PrinterCode == code, ct);
+    if (printer is null)
+        return Results.NotFound(new { error = $"Printer '{code}' not found" });
+
+    printer.Deactivate();
+    await uow.SaveChangesAsync(ct);
+    return Results.Ok(new { printer.PrinterCode, printer.IsActiveForWork });
+});
+
+// GET /api/simulation/printers — status of all virtual printer simulators
+app.MapGet("/api/simulation/printers", (VirtualPrinterSimulator simulator) =>
+    Results.Ok(simulator.GetStatus()));
+
+// POST /api/simulation/printers/{code}/mode — set failure mode for a simulated printer
+app.MapPost("/api/simulation/printers/{code}/mode", (string code, JsonElement body, VirtualPrinterSimulator simulator) =>
+{
+    var mode = body.TryGetProperty("mode", out var m) ? m.GetString() ?? "Success" : "Success";
+    simulator.SetMode(code, mode);
+    return Results.Ok(new { printerCode = code, mode });
+});
+
+// POST /api/simulation/printers/{code}/connect|disconnect
+app.MapPost("/api/simulation/printers/{code}/connect",
+    async (string code, VirtualPrinterSimulator simulator, CancellationToken ct) =>
+    { await simulator.SetOnlineAsync(code, true, ct); return Results.Ok(); });
+
+app.MapPost("/api/simulation/printers/{code}/disconnect",
+    async (string code, VirtualPrinterSimulator simulator, CancellationToken ct) =>
+    { await simulator.SetOnlineAsync(code, false, ct); return Results.Ok(); });
 
 app.MapGet("/api/printers/discover", async (IPrinterDriverFactory driverFactory, ILoggerFactory loggerFactory, CancellationToken ct) =>
 {

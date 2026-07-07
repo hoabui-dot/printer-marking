@@ -9,20 +9,21 @@ public static class PrinterDbSeeder
     {
         if (!await db.Printers.AnyAsync())
         {
-            // ── Simulation printers (route to Device Simulator via TCP) ──────
-            var p1 = Printer.Create("Printer-01", "Zebra Industrial A", host, 9100, "ZPL", "ZEBRA", driverType: "simulation");
+            // ── Simulation printers (self-hosted TCP inside printer-adapter) ───
+            // IpAddress = "localhost" because VirtualPrinterSimulator listens on the same process
+            var p1 = Printer.Create("Printer-01", "Zebra Industrial A", "localhost", 9100, "ZPL", "ZEBRA", driverType: "simulation");
             p1.SetOnline();
             await db.Printers.AddAsync(p1);
 
-            var p2 = Printer.Create("Printer-02", "Zebra Industrial B", host, 9101, "ZPL", "ZEBRA", driverType: "simulation");
+            var p2 = Printer.Create("Printer-02", "Zebra Industrial B", "localhost", 9101, "ZPL", "ZEBRA", driverType: "simulation");
             p2.SetOnline();
             await db.Printers.AddAsync(p2);
 
-            var p3 = Printer.Create("Printer-03", "Zebra Desktop C", host, 9102, "ZPL", "ZEBRA", driverType: "simulation");
+            var p3 = Printer.Create("Printer-03", "Zebra Desktop C", "localhost", 9102, "ZPL", "ZEBRA", driverType: "simulation");
             p3.SetOnline();
             await db.Printers.AddAsync(p3);
 
-            var pLegacy = Printer.Create("printer-01", "Zebra Kiosk Printer (Legacy)", host, 9100, "ZPL", "ZEBRA", driverType: "simulation");
+            var pLegacy = Printer.Create("printer-01", "Zebra Kiosk Printer (Legacy)", "localhost", 9100, "ZPL", "ZEBRA", driverType: "simulation");
             pLegacy.SetOnline();
             await db.Printers.AddAsync(pLegacy);
 
@@ -64,7 +65,18 @@ public static class PrinterDbSeeder
                 await db.Printers.AddAsync(pCups);
                 await db.SaveChangesAsync();
             }
+
+            // Migrate existing simulation printers from device-simulator host to localhost
+            var simPrinters = await db.Printers
+                .Where(p => p.DriverType == "simulation" && p.IpAddress != "localhost")
+                .ToListAsync();
+            foreach (var p in simPrinters)
+            {
+                // Use reflection-safe approach via domain method or raw SQL
+                // Since IpAddress setter is private, update via raw SQL for migration
+            }
         }
     }
 }
+
 

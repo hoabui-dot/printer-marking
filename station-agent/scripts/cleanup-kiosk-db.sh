@@ -15,20 +15,23 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 KIOSK_DB_PATH="$ROOT_DIR/services/kiosk-ui/src/ND.KioskUi.Api/data/kiosk.db"
+KIOSK_PROD_DB_PATH="$ROOT_DIR/sqlite-databases/kiosk.db"
 
-if [ -f "$KIOSK_DB_PATH" ]; then
-    echo "[*] Deleting Kiosk SQLite database files..."
-    rm -f "$KIOSK_DB_PATH"
-    rm -f "${KIOSK_DB_PATH}-wal"
-    rm -f "${KIOSK_DB_PATH}-shm"
-    echo "[+] Deleted Kiosk database files successfully."
-else
-    echo "[+] Kiosk database file not found (already clean)."
-fi
+echo "[*] Deleting Kiosk SQLite database files..."
+rm -f "$KIOSK_DB_PATH" "${KIOSK_DB_PATH}-wal" "${KIOSK_DB_PATH}-shm"
+rm -f "$KIOSK_PROD_DB_PATH" "${KIOSK_PROD_DB_PATH}-wal" "${KIOSK_PROD_DB_PATH}-shm"
+echo "[+] Deleted Kiosk database files successfully."
 
-# Re-create and seed the database file immediately
-echo "[*] Initializing and seeding Kiosk DB with super user (admin123 / admin123)..."
+# Re-create and seed the database files immediately
+echo "[*] Initializing and seeding Kiosk DB..."
 cd "$ROOT_DIR/services/kiosk-ui/src/ND.KioskUi.Api"
+
+echo "  [-] Seeding local dev database..."
 dotnet run -- --seed-only
+
+if [ -d "$ROOT_DIR/sqlite-databases" ]; then
+    echo "  [-] Seeding production volume database..."
+    SQLITE_KIOSK_PATH="$KIOSK_PROD_DB_PATH" dotnet run -- --seed-only
+fi
 
 echo "[+] Done. Kiosk DB has been re-created and seeded."

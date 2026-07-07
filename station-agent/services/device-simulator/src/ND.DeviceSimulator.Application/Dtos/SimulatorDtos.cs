@@ -2,14 +2,6 @@ namespace ND.DeviceSimulator.Application.Dtos;
 
 // ── Device State Snapshots (polled or pushed via SignalR) ─────────────────────
 
-public record PrinterStateDto(
-    bool Online,
-    int JobCount,
-    string? LastZplPreview,    // first 200 chars of last ZPL
-    string? LastResult,        // PRINTED / FAILED
-    string? LastJobAt,
-    int Port);
-
 public record LaserStateDto(
     bool Online,
     int CommandCount,
@@ -42,37 +34,13 @@ public record GatewayStateDto(
     string? LastEventAt,
     string? LastTopic);
 
-public record SimulatedPrinterDto(
-    string PrinterCode,
-    string Name,
-    int Port,
-    string IpAddress,
-    string Status,
-    bool Online,
-    int MediaLevel,
-    int RibbonLevel,
-    string? LastZplPreview,
-    string? LastResult,
-    string? LastJobAt,
-    int JobCount,
-    string SimulatorMode);
-
 public record SimulatorStatusDto(
-    PrinterStateDto Printer,
     LaserStateDto Laser,
     VisionStateDto Vision,
     PlcStateDto Plc,
-    GatewayStateDto Gateway,
-    System.Collections.Generic.IReadOnlyList<SimulatedPrinterDto> Printers);
+    GatewayStateDto Gateway);
 
 // ── Event DTOs (broadcast via SignalR) ───────────────────────────────────────
-
-public record PrinterJobDto(
-    string Id,
-    string Status,
-    string? ZplPreview,
-    int DurationMs,
-    string ReceivedAt);
 
 public record LaserCommandDto(
     string Id,

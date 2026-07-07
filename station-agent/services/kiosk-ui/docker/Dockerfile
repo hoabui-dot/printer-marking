@@ -34,8 +34,8 @@ COPY services/kiosk-ui/ services/kiosk-ui/
 # Inject the Vite build output into wwwroot
 COPY --from=frontend-build /src/ND.KioskUi.Api/wwwroot/ services/kiosk-ui/src/ND.KioskUi.Api/wwwroot/
 
-RUN dotnet restore services/kiosk-ui/src/ND.KioskUi.Api/ND.KioskUi.Api.csproj
-RUN dotnet publish services/kiosk-ui/src/ND.KioskUi.Api/ND.KioskUi.Api.csproj -c Release -o /app/publish --no-restore /p:UseSharedCompilation=false /p:ConcurrentBuild=false
+RUN dotnet restore services/kiosk-ui/src/ND.KioskUi.Api/ND.KioskUi.Api.csproj -a $TARGETARCH
+RUN dotnet publish services/kiosk-ui/src/ND.KioskUi.Api/ND.KioskUi.Api.csproj -c Release -o /app/publish --no-restore -a $TARGETARCH /p:UseSharedCompilation=false /p:ConcurrentBuild=false
 # Stage 3: Runtime
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app

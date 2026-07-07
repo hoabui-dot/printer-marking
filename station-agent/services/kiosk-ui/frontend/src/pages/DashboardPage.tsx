@@ -10,6 +10,7 @@ import { PROTECTED_ADMIN_USERNAME, CREATABLE_ROLES } from '@/constants/roles'
 import { translatePermission, translateRole, translateJobType } from '@/lib/utils'
 import { LabelPreview } from '@/components/LabelPreview'
 import { LabelTemplatesTab } from '@/components/LabelTemplatesTab'
+import { PrinterManagementTab } from '@/components/PrinterManagementTab'
 
 // Icons
 import {
@@ -47,7 +48,7 @@ import {
 
 import { FileText } from 'lucide-react'
 
-type KioskTab = 'dashboard' | 'history' | 'traceability' | 'orders' | 'queue' | 'alarms' | 'config' | 'diagnostics' | 'connectivity' | 'rbac' | 'templates'
+type KioskTab = 'dashboard' | 'history' | 'traceability' | 'orders' | 'queue' | 'alarms' | 'config' | 'diagnostics' | 'connectivity' | 'rbac' | 'templates' | 'printers'
 
 const getTodayStr = () => {
   const d = new Date()
@@ -981,6 +982,7 @@ export default function DashboardPage() {
     { key: 'config' as KioskTab, label: 'Cấu hình thiết bị', icon: Settings, show: isSuperAdmin },
     { key: 'diagnostics' as KioskTab, label: 'Chẩn đoán hệ thống', icon: LineChart, show: true },
     { key: 'connectivity' as KioskTab, label: 'Kết nối mạng', icon: Cpu, show: true },
+    { key: 'printers' as KioskTab, label: 'Thiết bị in', icon: PrinterIcon, show: true },
     { key: 'rbac' as KioskTab, label: 'Quản lý phân quyền', icon: Users, show: isSuperAdmin },
     { key: 'templates' as KioskTab, label: 'Label Templates', icon: FileText, show: true },
   ]
@@ -2507,6 +2509,13 @@ export default function DashboardPage() {
           {tab === 'templates' && (
             <div className="max-w-7xl mx-auto w-full">
               <LabelTemplatesTab />
+            </div>
+          )}
+
+          {/* ════ TAB: PRINTER MANAGEMENT ════════════════════════ */}
+          {tab === 'printers' && (
+            <div className="max-w-7xl mx-auto w-full">
+              <PrinterManagementTab />
             </div>
           )}
 

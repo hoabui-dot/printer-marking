@@ -40,22 +40,7 @@ export function useSimulator() {
 }
 
 export function usePrinterJobs() {
-  const [jobs, setJobs] = useState<PrinterJob[]>([])
-  const hubRef = useRef<signalR.HubConnection | null>(null)
-
-  useEffect(() => {
-    fetch('/api/printer/jobs').then(r => r.json()).then(setJobs)
-
-    const hub = new signalR.HubConnectionBuilder()
-      .withUrl('/hubs/simulator').withAutomaticReconnect().build()
-    hub.on('PrinterJobReceived', (job: PrinterJob) =>
-      setJobs(prev => [job, ...prev].slice(0, 100)))
-    hub.start().catch(console.error)
-    hubRef.current = hub
-    return () => { hub.stop() }
-  }, [])
-
-  return jobs
+  return []
 }
 
 export function useLaserCommands() {

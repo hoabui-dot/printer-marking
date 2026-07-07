@@ -7,7 +7,6 @@ namespace ND.DeviceSimulator.Application.Abstractions;
 /// </summary>
 public interface ISimulatorClient
 {
-    Task PrinterJobReceived(PrinterJobDto job);
     Task LaserCommandExecuted(LaserCommandDto cmd);
     Task VisionVerified(VisionResultDto result);
     Task PlcRegisterChanged(PlcRegisterDto register);

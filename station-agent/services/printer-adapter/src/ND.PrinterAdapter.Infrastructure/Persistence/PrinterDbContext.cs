@@ -35,6 +35,11 @@ public sealed class PrinterDbContext : DbContext, IUnitOfWork
             e.Property(x => x.LastHeartbeatAt).HasColumnName("last_heartbeat_at");
             e.Property(x => x.DriverType).HasColumnName("driver_type").HasDefaultValue("simulation").IsRequired();
             e.Property(x => x.CupsQueueName).HasColumnName("cups_queue_name");
+            e.Property(x => x.IsActiveForWork).HasColumnName("is_active_for_work").HasDefaultValue(false);
+            e.Property(x => x.ActiveTemplateId).HasColumnName("active_template_id");
+            e.Property(x => x.ActiveTemplateName).HasColumnName("active_template_name");
+            e.Property(x => x.ActivatedAt).HasColumnName("activated_at");
+            e.Property(x => x.ActivatedBy).HasColumnName("activated_by");
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         });
 

@@ -11,14 +11,6 @@ namespace ND.DeviceSimulator.Infrastructure.State;
 /// </summary>
 public sealed class SimulatorStateService : ISimulatorStateService
 {
-    // ── Printer ───────────────────────────────────────────────────────────────
-    private volatile bool _printerOnline;
-    private int _printerJobCount;
-    private volatile string? _printerLastZpl;
-    private volatile string? _printerLastResult;
-    private volatile string? _printerLastJobAt;
-    private const int PrinterPort = 9100;
-
     // ── Laser ─────────────────────────────────────────────────────────────────
     private volatile bool _laserOnline;
     private int _laserCommandCount;
@@ -62,46 +54,6 @@ public sealed class SimulatorStateService : ISimulatorStateService
 
     private readonly ConcurrentDictionary<string, string> _scenarios = new(StringComparer.OrdinalIgnoreCase);
     private volatile string? _activeJobId;
-
-    // ── Printer ───────────────────────────────────────────────────────────────
-    private readonly List<SimulatedPrinter> _printers = new()
-    {
-        new() { PrinterCode = "Printer-01", Port = 9100, Name = "Zebra Industrial A", MediaLevel = 94, RibbonLevel = 86 },
-        new() { PrinterCode = "Printer-02", Port = 9101, Name = "Zebra Industrial B", MediaLevel = 98, RibbonLevel = 91 },
-        new() { PrinterCode = "Printer-03", Port = 9102, Name = "Zebra Desktop C", MediaLevel = 88, RibbonLevel = 80 }
-    };
-
-    public IReadOnlyList<SimulatedPrinterDto> GetPrinters() => _printers.Select(p => new SimulatedPrinterDto(
-        p.PrinterCode,
-        p.Name,
-        p.Port,
-        p.IpAddress,
-        p.Status,
-        p.Online,
-        p.MediaLevel,
-        p.RibbonLevel,
-        p.LastZplPreview,
-        p.LastResult,
-        p.LastJobAt,
-        p.JobCount,
-        p.SimulatorMode
-    )).ToList();
-
-    public IReadOnlyList<SimulatedPrinter> GetInternalPrinters() => _printers;
-
-    public void SetPrinterOnline(bool online) => _printerOnline = online;
-
-    public void RecordPrinterJob(string? zplContent, string result)
-    {
-        Interlocked.Increment(ref _printerJobCount);
-        _printerLastZpl = zplContent?[..Math.Min(200, zplContent.Length)];
-        _printerLastResult = result;
-        _printerLastJobAt = DateTime.UtcNow.ToString("o");
-    }
-
-    public PrinterStateDto GetPrinterState() => new(
-        _printerOnline, _printerJobCount, _printerLastZpl,
-        _printerLastResult, _printerLastJobAt, PrinterPort);
 
     // ── Laser ─────────────────────────────────────────────────────────────────
     public void SetLaserOnline(bool online) => _laserOnline = online;
@@ -203,6 +155,6 @@ public sealed class SimulatorStateService : ISimulatorStateService
 
     // ── Snapshot ──────────────────────────────────────────────────────────────
     public SimulatorStatusDto GetStatus() => new(
-        GetPrinterState(), GetLaserState(), GetVisionState(),
-        GetPlcState(), GetGatewayState(), GetPrinters());
+        GetLaserState(), GetVisionState(),
+        GetPlcState(), GetGatewayState());
 }

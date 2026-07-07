@@ -20,7 +20,7 @@ public sealed class Printer : Entity
 
     /// <summary>
     /// Driver type used to route print jobs.
-    /// Values: "simulation" (ZPL over TCP to Device Simulator) | "cups" (lpr via CUPS) | "tcp" (raw TCP)
+    /// Values: "simulation" (self-hosted TCP in printer-adapter) | "cups" (lpr via CUPS) | "tcp" (raw TCP)
     /// </summary>
     public string DriverType { get; private set; } = "simulation";
 
@@ -29,6 +29,25 @@ public sealed class Printer : Entity
     /// Example: "Zebra_Technologies_ZTC_GK420t"
     /// </summary>
     public string? CupsQueueName { get; private set; }
+
+    // ── Active-for-work registration ─────────────────────────────────────────
+    /// <summary>
+    /// Whether an operator has activated this printer for production use.
+    /// Only active printers participate in print-job routing.
+    /// </summary>
+    public bool IsActiveForWork { get; private set; } = false;
+
+    /// <summary>Template assigned when the printer was activated.</summary>
+    public string? ActiveTemplateId { get; private set; }
+
+    /// <summary>Display name of the assigned template.</summary>
+    public string? ActiveTemplateName { get; private set; }
+
+    /// <summary>UTC ISO-8601 timestamp of when this printer was activated.</summary>
+    public string? ActivatedAt { get; private set; }
+
+    /// <summary>Operator who activated this printer (optional).</summary>
+    public string? ActivatedBy { get; private set; }
 
     private Printer() { }
 
@@ -84,5 +103,29 @@ public sealed class Printer : Entity
         Status = status;
         if (status == "ONLINE" || status == "IDLE" || status == "PRINTING")
             LastHeartbeatAt = DateTime.UtcNow.ToString("o");
+    }
+
+    /// <summary>
+    /// Activates this printer for production work with the given label template.
+    /// </summary>
+    public void Activate(string templateId, string templateName, string? activatedBy = null)
+    {
+        IsActiveForWork = true;
+        ActiveTemplateId = templateId;
+        ActiveTemplateName = templateName;
+        ActivatedAt = DateTime.UtcNow.ToString("o");
+        ActivatedBy = activatedBy;
+    }
+
+    /// <summary>
+    /// Removes this printer from the active production work list.
+    /// </summary>
+    public void Deactivate()
+    {
+        IsActiveForWork = false;
+        ActiveTemplateId = null;
+        ActiveTemplateName = null;
+        ActivatedAt = null;
+        ActivatedBy = null;
     }
 }

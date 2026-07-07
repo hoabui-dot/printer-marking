@@ -108,7 +108,7 @@ export default function App() {
           {status && (
             <div className="flex gap-1.5">
               {[
-                { label: 'PRT', on: status.printer.online },
+                { label: 'PRT', on: status.printer?.online ?? false },
                 { label: 'LSR', on: status.laser.online },
                 { label: 'VIS', on: status.vision.online },
                 { label: 'PLC', on: status.plc.online },
@@ -150,7 +150,9 @@ export default function App() {
 
           {tab === 'devices' && status && (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-              <PrinterCard state={status.printer} jobs={printerJobs} configValues={configValues} onSaveConfig={saveConfig} />
+              {status.printer && (
+                <PrinterCard state={status.printer} jobs={printerJobs} configValues={configValues} onSaveConfig={saveConfig} />
+              )}
               <LaserCard state={status.laser} commands={laserCmds} configValues={configValues} onSaveConfig={saveConfig} />
               <VisionCard state={status.vision} results={visionResults} configValues={configValues} onSaveConfig={saveConfig} />
               <PlcCard state={status.plc} configValues={configValues} onSaveConfig={saveConfig} />

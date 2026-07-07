@@ -18,8 +18,8 @@ COPY Directory.Packages.props ./
 COPY station-agent.sln ./
 COPY shared/ shared/
 COPY services/printer-adapter/ services/printer-adapter/
-RUN dotnet restore services/printer-adapter/src/ND.PrinterAdapter.Api/ND.PrinterAdapter.Api.csproj
-RUN dotnet publish services/printer-adapter/src/ND.PrinterAdapter.Api/ND.PrinterAdapter.Api.csproj -c Release -o /app/publish --no-restore /p:UseSharedCompilation=false /p:ConcurrentBuild=false
+RUN dotnet restore services/printer-adapter/src/ND.PrinterAdapter.Api/ND.PrinterAdapter.Api.csproj -a $TARGETARCH
+RUN dotnet publish services/printer-adapter/src/ND.PrinterAdapter.Api/ND.PrinterAdapter.Api.csproj -c Release -o /app/publish --no-restore -a $TARGETARCH /p:UseSharedCompilation=false /p:ConcurrentBuild=false
 
 # Stage 2 — runtime: uses the TARGET platform image (amd64 or arm64)
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime

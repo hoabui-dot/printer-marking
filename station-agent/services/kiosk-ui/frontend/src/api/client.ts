@@ -137,4 +137,11 @@ export const templateApi = {
   getPrintHistory: (page = 1, pageSize = 50) =>
     client.get<any[]>('/print-history', { params: { page, pageSize } }),
   getPrintHistoryDetail: (id: string) => client.get<any>(`/print-history/${id}`),
+  // Printer management (proxied through projection-service → printer-adapter)
+  getPrintersReady: () => client.get<any[]>('/projection/printers/ready'),
+  getPrintersActive: () => client.get<any[]>('/projection/printers/active'),
+  activatePrinter: (printerCode: string, templateId: string, activatedBy?: string) =>
+    client.post(`/projection/printers/${printerCode}/activate`, { templateId, activatedBy }),
+  deactivatePrinter: (printerCode: string) =>
+    client.post(`/projection/printers/${printerCode}/deactivate`),
 }

@@ -37,34 +37,49 @@ public sealed class HeartbeatHostedService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            var isOnline = false;
-            var lifecycleState = "Offline";
-            var ip = "localhost";
-            var port = 9100;
-
             try
             {
-                using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<PrinterDbContext>();
+                await PublishAllPrinterHeartbeatsAsync(stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in Printer Adapter heartbeat publisher.");
+            }
 
-                var printer = await db.Printers.FirstOrDefaultAsync(p => p.PrinterCode == "printer-01", stoppingToken);
-                if (printer != null)
+            await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);
+        }
+    }
+
+    private async Task PublishAllPrinterHeartbeatsAsync(CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PrinterDbContext>();
+        var printers = await db.Printers.ToListAsync(ct);
+
+        foreach (var printer in printers)
+        {
+            try
+            {
+                bool isOnline;
+                string lifecycleState;
+
+                if (printer.DriverType == "cups")
                 {
-                    ip = printer.IpAddress;
-                    port = printer.Port;
-
-                    // Ping via TCP socket connection check
+                    // For CUPS printers, use existing status from DB (updated by PrinterHealthService)
+                    isOnline = printer.Status == "ONLINE" || printer.Status == "Idle" || printer.Status == "IDLE";
+                    lifecycleState = isOnline ? "Idle" : "Offline";
+                }
+                else
+                {
+                    // For simulation printers: TCP ping to self on the printer's port
                     try
                     {
                         using var tcp = new TcpClient();
-                        var connectTask = tcp.ConnectAsync(ip, port, stoppingToken).AsTask();
-                        var delayTask = Task.Delay(1000, stoppingToken);
-                        var completedTask = await Task.WhenAny(connectTask, delayTask);
-                        if (completedTask == connectTask && tcp.Connected)
-                        {
-                            isOnline = true;
-                            lifecycleState = "Idle";
-                        }
+                        var connectTask = tcp.ConnectAsync(printer.IpAddress, printer.Port, ct).AsTask();
+                        var delayTask = Task.Delay(800, ct);
+                        var completed = await Task.WhenAny(connectTask, delayTask);
+                        isOnline = completed == connectTask && tcp.Connected;
+                        lifecycleState = isOnline ? "Idle" : "Offline";
                     }
                     catch
                     {
@@ -73,23 +88,32 @@ public sealed class HeartbeatHostedService : BackgroundService
                     }
                 }
 
-                // Publish heartbeat
+                // Update local database status
+                var newStatus = isOnline ? "ONLINE" : "OFFLINE";
+                if (printer.Status != newStatus)
+                {
+                    printer.UpdateStatus(newStatus);
+                }
+
+                var routingKey = $"device.heartbeat.{printer.PrinterCode.ToLowerInvariant()}";
                 var hb = new DeviceStatusHeartbeat(
-                    "printer-01",
+                    printer.PrinterCode,
                     "Printer",
                     isOnline,
                     lifecycleState,
                     DateTime.UtcNow.ToString("o")
                 );
 
-                await _publisher.PublishAsync(Exchange, "device.heartbeat.printer-01", JsonSerializer.Serialize(hb), stoppingToken);
+                await _publisher.PublishAsync(Exchange, routingKey, JsonSerializer.Serialize(hb), ct);
+                _logger.LogDebug("Heartbeat [{Code}] → {State}", printer.PrinterCode, lifecycleState);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred in Printer Adapter heartbeat publisher.");
+                _logger.LogWarning(ex, "Heartbeat failed for printer {Code}", printer.PrinterCode);
             }
-
-            await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);
         }
+
+        await db.SaveChangesAsync(ct);
     }
 }
+
