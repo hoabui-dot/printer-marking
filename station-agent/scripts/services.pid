@@ -1,9 +1,0 @@
-mqtt-adapter:24211
-job-engine:24215
-printer-adapter:24218
-laser-adapter:24221
-vision-service:24224
-plc-adapter:24229
-projection-service:24233
-kiosk-ui:24237
-kiosk-ui-frontend:24240

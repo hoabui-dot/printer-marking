@@ -10,10 +10,10 @@ TestResults/
 coverage/
 *.trx
 
-## SQLite data files (do not commit production data)
-data/*.db
-data/*.db-shm
-data/*.db-wal
+## SQLite data files (do not commit production data – any location)
+**/*.db
+**/*.db-shm
+**/*.db-wal
 
 ## Vision image storage
 storage/

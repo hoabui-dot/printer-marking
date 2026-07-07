@@ -1,2 +1,13 @@
 requirement/*
-sqlite-databases/*
+
+## SQLite data files – ignore everywhere in the repo
+**/*.db
+**/*.db-shm
+**/*.db-wal
+
+## SQLite databases directories
+sqlite-databases/
+
+## OS
+.DS_Store
+Thumbs.db
