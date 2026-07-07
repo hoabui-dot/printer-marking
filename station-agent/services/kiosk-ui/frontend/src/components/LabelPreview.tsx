@@ -49,6 +49,8 @@ export function LabelPreview({
     const rawJson = wrapper.templateJson || wrapper.TemplateJson
     if (typeof rawJson === 'string') {
       jsonStr = rawJson
+    } else if (rawJson && typeof rawJson === 'object') {
+      parsedTemplate = rawJson as LabelTemplate
     } else if (Array.isArray(wrapper.elements)) {
       parsedTemplate = wrapper
     }

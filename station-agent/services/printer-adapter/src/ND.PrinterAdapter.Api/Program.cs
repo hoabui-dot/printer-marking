@@ -185,7 +185,9 @@ app.MapGet("/api/label-templates", async (
     return Results.Ok(templates.Select(t => new
     {
         t.Id, t.Name, t.Description, t.Dpi,
-        t.LabelWidth, t.LabelHeight, t.TemplateJson, t.Version,
+        t.LabelWidth, t.LabelHeight,
+        templateJson = System.Text.Json.JsonDocument.Parse(t.TemplateJson).RootElement,
+        t.Version,
         t.IsActive, t.CreatedAt, t.UpdatedAt
     }));
 });
@@ -308,7 +310,20 @@ app.MapGet("/api/label-templates/active", async (
         }
     }
 
-    return Results.Ok(targetTemplate);
+    return Results.Ok(new
+    {
+        targetTemplate.Id,
+        targetTemplate.Name,
+        targetTemplate.Description,
+        targetTemplate.Dpi,
+        targetTemplate.LabelWidth,
+        targetTemplate.LabelHeight,
+        templateJson = System.Text.Json.JsonDocument.Parse(targetTemplate.TemplateJson).RootElement,
+        targetTemplate.Version,
+        targetTemplate.IsActive,
+        targetTemplate.CreatedAt,
+        targetTemplate.UpdatedAt
+    });
 });
 
 // POST /api/label-templates/preview
@@ -364,7 +379,21 @@ app.MapPost("/api/label-templates/preview", async (LabelPreviewRequest req, Canc
 app.MapGet("/api/label-templates/{id}", async (string id, ILabelTemplateRepository repo, CancellationToken ct) =>
 {
     var template = await repo.GetByIdAsync(id, ct);
-    return template is null ? Results.NotFound() : Results.Ok(template);
+    if (template is null) return Results.NotFound();
+    return Results.Ok(new
+    {
+        template.Id,
+        template.Name,
+        template.Description,
+        template.Dpi,
+        template.LabelWidth,
+        template.LabelHeight,
+        templateJson = System.Text.Json.JsonDocument.Parse(template.TemplateJson).RootElement,
+        template.Version,
+        template.IsActive,
+        template.CreatedAt,
+        template.UpdatedAt
+    });
 });
 
 // POST /api/label-templates
@@ -384,7 +413,22 @@ app.MapPost("/api/label-templates", async (
     var template = LabelTemplate.Create(req.Name, req.Description, req.Dpi, req.LabelWidth, req.LabelHeight, req.TemplateJson);
     await repo.AddAsync(template, ct);
     await uow.SaveChangesAsync(ct);
-    return Results.Created($"/api/label-templates/{template.Id}", template);
+    
+    var response = new
+    {
+        template.Id,
+        template.Name,
+        template.Description,
+        template.Dpi,
+        template.LabelWidth,
+        template.LabelHeight,
+        templateJson = System.Text.Json.JsonDocument.Parse(template.TemplateJson).RootElement,
+        template.Version,
+        template.IsActive,
+        template.CreatedAt,
+        template.UpdatedAt
+    };
+    return Results.Created($"/api/label-templates/{template.Id}", response);
 });
 
 // PUT /api/label-templates/{id}
@@ -412,7 +456,21 @@ app.MapPut("/api/label-templates/{id}", async (
     template.Update(req.Name, req.Description, req.Dpi, req.LabelWidth, req.LabelHeight, req.TemplateJson);
     await repo.UpdateAsync(template, ct);
     await uow.SaveChangesAsync(ct);
-    return Results.Ok(template);
+
+    return Results.Ok(new
+    {
+        template.Id,
+        template.Name,
+        template.Description,
+        template.Dpi,
+        template.LabelWidth,
+        template.LabelHeight,
+        templateJson = System.Text.Json.JsonDocument.Parse(template.TemplateJson).RootElement,
+        template.Version,
+        template.IsActive,
+        template.CreatedAt,
+        template.UpdatedAt
+    });
 });
 
 // DELETE /api/label-templates/{id}
@@ -439,7 +497,22 @@ app.MapPost("/api/label-templates/{id}/duplicate", async (
         original.Dpi, original.LabelWidth, original.LabelHeight, original.TemplateJson);
     await repo.AddAsync(copy, ct);
     await uow.SaveChangesAsync(ct);
-    return Results.Created($"/api/label-templates/{copy.Id}", copy);
+    
+    var response = new
+    {
+        copy.Id,
+        copy.Name,
+        copy.Description,
+        copy.Dpi,
+        copy.LabelWidth,
+        copy.LabelHeight,
+        templateJson = System.Text.Json.JsonDocument.Parse(copy.TemplateJson).RootElement,
+        copy.Version,
+        copy.IsActive,
+        copy.CreatedAt,
+        copy.UpdatedAt
+    };
+    return Results.Created($"/api/label-templates/{copy.Id}", response);
 });
 
 // GET /api/label-templates/{id}/versions
