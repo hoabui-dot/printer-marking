@@ -1093,15 +1093,25 @@ async Task<IResult> ProxyPrinterAdapterGetAsync(string relativePath, HttpContext
 
     var printerHost = Environment.GetEnvironmentVariable("PRINTER_ADAPTER_HOST") ?? builder.Configuration["PrinterAdapter:Host"] ?? "localhost";
     var printerPort = Environment.GetEnvironmentVariable("PRINTER_ADAPTER_PORT") ?? builder.Configuration["PrinterAdapter:Port"] ?? "5004";
-    var targetUrl = $"http://{printerHost}:{printerPort}/{relativePath}";
+    var targetUrl = $"http://{printerHost}:{printerPort}/{relativePath}{ctx.Request.QueryString.Value}";
 
     try
     {
         using var httpClient = new HttpClient();
         var request = new HttpRequestMessage(HttpMethod.Get, targetUrl);
         var response = await httpClient.SendAsync(request, ct);
-        var content = await response.Content.ReadAsStringAsync(ct);
-        return Results.Content(content, response.Content.Headers.ContentType?.ToString() ?? "application/json", statusCode: (int)response.StatusCode);
+        
+        var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/json";
+        if (contentType.Contains("application/json") || contentType.Contains("text/"))
+        {
+            var content = await response.Content.ReadAsStringAsync(ct);
+            return Results.Content(content, contentType, statusCode: (int)response.StatusCode);
+        }
+        else
+        {
+            var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+            return Results.File(bytes, contentType);
+        }
     }
     catch (Exception ex)
     {
@@ -1132,7 +1142,7 @@ async Task<IResult> ProxyPrinterAdapterPostAsync(string relativePath, HttpContex
         
         var response = await httpClient.SendAsync(request, ct);
         var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/json";
-        if (contentType.Contains("image/"))
+        if (contentType.Contains("image/") || contentType.Contains("application/octet-stream"))
         {
             var bytes = await response.Content.ReadAsByteArrayAsync(ct);
             return Results.File(bytes, contentType);
@@ -1147,6 +1157,66 @@ async Task<IResult> ProxyPrinterAdapterPostAsync(string relativePath, HttpContex
     }
 }
 
+async Task<IResult> ProxyPrinterAdapterPutAsync(string relativePath, HttpContext ctx, CancellationToken ct)
+{
+    var userId = ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    if (userId is null) return Results.Unauthorized();
+
+    var printerHost = Environment.GetEnvironmentVariable("PRINTER_ADAPTER_HOST") ?? builder.Configuration["PrinterAdapter:Host"] ?? "localhost";
+    var printerPort = Environment.GetEnvironmentVariable("PRINTER_ADAPTER_PORT") ?? builder.Configuration["PrinterAdapter:Port"] ?? "5004";
+    var targetUrl = $"http://{printerHost}:{printerPort}/{relativePath}";
+
+    try
+    {
+        using var httpClient = new HttpClient();
+        var request = new HttpRequestMessage(HttpMethod.Put, targetUrl);
+        
+        ctx.Request.EnableBuffering();
+        using var reader = new StreamReader(ctx.Request.Body, System.Text.Encoding.UTF8, true, 1024, true);
+        var bodyStr = await reader.ReadToEndAsync(ct);
+        ctx.Request.Body.Position = 0;
+        
+        request.Content = new StringContent(bodyStr, System.Text.Encoding.UTF8, "application/json");
+        
+        var response = await httpClient.SendAsync(request, ct);
+        var content = await response.Content.ReadAsStringAsync(ct);
+        return Results.Content(content, response.Content.Headers.ContentType?.ToString() ?? "application/json", statusCode: (int)response.StatusCode);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message, statusCode: 502);
+    }
+}
+
+async Task<IResult> ProxyPrinterAdapterDeleteAsync(string relativePath, HttpContext ctx, CancellationToken ct)
+{
+    var userId = ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    if (userId is null) return Results.Unauthorized();
+
+    var printerHost = Environment.GetEnvironmentVariable("PRINTER_ADAPTER_HOST") ?? builder.Configuration["PrinterAdapter:Host"] ?? "localhost";
+    var printerPort = Environment.GetEnvironmentVariable("PRINTER_ADAPTER_PORT") ?? builder.Configuration["PrinterAdapter:Port"] ?? "5004";
+    var targetUrl = $"http://{printerHost}:{printerPort}/{relativePath}";
+
+    try
+    {
+        using var httpClient = new HttpClient();
+        var request = new HttpRequestMessage(HttpMethod.Delete, targetUrl);
+        var response = await httpClient.SendAsync(request, ct);
+        var content = await response.Content.ReadAsStringAsync(ct);
+        return Results.Content(content, response.Content.Headers.ContentType?.ToString() ?? "application/json", statusCode: (int)response.StatusCode);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message, statusCode: 502);
+    }
+}
+
+app.MapGet("/api/label-templates", async (HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterGetAsync("api/label-templates", ctx, ct)).RequireAuthorization();
+
+app.MapGet("/api/label-templates/default", async (HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterGetAsync("api/label-templates/default", ctx, ct)).RequireAuthorization();
+
 app.MapGet("/api/label-templates/active", async (HttpContext ctx, CancellationToken ct) =>
     await ProxyPrinterAdapterGetAsync("api/label-templates/active", ctx, ct)).RequireAuthorization();
 
@@ -1155,6 +1225,65 @@ app.MapPost("/api/label-templates/preview", async (HttpContext ctx, Cancellation
 
 app.MapPost("/api/label-templates/render", async (HttpContext ctx, CancellationToken ct) =>
     await ProxyPrinterAdapterPostAsync("api/label-templates/render", ctx, ct)).RequireAuthorization();
+
+app.MapPost("/api/label-templates", async (HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterPostAsync("api/label-templates", ctx, ct)).RequireAuthorization();
+
+app.MapGet("/api/label-templates/{id}", async (string id, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterGetAsync($"api/label-templates/{id}", ctx, ct)).RequireAuthorization();
+
+app.MapPut("/api/label-templates/{id}", async (string id, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterPutAsync($"api/label-templates/{id}", ctx, ct)).RequireAuthorization();
+
+app.MapDelete("/api/label-templates/{id}", async (string id, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterDeleteAsync($"api/label-templates/{id}", ctx, ct)).RequireAuthorization();
+
+app.MapPost("/api/label-templates/{id}/duplicate", async (string id, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterPostAsync($"api/label-templates/{id}/duplicate", ctx, ct)).RequireAuthorization();
+
+app.MapPost("/api/label-templates/{id}/publish", async (string id, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterPostAsync($"api/label-templates/{id}/publish", ctx, ct)).RequireAuthorization();
+
+app.MapPost("/api/label-templates/{id}/archive", async (string id, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterPostAsync($"api/label-templates/{id}/archive", ctx, ct)).RequireAuthorization();
+
+app.MapPost("/api/label-templates/{id}/set-default", async (string id, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterPostAsync($"api/label-templates/{id}/set-default", ctx, ct)).RequireAuthorization();
+
+app.MapGet("/api/label-templates/{id}/export", async (string id, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterGetAsync($"api/label-templates/{id}/export", ctx, ct)).RequireAuthorization();
+
+app.MapPost("/api/label-templates/import", async (HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterPostAsync("api/label-templates/import", ctx, ct)).RequireAuthorization();
+
+app.MapGet("/api/label-templates/{id}/versions", async (string id, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterGetAsync($"api/label-templates/{id}/versions", ctx, ct)).RequireAuthorization();
+
+app.MapGet("/api/label-templates/{id}/versions/{version:int}", async (string id, int version, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterGetAsync($"api/label-templates/{id}/versions/{version}", ctx, ct)).RequireAuthorization();
+
+app.MapPost("/api/label-templates/{id}/print-test", async (string id, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterPostAsync($"api/label-templates/{id}/print-test", ctx, ct)).RequireAuthorization();
+
+// ── Printer assignments proxy endpoints ──────────────────────────────────────
+app.MapGet("/api/printer-template-assignments", async (HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterGetAsync("api/printer-template-assignments", ctx, ct)).RequireAuthorization();
+
+app.MapGet("/api/printer-template-assignments/{printerCode}", async (string printerCode, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterGetAsync($"api/printer-template-assignments/{printerCode}", ctx, ct)).RequireAuthorization();
+
+app.MapPost("/api/printer-template-assignments", async (HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterPostAsync("api/printer-template-assignments", ctx, ct)).RequireAuthorization();
+
+app.MapDelete("/api/printer-template-assignments/{printerCode}", async (string printerCode, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterDeleteAsync($"api/printer-template-assignments/{printerCode}", ctx, ct)).RequireAuthorization();
+
+// ── Print history proxy endpoints ────────────────────────────────────────────
+app.MapGet("/api/print-history", async (HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterGetAsync("api/print-history", ctx, ct)).RequireAuthorization();
+
+app.MapGet("/api/print-history/{id}", async (string id, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterGetAsync($"api/print-history/{id}", ctx, ct)).RequireAuthorization();
 
 // ── Printer management endpoints ──────────────────────────────────────────────
 app.MapGet("/api/printers", async (HttpContext ctx, CancellationToken ct) =>
@@ -1168,6 +1297,7 @@ app.MapGet("/api/printers/{code}/health", async (string code, HttpContext ctx, C
 
 app.MapPost("/api/printers/{code}/test-connection", async (string code, HttpContext ctx, CancellationToken ct) =>
     await ProxyPrinterAdapterPostAsync($"api/printers/{code}/test-connection", ctx, ct)).RequireAuthorization();
+
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "kiosk-ui" }));
 
