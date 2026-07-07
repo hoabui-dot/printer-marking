@@ -121,6 +121,13 @@ public sealed record JobProcessingEvent : JobEventBase
     [JsonPropertyName("target_printer")]
     public string? TargetPrinter { get; init; }
 
+    /// <summary>
+    /// Execution target chosen by the operator in the Dispatch Dialog.
+    /// Values: "simulation" (default) | "production-printer"
+    /// </summary>
+    [JsonPropertyName("dispatch_target")]
+    public string? DispatchTarget { get; init; }
+
     public static JobProcessingEvent From(
         string jobId,
         string jobNo,
@@ -130,7 +137,8 @@ public sealed record JobProcessingEvent : JobEventBase
         string sourceSystem,
         int attemptNo,
         string? payloadJson = null,
-        string? targetPrinter = null)
+        string? targetPrinter = null,
+        string? dispatchTarget = null)
     {
         return new JobProcessingEvent
         {
@@ -146,7 +154,8 @@ public sealed record JobProcessingEvent : JobEventBase
             Timestamp = DateTimeOffset.UtcNow.ToString("o"),
             AttemptNo = attemptNo,
             PayloadJson = payloadJson,
-            TargetPrinter = targetPrinter
+            TargetPrinter = targetPrinter,
+            DispatchTarget = dispatchTarget ?? "simulation"
         };
     }
 }
@@ -626,6 +635,57 @@ public sealed record ManualReprintAndRemarkingRequestedEvent
 }
 
 /// <summary>
+/// Published by the Printer Adapter health-check service every 15 seconds.
+/// RabbitMQ routing key: <c>printer.health-changed</c>
+/// </summary>
+public sealed record PrinterHealthChangedEvent
+{
+    [JsonPropertyName("event_type")]
+    public string EventType { get; init; } = "PrinterHealthChanged";
+
+    [JsonPropertyName("event_id")]
+    public required string EventId { get; init; }
+
+    [JsonPropertyName("printer_code")]
+    public required string PrinterCode { get; init; }
+
+    [JsonPropertyName("driver_type")]
+    public required string DriverType { get; init; }
+
+    /// <summary>Idle | Printing | Stopped | Offline | Disconnected</summary>
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    [JsonPropertyName("queue_name")]
+    public string? QueueName { get; init; }
+
+    [JsonPropertyName("error_message")]
+    public string? ErrorMessage { get; init; }
+
+    [JsonPropertyName("timestamp")]
+    public required string Timestamp { get; init; }
+
+    public static PrinterHealthChangedEvent Create(
+        string printerCode,
+        string driverType,
+        string status,
+        string? queueName = null,
+        string? errorMessage = null)
+    {
+        return new PrinterHealthChangedEvent
+        {
+            EventId = $"evt-printer-health-{Guid.NewGuid():N}",
+            PrinterCode = printerCode,
+            DriverType = driverType,
+            Status = status,
+            QueueName = queueName,
+            ErrorMessage = errorMessage,
+            Timestamp = DateTimeOffset.UtcNow.ToString("o")
+        };
+    }
+}
+
+/// <summary>
 /// Routing key constants for Job domain events.
 /// </summary>
 public static class JobEventRoutingKeys
@@ -637,6 +697,7 @@ public static class JobEventRoutingKeys
     public const string Failed = "job.failed";
     public const string PrinterPrinted = "printer.printed";
     public const string LaserMarked = "laser.marked";
+    public const string PrinterHealthChanged = "printer.health-changed";
     public const string ManualOverride = "command.manual-override";
     public const string ManualReprint = "command.manual-reprint";
     public const string ManualRemarking = "command.manual-remarking";

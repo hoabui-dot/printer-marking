@@ -978,6 +978,113 @@ app.MapPost("/api/commands/manual-override", async (
     }
 }).RequireAuthorization();
 
+// ── Dispatch Order command ──────────────────────────────────────────────────
+// Triggered by the Dispatch Dialog in the frontend. Takes a production order
+// and a dispatchTarget ("simulation" | "production-printer"), fetches queued
+// jobs for that order from the job engine, then triggers each one.
+app.MapPost("/api/commands/dispatch-order", async (
+    HttpContext ctx,
+    KioskDbContext db,
+    ND.KioskUi.Application.Interfaces.IKioskRbacRepository rbac,
+    IConfiguration config,
+    ILogger<Program> logger,
+    CancellationToken ct) =>
+{
+    var userId = ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    if (userId is null) return Results.Unauthorized();
+
+    var permissions = await rbac.GetUserPermissionsAsync(userId, ct);
+    var hasPermission = permissions.Contains("JOB_CREATE") || permissions.Contains("JOB_REPROCESS") || permissions.Contains("SYSTEM_ADMIN");
+    if (!hasPermission) return Results.Forbid();
+
+    using var reader = new StreamReader(ctx.Request.Body);
+    var body = await reader.ReadToEndAsync(ct);
+    System.Text.Json.Nodes.JsonObject? reqData = null;
+    try { reqData = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.Nodes.JsonObject>(body); }
+    catch { }
+
+    if (reqData is null) return Results.BadRequest(new { error = "Invalid request body" });
+
+    var orderNo = reqData["orderNo"]?.ToString();
+    var dispatchTarget = reqData["dispatchTarget"]?.ToString() ?? "simulation";
+    var notes = reqData["notes"]?.ToString() ?? "";
+
+    if (string.IsNullOrEmpty(orderNo))
+        return Results.BadRequest(new { error = "orderNo is required" });
+
+    var jobEngineHost = Environment.GetEnvironmentVariable("JOB_ENGINE_HOST") ?? config["JobEngine:Host"] ?? "localhost";
+    var jobEnginePort = Environment.GetEnvironmentVariable("JOB_ENGINE_PORT") ?? config["JobEngine:Port"] ?? "5002";
+
+    try
+    {
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+
+        // 1. Fetch queued jobs for this order from the job engine
+        var listUrl = $"http://{jobEngineHost}:{jobEnginePort}/api/jobs?jobNo={Uri.EscapeDataString(orderNo)}&status=QUEUED&pageSize=100";
+        var listResponse = await httpClient.GetAsync(listUrl, ct);
+
+        if (!listResponse.IsSuccessStatusCode)
+        {
+            logger.LogWarning("Could not fetch jobs for order {OrderNo}: {Status}", orderNo, listResponse.StatusCode);
+            return Results.Problem($"Could not fetch jobs from job engine (HTTP {(int)listResponse.StatusCode})", statusCode: 502);
+        }
+
+        var listContent = await listResponse.Content.ReadAsStringAsync(ct);
+        var jobsDoc = System.Text.Json.JsonDocument.Parse(listContent);
+
+        // Support both array root and { items: [...] } structure
+        System.Text.Json.JsonElement[] jobs;
+        if (jobsDoc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+            jobs = jobsDoc.RootElement.EnumerateArray().ToArray();
+        else if (jobsDoc.RootElement.TryGetProperty("items", out var items))
+            jobs = items.EnumerateArray().ToArray();
+        else
+            jobs = [];
+
+        // 2. Trigger each queued job with the chosen dispatchTarget
+        var dispatched = 0;
+        var dispatchBody = System.Text.Json.JsonSerializer.Serialize(new { dispatchTarget, notes });
+        var dispatchContent = new StringContent(dispatchBody, System.Text.Encoding.UTF8, "application/json");
+
+        foreach (var job in jobs)
+        {
+            if (!job.TryGetProperty("id", out var idProp)) continue;
+            var jobId = idProp.GetString();
+            if (string.IsNullOrEmpty(jobId)) continue;
+
+            try
+            {
+                var processUrl = $"http://{jobEngineHost}:{jobEnginePort}/api/jobs/{jobId}/process";
+                var processContent = new StringContent(dispatchBody, System.Text.Encoding.UTF8, "application/json");
+                var processResp = await httpClient.PostAsync(processUrl, processContent, ct);
+                if (processResp.IsSuccessStatusCode) dispatched++;
+                else logger.LogWarning("Failed to process job {JobId}: {Status}", jobId, processResp.StatusCode);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error dispatching job {JobId}", jobId);
+            }
+        }
+
+        logger.LogInformation("Dispatched {Count}/{Total} jobs for order {OrderNo} to {Target}",
+            dispatched, jobs.Length, orderNo, dispatchTarget);
+
+        return Results.Ok(new
+        {
+            success = true,
+            orderNo,
+            dispatchTarget,
+            dispatched,
+            total = jobs.Length
+        });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error in dispatch-order for {OrderNo}", orderNo);
+        return Results.Problem(ex.Message, statusCode: 502);
+    }
+}).RequireAuthorization();
+
 // ── Printer Adapter proxy endpoints ──────────────────────────────────────────
 async Task<IResult> ProxyPrinterAdapterGetAsync(string relativePath, HttpContext ctx, CancellationToken ct)
 {
@@ -1048,6 +1155,19 @@ app.MapPost("/api/label-templates/preview", async (HttpContext ctx, Cancellation
 
 app.MapPost("/api/label-templates/render", async (HttpContext ctx, CancellationToken ct) =>
     await ProxyPrinterAdapterPostAsync("api/label-templates/render", ctx, ct)).RequireAuthorization();
+
+// ── Printer management endpoints ──────────────────────────────────────────────
+app.MapGet("/api/printers", async (HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterGetAsync("api/printers", ctx, ct)).RequireAuthorization();
+
+app.MapGet("/api/printers/discover", async (HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterGetAsync("api/printers/discover", ctx, ct)).RequireAuthorization();
+
+app.MapGet("/api/printers/{code}/health", async (string code, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterGetAsync($"api/printers/{code}/health", ctx, ct)).RequireAuthorization();
+
+app.MapPost("/api/printers/{code}/test-connection", async (string code, HttpContext ctx, CancellationToken ct) =>
+    await ProxyPrinterAdapterPostAsync($"api/printers/{code}/test-connection", ctx, ct)).RequireAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "kiosk-ui" }));
 

@@ -155,12 +155,43 @@ public sealed class JobProcessingConsumer : BackgroundService
             return;
         }
 
-        // Fetch registered printer
-        var targetPrinterCode = evt.TargetPrinter ?? "Printer-01";
-        var printer = await db.Printers.FirstOrDefaultAsync(p => p.PrinterCode == targetPrinterCode, cancellationToken);
+        // Determine dispatch target (simulation vs physical printer)
+        var dispatchTarget = evt.DispatchTarget?.ToLowerInvariant() ?? "simulation";
+        var isPhysicalPrinter = dispatchTarget == "production-printer";
+
+        // Fetch registered printer based on dispatch target
+        Domain.Entities.Printer? printer;
+        if (isPhysicalPrinter)
+        {
+            // Physical: use the CUPS printer
+            printer = await db.Printers.FirstOrDefaultAsync(
+                p => p.DriverType == "cups", cancellationToken);
+            if (printer is null)
+            {
+                // Fallback to default CUPS code
+                printer = await db.Printers.FirstOrDefaultAsync(
+                    p => p.PrinterCode == "Zebra-GK420t-CUPS", cancellationToken);
+            }
+            _logger.LogInformation(
+                "Dispatch target: PRODUCTION-PRINTER → using CUPS printer '{Code}'",
+                printer?.PrinterCode ?? "none");
+        }
+        else
+        {
+            // Simulation: use the configured target printer
+            var targetPrinterCode = evt.TargetPrinter ?? "Printer-01";
+            printer = await db.Printers.FirstOrDefaultAsync(
+                p => p.PrinterCode == targetPrinterCode, cancellationToken);
+            _logger.LogInformation(
+                "Dispatch target: SIMULATION → using printer '{Code}'",
+                printer?.PrinterCode ?? targetPrinterCode);
+        }
+
         if (printer is null)
         {
-            _logger.LogError("Printer {Code} not found in database — cannot print", targetPrinterCode);
+            _logger.LogError(
+                "No printer found for dispatch_target='{Target}' — cannot print",
+                dispatchTarget);
             return;
         }
 
@@ -288,7 +319,10 @@ public sealed class JobProcessingConsumer : BackgroundService
             1,
             Guid.NewGuid().ToString("N"),
             Guid.NewGuid().ToString("N"),
-            tcs);
+            tcs,
+            DriverType: printer.DriverType,
+            CupsQueueName: printer.CupsQueueName,
+            DispatchTarget: dispatchTarget);
 
         await _printQueue.QueuePrintJobAsync(queuedJob);
         var success = await tcs.Task;

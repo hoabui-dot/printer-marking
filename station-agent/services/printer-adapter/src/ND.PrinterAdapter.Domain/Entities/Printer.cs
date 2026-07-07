@@ -18,6 +18,18 @@ public sealed class Printer : Entity
     public string? GroupId { get; private set; }
     public string? LastHeartbeatAt { get; private set; }
 
+    /// <summary>
+    /// Driver type used to route print jobs.
+    /// Values: "simulation" (ZPL over TCP to Device Simulator) | "cups" (lpr via CUPS) | "tcp" (raw TCP)
+    /// </summary>
+    public string DriverType { get; private set; } = "simulation";
+
+    /// <summary>
+    /// CUPS queue name used when DriverType == "cups".
+    /// Example: "Zebra_Technologies_ZTC_GK420t"
+    /// </summary>
+    public string? CupsQueueName { get; private set; }
+
     private Printer() { }
 
     public static Printer Create(
@@ -27,7 +39,9 @@ public sealed class Printer : Entity
         int port,
         string protocol,
         string vendor,
-        string? groupId = null)
+        string? groupId = null,
+        string driverType = "simulation",
+        string? cupsQueueName = null)
     {
         return new Printer
         {
@@ -37,7 +51,9 @@ public sealed class Printer : Entity
             Port = port,
             Protocol = protocol,
             Vendor = vendor,
-            GroupId = groupId
+            GroupId = groupId,
+            DriverType = driverType,
+            CupsQueueName = cupsQueueName
         };
     }
 
@@ -55,5 +71,18 @@ public sealed class Printer : Entity
     {
         Status = "ONLINE";
         LastHeartbeatAt = DateTime.UtcNow.ToString("o");
+    }
+
+    public void UpdateDriver(string driverType, string? cupsQueueName = null)
+    {
+        DriverType = driverType;
+        CupsQueueName = cupsQueueName;
+    }
+
+    public void UpdateStatus(string status, string? errorMessage = null)
+    {
+        Status = status;
+        if (status == "ONLINE" || status == "IDLE" || status == "PRINTING")
+            LastHeartbeatAt = DateTime.UtcNow.ToString("o");
     }
 }

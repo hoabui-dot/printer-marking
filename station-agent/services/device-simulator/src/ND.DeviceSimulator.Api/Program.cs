@@ -329,6 +329,7 @@ try
 
             if (pcs == 1)
             {
+                var dispatchTarget = body?.DispatchTarget ?? "simulation";
                 var data = new List<UnifiedTagRequest>
                 {
                     new("operation.type", "PRINT_ONLY"),
@@ -339,15 +340,21 @@ try
                     new("product.exp_date", "2028-06-16"),
                     new("production.planned_qty", "1"),
                     new("production.completed_qty", "1"),
-                    new("production.remaining_qty", "0")
+                    new("production.remaining_qty", "0"),
+                    new("dispatch_target", dispatchTarget),
+                    new("assigned_team", body?.Team ?? "Team A"),
                 };
+                if (!string.IsNullOrEmpty(body?.Notes))
+                    data.Add(new("dispatch_notes", body.Notes));
+
                 var site = config["Simulator:SITE_CODE"] ?? "NMDDuongDuong";
                 var edgeId = config["Simulator:EDGE_ID"] ?? "edge-ipc-l3-marking";
                 var area = config["Simulator:AREA_CODE"] ?? "Assembly_Section";
                 var line = config["Simulator:LINE_CODE"] ?? "Chuyen03";
                 var topic = $"nd/{site}/{edgeId}/command";
 
-                var req = new GatewayPublishRequest(topic, site, area, line, "Printer-01", edgeId, data);
+                var station = body?.Station ?? "Printer-01";
+                var req = new GatewayPublishRequest(topic, site, area, line, station, edgeId, data);
                 var eventId = await gateway.PublishAsync(req);
 
                 if (!string.IsNullOrEmpty(body?.Scenario))
@@ -376,7 +383,8 @@ try
 
                         for (int i = 0; i < pcs; i++)
                         {
-                            var data = new List<UnifiedTagRequest>
+                            var dispatchTarget2 = body?.DispatchTarget ?? "simulation";
+                        var data = new List<UnifiedTagRequest>
                             {
                                 new("operation.type", "PRINT_ONLY"),
                                 new("print.type", "LABEL_PRINT"),
@@ -387,10 +395,15 @@ try
                                 new("production.order_number", orderNo),
                                 new("production.planned_qty", pcs.ToString()),
                                 new("production.completed_qty", (i + 1).ToString()),
-                                new("production.remaining_qty", (pcs - (i + 1)).ToString())
+                                new("production.remaining_qty", (pcs - (i + 1)).ToString()),
+                                new("dispatch_target", dispatchTarget2),
+                                new("assigned_team", body?.Team ?? "Team A"),
                             };
+                        if (!string.IsNullOrEmpty(body?.Notes))
+                            data.Add(new("dispatch_notes", body.Notes));
 
-                            var req = new GatewayPublishRequest(topic, site, area, line, "Printer-01", edgeId, data);
+                        var stationBatch = body?.Station ?? "Printer-01";
+                        var req = new GatewayPublishRequest(topic, site, area, line, stationBatch, edgeId, data);
                             var eventId = await gateway.PublishAsync(req);
 
                             if (!string.IsNullOrEmpty(body?.Scenario))
@@ -425,21 +438,28 @@ try
     {
         try
         {
+            var markDispatchTarget = req.DispatchTarget ?? "simulation";
             var data = new List<UnifiedTagRequest>
             {
                 new("operation.type", "MARK_ONLY"),
                 new("marking.type", "LASER_ETCHING"),
                 new("marking.serial", "SN-0001234"),
                 new("marking.lot", "2026-BATCH-A"),
-                new("marking.date_code", "260616")
+                new("marking.date_code", "260616"),
+                new("dispatch_target", markDispatchTarget),
+                new("assigned_team", req.Team ?? "Team A"),
             };
+            if (!string.IsNullOrEmpty(req.Notes))
+                data.Add(new("dispatch_notes", req.Notes));
+
             var site = config["Simulator:SITE_CODE"] ?? "NMDDuongDuong";
             var edgeId = config["Simulator:EDGE_ID"] ?? "edge-ipc-l3-marking";
             var area = config["Simulator:AREA_CODE"] ?? "Assembly_Section";
             var line = config["Simulator:LINE_CODE"] ?? "Chuyen03";
             var topic = $"nd/{site}/{edgeId}/command";
 
-            var publishReq = new GatewayPublishRequest(topic, site, area, line, "Laser-Marking-03", edgeId, data);
+            var markStation = req.Station ?? "Laser-Marking-03";
+            var publishReq = new GatewayPublishRequest(topic, site, area, line, markStation, edgeId, data);
             var eventId = await gateway.PublishAsync(publishReq);
 
             if (!string.IsNullOrEmpty(req.Scenario))
@@ -463,6 +483,7 @@ try
     {
         try
         {
+            var pmDispatchTarget = req.DispatchTarget ?? "simulation";
             var data = new List<UnifiedTagRequest>
             {
                 new("operation.type", "PRINT_AND_MARK"),
@@ -470,15 +491,23 @@ try
                 new("marking.type", "LASER_SERIALIZATION"),
                 new("product.id", "FC-WP-RO100G-B-998822"),
                 new("product.lot", "LOT-2026-06-A-001"),
-                new("marking.serial", "SN-0001234")
+                new("marking.serial", "SN-0001234"),
+                new("dispatch_target", pmDispatchTarget),
+                new("assigned_team", req.Team ?? "Team A"),
             };
+            if (!string.IsNullOrEmpty(req.Notes))
+                data.Add(new("dispatch_notes", req.Notes));
+            if (req.Pcs.HasValue)
+                data.Add(new("production.planned_qty", req.Pcs.Value.ToString()));
+
             var site = config["Simulator:SITE_CODE"] ?? "NMDDuongDuong";
             var edgeId = config["Simulator:EDGE_ID"] ?? "edge-ipc-l3-marking";
             var area = config["Simulator:AREA_CODE"] ?? "Assembly_Section";
             var line = config["Simulator:LINE_CODE"] ?? "Chuyen03";
             var topic = $"nd/{site}/{edgeId}/command";
 
-            var publishReq = new GatewayPublishRequest(topic, site, area, line, "Station-Combined-01", edgeId, data);
+            var pmStation = req.Station ?? "Station-Combined-01";
+            var publishReq = new GatewayPublishRequest(topic, site, area, line, pmStation, edgeId, data);
             var eventId = await gateway.PublishAsync(publishReq);
 
             if (!string.IsNullOrEmpty(req.Scenario))
@@ -1230,7 +1259,15 @@ finally
 
 return 0;
 
-public record TriggerJobRequest(string? Scenario, int? Pcs = null);
+public record TriggerJobRequest(
+    string? Scenario,
+    int? Pcs = null,
+    string? DispatchTarget = "simulation",
+    string? Station = null,
+    string? Team = null,
+    string? Notes = null
+);
+
 
 public record SetPrinterModeRequest(int Mode);
 

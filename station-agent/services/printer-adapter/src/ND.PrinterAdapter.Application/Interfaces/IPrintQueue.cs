@@ -13,9 +13,13 @@ public record PrintJob(
     int Copies,
     string TraceId,
     string CorrelationId,
-    TaskCompletionSource<bool> CompletionSource);
+    TaskCompletionSource<bool> CompletionSource,
+    string? DriverType = null,
+    string? CupsQueueName = null,
+    string? DispatchTarget = null);
 
 public interface IPrintQueue
 {
     ValueTask<bool> QueuePrintJobAsync(PrintJob job);
 }
+

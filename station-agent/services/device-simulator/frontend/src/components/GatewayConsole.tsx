@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import type { GatewayState, GatewayEvent, ConfigValue } from '../types'
+import SimulatorDispatchDialog from './SimulatorDispatchDialog'
+import type { DispatchConfig } from './SimulatorDispatchDialog'
 
 interface Props {
   state: GatewayState
@@ -8,22 +10,34 @@ interface Props {
   onSaveConfig: (key: string, value: string) => Promise<void>
 }
 
+interface JobDef {
+  label: string
+  url: string
+  op: string
+  desc: string
+  hasPcs: boolean
+  hasScenario: boolean
+  payload: object
+}
+
 export default function GatewayConsole({ state, events, configValues, onSaveConfig }: Props) {
   const [publishing, setPublishing] = useState<string | null>(null)
-  const [publishStatus, setPublishStatus] = useState<{ [key: string]: { status: 'SUCCESS' | 'FAILED'; error?: string; time: string } }>({})
+  const [publishStatus, setPublishStatus] = useState<{
+    [key: string]: { status: 'SUCCESS' | 'FAILED'; error?: string; time: string }
+  }>({})
   const [expandedPayload, setExpandedPayload] = useState<string | null>(null)
-  const [selectedJobForModal, setSelectedJobForModal] = useState<{ url: string, label: string } | null>(null)
+  const [dispatchDialog, setDispatchDialog] = useState<{ job: JobDef } | null>(null)
 
-  const site = configValues.find(c => c.key === 'SITE_CODE')?.value ?? 'NMDDuongDuong'
-  const area = configValues.find(c => c.key === 'AREA_CODE')?.value ?? 'Assembly_Section'
-  const line = configValues.find(c => c.key === 'LINE_CODE')?.value ?? 'Chuyen03'
-  const edgeId = configValues.find(c => c.key === 'EDGE_ID')?.value ?? 'edge-ipc-l3-marking'
-
-  const [draftSite, setDraftSite] = useState(site)
-  const [draftArea, setDraftArea] = useState(area)
-  const [draftLine, setDraftLine] = useState(line)
-  const [draftEdgeId, setDraftEdgeId] = useState(edgeId)
+  const [draftSite,   setDraftSite]   = useState(configValues.find(c => c.key === 'SITE_CODE')?.value ?? 'NMDDuongDuong')
+  const [draftArea,   setDraftArea]   = useState(configValues.find(c => c.key === 'AREA_CODE')?.value ?? 'Assembly_Section')
+  const [draftLine,   setDraftLine]   = useState(configValues.find(c => c.key === 'LINE_CODE')?.value ?? 'Chuyen03')
+  const [draftEdgeId, setDraftEdgeId] = useState(configValues.find(c => c.key === 'EDGE_ID')?.value ?? 'edge-ipc-l3-marking')
   const [savingConfig, setSavingConfig] = useState(false)
+
+  const site   = configValues.find(c => c.key === 'SITE_CODE')?.value ?? 'NMDDuongDuong'
+  const area   = configValues.find(c => c.key === 'AREA_CODE')?.value ?? 'Assembly_Section'
+  const line   = configValues.find(c => c.key === 'LINE_CODE')?.value ?? 'Chuyen03'
+  const edgeId = configValues.find(c => c.key === 'EDGE_ID')?.value  ?? 'edge-ipc-l3-marking'
 
   const handleSaveConfig = async () => {
     setSavingConfig(true)
@@ -31,19 +45,32 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
       await onSaveConfig('SITE_CODE', draftSite)
       await onSaveConfig('AREA_CODE', draftArea)
       await onSaveConfig('LINE_CODE', draftLine)
-      await onSaveConfig('EDGE_ID', draftEdgeId)
+      await onSaveConfig('EDGE_ID',   draftEdgeId)
     } finally {
       setSavingConfig(false)
     }
   }
 
-  const triggerJob = async (url: string, label: string, scenario?: string, pcs?: number) => {
+  const triggerJob = async (
+    url: string,
+    label: string,
+    cfg: DispatchConfig,
+    hasPcs: boolean,
+    hasScenario: boolean
+  ) => {
     setPublishing(label)
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario, pcs })
+        body: JSON.stringify({
+          scenario:       hasScenario ? cfg.scenario : undefined,
+          pcs:            hasPcs ? cfg.pcs : undefined,
+          dispatchTarget: cfg.target,
+          station:        cfg.station,
+          team:           cfg.team,
+          notes:          cfg.notes,
+        })
       })
       const nowStr = new Date().toLocaleTimeString()
       if (response.ok) {
@@ -52,7 +79,7 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
         const errData = await response.json().catch(() => ({}))
         setPublishStatus(prev => ({
           ...prev,
-          [label]: { status: 'FAILED', error: errData.error || `HTTP ${response.status}`, time: nowStr }
+          [label]: { status: 'FAILED', error: (errData as any).error || `HTTP ${response.status}`, time: nowStr }
         }))
       }
     } catch (err: any) {
@@ -65,36 +92,24 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
     }
   }
 
-  const onTriggerClick = (url: string, label: string) => {
-    if (label === 'Print Job') {
-      const input = window.prompt("Nhập số lượng sản phẩm cần in (pcs):", "100");
-      if (input === null) return; // User cancelled
-      const pcs = parseInt(input, 10);
-      if (isNaN(pcs) || pcs <= 0) {
-        window.alert("Số lượng sản phẩm phải lớn hơn 0!");
-        return;
-      }
-      triggerJob(url, label, undefined, pcs)
-    } else {
-      setSelectedJobForModal({ url, label })
-    }
-  }
-
-  const jobs = [
+  const jobs: JobDef[] = [
     {
       label: 'Print Job',
       url: '/api/gateway/send-print-job',
       op: 'PRINT_ONLY',
       desc: 'Print label with product info and scan verify',
+      hasPcs: true,
+      hasScenario: false,
       payload: {
         site, area, line, machine: 'Printer-01', edge_id: edgeId,
         data: [
-          { tag: 'operation.type', value: 'PRINT_ONLY', quality: 'GOOD' },
-          { tag: 'print.type', value: 'LABEL_PRINT', quality: 'GOOD' },
-          { tag: 'product.id', value: 'FC-WP-RO100G-B-998822', quality: 'GOOD' },
-          { tag: 'product.lot', value: 'LOT-2026-06-A-001', quality: 'GOOD' },
-          { tag: 'product.mfg_date', value: '2026-06-16', quality: 'GOOD' },
-          { tag: 'product.exp_date', value: '2028-06-16', quality: 'GOOD' }
+          { tag: 'operation.type', value: 'PRINT_ONLY',       quality: 'GOOD' },
+          { tag: 'print.type',     value: 'LABEL_PRINT',      quality: 'GOOD' },
+          { tag: 'product.id',     value: 'FC-WP-RO100G-B-998822', quality: 'GOOD' },
+          { tag: 'product.lot',    value: 'LOT-2026-06-A-001', quality: 'GOOD' },
+          { tag: 'product.mfg_date', value: '2026-06-16',     quality: 'GOOD' },
+          { tag: 'product.exp_date', value: '2028-06-16',     quality: 'GOOD' },
+          { tag: 'dispatch_target',  value: '<selected at dispatch>', quality: 'GOOD' },
         ]
       }
     },
@@ -103,14 +118,17 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
       url: '/api/gateway/send-mark-job',
       op: 'MARK_ONLY',
       desc: 'Etch traceability marking directly on product packaging',
+      hasPcs: false,
+      hasScenario: true,
       payload: {
         site, area, line, machine: 'Laser-Marking-03', edge_id: edgeId,
         data: [
-          { tag: 'operation.type', value: 'MARK_ONLY', quality: 'GOOD' },
-          { tag: 'marking.type', value: 'LASER_ETCHING', quality: 'GOOD' },
-          { tag: 'marking.serial', value: 'SN-0001234', quality: 'GOOD' },
-          { tag: 'marking.lot', value: '2026-BATCH-A', quality: 'GOOD' },
-          { tag: 'marking.date_code', value: '260616', quality: 'GOOD' }
+          { tag: 'operation.type', value: 'MARK_ONLY',     quality: 'GOOD' },
+          { tag: 'marking.type',   value: 'LASER_ETCHING', quality: 'GOOD' },
+          { tag: 'marking.serial', value: 'SN-0001234',    quality: 'GOOD' },
+          { tag: 'marking.lot',    value: '2026-BATCH-A',  quality: 'GOOD' },
+          { tag: 'marking.date_code', value: '260616',     quality: 'GOOD' },
+          { tag: 'dispatch_target', value: '<selected at dispatch>', quality: 'GOOD' },
         ]
       }
     },
@@ -119,15 +137,18 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
       url: '/api/gateway/send-print-mark-job',
       op: 'PRINT_AND_MARK',
       desc: 'Decompose combined print, mark, and visual verify steps',
+      hasPcs: true,
+      hasScenario: true,
       payload: {
         site, area, line, machine: 'Station-Combined-01', edge_id: edgeId,
         data: [
-          { tag: 'operation.type', value: 'PRINT_AND_MARK', quality: 'GOOD' },
-          { tag: 'print.type', value: 'PRODUCT_LABEL', quality: 'GOOD' },
-          { tag: 'marking.type', value: 'LASER_SERIALIZATION', quality: 'GOOD' },
-          { tag: 'product.id', value: 'FC-WP-RO100G-B-998822', quality: 'GOOD' },
-          { tag: 'product.lot', value: 'LOT-2026-06-A-001', quality: 'GOOD' },
-          { tag: 'marking.serial', value: 'SN-0001234', quality: 'GOOD' }
+          { tag: 'operation.type', value: 'PRINT_AND_MARK',     quality: 'GOOD' },
+          { tag: 'print.type',     value: 'PRODUCT_LABEL',      quality: 'GOOD' },
+          { tag: 'marking.type',   value: 'LASER_SERIALIZATION', quality: 'GOOD' },
+          { tag: 'product.id',     value: 'FC-WP-RO100G-B-998822', quality: 'GOOD' },
+          { tag: 'product.lot',    value: 'LOT-2026-06-A-001',  quality: 'GOOD' },
+          { tag: 'marking.serial', value: 'SN-0001234',         quality: 'GOOD' },
+          { tag: 'dispatch_target', value: '<selected at dispatch>', quality: 'GOOD' },
         ]
       }
     }
@@ -135,9 +156,9 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
 
   return (
     <div className="space-y-4">
-      {/* Configuration & Identity Section */}
+      {/* ── Config & Identity ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Connection Status Card */}
+        {/* MQTT Connection Card */}
         <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -153,14 +174,10 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
             </div>
             <button
               onClick={async () => {
-                const endpoint = state.connected ? '/api/gateway/disconnect' : '/api/gateway/connect';
-                await fetch(endpoint, { method: 'POST' });
+                const endpoint = state.connected ? '/api/gateway/disconnect' : '/api/gateway/connect'
+                await fetch(endpoint, { method: 'POST' })
               }}
-              className={`w-full mt-3 rounded py-1 text-xs font-semibold text-white transition-colors duration-200 ${
-                state.connected
-                  ? 'bg-red-700 hover:bg-red-600'
-                  : 'bg-green-700 hover:bg-green-600'
-              }`}
+              className={`w-full mt-3 rounded py-1 text-xs font-semibold text-white transition-colors ${state.connected ? 'bg-red-700 hover:bg-red-600' : 'bg-green-700 hover:bg-green-600'}`}
             >
               {state.connected ? 'Disconnect Broker' : 'Connect Broker'}
             </button>
@@ -177,7 +194,7 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
           </div>
         </div>
 
-        {/* Localhost Identity Settings Card */}
+        {/* Identity Config Card */}
         <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 lg:col-span-2 space-y-3">
           <div className="flex items-center justify-between border-b border-gray-800 pb-2">
             <h3 className="text-sm font-semibold text-white">Localhost Identity Config Env</h3>
@@ -186,23 +203,19 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
               <label className="block text-gray-400 mb-1">Site Code (SITE_CODE)</label>
-              <input value={draftSite} onChange={e => setDraftSite(e.target.value)}
-                className="w-full bg-gray-850 border border-gray-750 rounded px-2.5 py-1 text-gray-200" />
+              <input value={draftSite} onChange={e => setDraftSite(e.target.value)} className="w-full bg-gray-850 border border-gray-750 rounded px-2.5 py-1 text-gray-200" />
             </div>
             <div>
               <label className="block text-gray-400 mb-1">Area Code (AREA_CODE)</label>
-              <input value={draftArea} onChange={e => setDraftArea(e.target.value)}
-                className="w-full bg-gray-850 border border-gray-750 rounded px-2.5 py-1 text-gray-200" />
+              <input value={draftArea} onChange={e => setDraftArea(e.target.value)} className="w-full bg-gray-850 border border-gray-750 rounded px-2.5 py-1 text-gray-200" />
             </div>
             <div>
               <label className="block text-gray-400 mb-1">Line Code (LINE_CODE)</label>
-              <input value={draftLine} onChange={e => setDraftLine(e.target.value)}
-                className="w-full bg-gray-850 border border-gray-750 rounded px-2.5 py-1 text-gray-200" />
+              <input value={draftLine} onChange={e => setDraftLine(e.target.value)} className="w-full bg-gray-850 border border-gray-750 rounded px-2.5 py-1 text-gray-200" />
             </div>
             <div>
               <label className="block text-gray-400 mb-1">Edge ID (EDGE_ID)</label>
-              <input value={draftEdgeId} onChange={e => setDraftEdgeId(e.target.value)}
-                className="w-full bg-gray-850 border border-gray-750 rounded px-2.5 py-1 text-gray-200 font-mono" />
+              <input value={draftEdgeId} onChange={e => setDraftEdgeId(e.target.value)} className="w-full bg-gray-850 border border-gray-750 rounded px-2.5 py-1 text-gray-200 font-mono" />
             </div>
           </div>
           <button onClick={handleSaveConfig} disabled={savingConfig}
@@ -212,10 +225,13 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
         </div>
       </div>
 
-      {/* Pre-defined Factory Job Triggers */}
+      {/* ── Pre-defined Job Triggers ──────────────────────────────────────── */}
       <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-white border-b border-gray-800 pb-2">Pre-defined Factory MQTT Job Triggers</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="flex items-center justify-between border-b border-gray-800 pb-2">
+          <h3 className="text-sm font-semibold text-white">Pre-defined Factory MQTT Job Triggers</h3>
+          <span className="text-[10px] text-gray-500">Select dispatch target before triggering</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {jobs.map(job => (
             <div key={job.label} className="bg-gray-800 border border-gray-700 rounded-lg p-3 flex flex-col justify-between space-y-3">
               <div>
@@ -224,27 +240,47 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-900 text-purple-300 font-mono">{job.op}</span>
                 </div>
                 <div className="text-[10px] text-gray-500 mt-1 leading-normal">{job.desc}</div>
+
+                {/* Tags preview */}
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {job.hasPcs && (
+                    <span className="text-[9px] bg-indigo-950/50 text-indigo-300 border border-indigo-900 px-1.5 py-0.5 rounded font-mono">Batch PCS</span>
+                  )}
+                  {job.hasScenario && (
+                    <span className="text-[9px] bg-cyan-950/50 text-cyan-300 border border-cyan-900 px-1.5 py-0.5 rounded font-mono">Vision Scenario</span>
+                  )}
+                  <span className="text-[9px] bg-amber-950/50 text-amber-300 border border-amber-900 px-1.5 py-0.5 rounded font-mono">Dispatch Target</span>
+                </div>
               </div>
 
-              {/* Status Info */}
+              {/* Publish status */}
               {publishStatus[job.label] && (
-                <div className={`text-[10px] px-2 py-1.5 rounded flex items-center justify-between ${publishStatus[job.label].status === 'SUCCESS' ? 'bg-green-950/30 text-green-300' : 'bg-red-950/30 text-red-300'}`}>
+                <div className={`text-[10px] px-2 py-1.5 rounded flex items-center justify-between ${
+                  publishStatus[job.label].status === 'SUCCESS' ? 'bg-green-950/30 text-green-300' : 'bg-red-950/30 text-red-300'
+                }`}>
                   <span>
-                    Status: <span className="font-bold">{publishStatus[job.label].status}</span>
-                    {publishStatus[job.label].error && <span className="ml-1 text-red-400">({publishStatus[job.label].error})</span>}
+                    {publishStatus[job.label].status}
+                    {publishStatus[job.label].error && (
+                      <span className="ml-1 text-red-400">({publishStatus[job.label].error})</span>
+                    )}
                   </span>
                   <span className="text-gray-500">{publishStatus[job.label].time}</span>
                 </div>
               )}
 
               <div className="flex gap-2">
-                <button onClick={() => onTriggerClick(job.url, job.label)} disabled={publishing !== null || !state.connected}
-                  className="flex-1 bg-purple-700 hover:bg-purple-600 text-white rounded py-1.5 text-xs font-semibold disabled:opacity-50 transition-colors">
+                <button
+                  onClick={() => setDispatchDialog({ job })}
+                  disabled={publishing !== null || !state.connected}
+                  className="flex-1 bg-purple-700 hover:bg-purple-600 text-white rounded py-1.5 text-xs font-semibold disabled:opacity-50 transition-colors"
+                >
                   {publishing === job.label ? 'Publishing MQTT...' : `Trigger ${job.label}`}
                 </button>
-                <button onClick={() => setExpandedPayload(expandedPayload === job.label ? null : job.label)}
-                  className="bg-gray-900 hover:bg-gray-950 text-gray-400 rounded px-2.5 py-1.5 text-xs transition-colors">
-                  {expandedPayload === job.label ? 'Hide JSON' : 'Payload'}
+                <button
+                  onClick={() => setExpandedPayload(expandedPayload === job.label ? null : job.label)}
+                  className="bg-gray-900 hover:bg-gray-950 text-gray-400 rounded px-2.5 py-1.5 text-xs transition-colors"
+                >
+                  {expandedPayload === job.label ? 'Hide' : 'Payload'}
                 </button>
               </div>
 
@@ -258,72 +294,7 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
         </div>
       </div>
 
-      {/* Vision Verification Scenario Modal */}
-      {selectedJobForModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-lg max-w-md w-full p-6 space-y-4 shadow-xl animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-gray-800 pb-3">
-              <h3 className="text-base font-semibold text-white">Vision Verification Scenario</h3>
-              <button onClick={() => setSelectedJobForModal(null)} className="text-gray-400 hover:text-white transition-colors text-sm">✕</button>
-            </div>
-            <p className="text-xs text-gray-455">
-              Select a vision verification outcome for <strong>{selectedJobForModal.label}</strong>. This dictates how the simulated vision camera inspects the product.
-            </p>
-            <div className="space-y-2">
-              <button
-                onClick={() => {
-                  triggerJob(selectedJobForModal.url, selectedJobForModal.label, 'success')
-                  setSelectedJobForModal(null)
-                }}
-                className="w-full text-left bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500 rounded p-3 transition-all duration-200"
-              >
-                <div className="text-xs font-semibold text-green-400">Verification Success (PASS)</div>
-                <div className="text-[10px] text-gray-500 mt-0.5">Camera inspects the label successfully. High confidence score.</div>
-              </button>
-              <button
-                onClick={() => {
-                  triggerJob(selectedJobForModal.url, selectedJobForModal.label, 'fail_qr_mismatch')
-                  setSelectedJobForModal(null)
-                }}
-                className="w-full text-left bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-orange-500 rounded p-3 transition-all duration-200"
-              >
-                <div className="text-xs font-semibold text-orange-400">Verification Failed - QR Code mismatch</div>
-                <div className="text-[10px] text-gray-500 mt-0.5">QR code on the label does not match product registration database.</div>
-              </button>
-              <button
-                onClick={() => {
-                  triggerJob(selectedJobForModal.url, selectedJobForModal.label, 'fail_unreadable')
-                  setSelectedJobForModal(null)
-                }}
-                className="w-full text-left bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-red-500 rounded p-3 transition-all duration-200"
-              >
-                <div className="text-xs font-semibold text-red-400">Verification Failed - Unreadable marking</div>
-                <div className="text-[10px] text-gray-500 mt-0.5">Low contrast or blurry marking, camera cannot decode.</div>
-              </button>
-              <button
-                onClick={() => {
-                  triggerJob(selectedJobForModal.url, selectedJobForModal.label, 'fail_missing')
-                  setSelectedJobForModal(null)
-                }}
-                className="w-full text-left bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-red-500 rounded p-3 transition-all duration-200"
-              >
-                <div className="text-xs font-semibold text-red-400">Verification Failed - Missing marking</div>
-                <div className="text-[10px] text-gray-500 mt-0.5">Etching template is completely missing from packaging.</div>
-              </button>
-            </div>
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setSelectedJobForModal(null)}
-                className="bg-gray-800 hover:bg-gray-750 border border-gray-700 text-gray-300 rounded px-4 py-1.5 text-xs font-semibold transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Gateway MQTT Events Console Log */}
+      {/* ── MQTT Event Log ────────────────────────────────────────────────── */}
       <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between border-b border-gray-800 pb-2">
           <h3 className="text-sm font-semibold text-white">MQTT Event Log Stream</h3>
@@ -334,7 +305,9 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
             <div key={evt.id} className="bg-gray-950 border border-gray-850 rounded p-2 text-xs flex flex-col space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
-                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${evt.direction === 'PUBLISH' ? 'bg-blue-950 text-blue-400' : 'bg-purple-950 text-purple-400'}`}>
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
+                    evt.direction === 'PUBLISH' ? 'bg-blue-950 text-blue-400' : 'bg-purple-950 text-purple-400'
+                  }`}>
                     {evt.direction === 'PUBLISH' ? '↑ OUTBOUND' : '↓ INBOUND'}
                   </span>
                   <span className="text-gray-300 font-mono truncate select-all">{evt.topic}</span>
@@ -353,6 +326,23 @@ export default function GatewayConsole({ state, events, configValues, onSaveConf
           )}
         </div>
       </div>
+
+      {/* ── Dispatch Dialog ──────────────────────────────────────────────── */}
+      {dispatchDialog && (
+        <SimulatorDispatchDialog
+          open={true}
+          jobLabel={dispatchDialog.job.label}
+          jobOp={dispatchDialog.job.op}
+          hasPcs={dispatchDialog.job.hasPcs}
+          hasScenario={dispatchDialog.job.hasScenario}
+          onClose={() => setDispatchDialog(null)}
+          onConfirm={cfg => {
+            const job = dispatchDialog.job
+            setDispatchDialog(null)
+            triggerJob(job.url, job.label, cfg, job.hasPcs, job.hasScenario)
+          }}
+        />
+      )}
     </div>
   )
 }

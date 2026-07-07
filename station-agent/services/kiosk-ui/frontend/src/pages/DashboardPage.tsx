@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useDashboard, ProductionRecord } from '@/hooks/useDashboard'
 import { useProductionRecords } from '@/hooks/useProductionRecords'
 import client, { rbacApi, jobsApi, commandsApi } from '@/api/client'
+import { DispatchDialog, DispatchTarget } from '@/components/DispatchDialog'
 import { useAuth } from '@/context/AuthContext'
 import { PROTECTED_ADMIN_USERNAME, CREATABLE_ROLES } from '@/constants/roles'
 import { translatePermission, translateRole, translateJobType } from '@/lib/utils'
@@ -204,6 +205,11 @@ export default function DashboardPage() {
   const [orderItemsLoading, setOrderItemsLoading] = useState(false)
   const [orderModalOpen, setOrderModalOpen] = useState(false)
 
+  // Dispatch Dialog states
+  const [dispatchDialogOpen, setDispatchDialogOpen] = useState(false)
+  const [dispatchLoading, setDispatchLoading] = useState(false)
+  const [dispatchResult, setDispatchResult] = useState<{ success: boolean; dispatched: number; total: number; target: string } | null>(null)
+
   const fetchOrders = async () => {
     setOrdersLoading(true)
     try {
@@ -218,6 +224,7 @@ export default function DashboardPage() {
 
   const fetchOrderItems = async (orderNo: string) => {
     setOrderItemsLoading(true)
+    setDispatchResult(null)
     try {
       const res = await client.get(`/projection/orders/${orderNo}/items`)
       setOrderItems(res.data || [])
@@ -227,6 +234,32 @@ export default function DashboardPage() {
       setOrderItemsLoading(false)
     }
   }
+
+  const handleConfirmDispatch = useCallback(async (target: DispatchTarget, notes: string) => {
+    if (!selectedOrder) return
+    setDispatchLoading(true)
+    setDispatchResult(null)
+    try {
+      const res = await commandsApi.dispatchOrder({
+        orderNo: selectedOrder.orderNo,
+        dispatchTarget: target,
+        notes
+      })
+      setDispatchResult({
+        success: true,
+        dispatched: res.data.dispatched,
+        total: res.data.total,
+        target
+      })
+      setDispatchDialogOpen(false)
+      // Refresh items to show updated statuses
+      await fetchOrderItems(selectedOrder.orderNo)
+    } catch (err: any) {
+      setDispatchResult({ success: false, dispatched: 0, total: 0, target })
+    } finally {
+      setDispatchLoading(false)
+    }
+  }, [selectedOrder])
 
   const handleOpenOrderDetail = async (order: any) => {
     setSelectedOrder(order)
@@ -1172,7 +1205,7 @@ export default function DashboardPage() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-6">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <span className="text-xs uppercase text-muted-fg font-semibold">Tên sản phẩm (Product Name)</span>
                           <div className="text-sm font-bold text-foreground">{resolved.product_name}</div>
@@ -1904,6 +1937,16 @@ export default function DashboardPage() {
           {/* ════ TAB: ORDERS ════════════════════════════════ */}
           {tab === 'orders' && (
             <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-200">
+              {/* Dispatch Dialog */}
+              <DispatchDialog
+                open={dispatchDialogOpen}
+                onClose={() => setDispatchDialogOpen(false)}
+                onConfirm={handleConfirmDispatch}
+                itemCount={orderItems.filter(i => i.currentStatus === 'QUEUED' || !i.currentStatus).length || selectedOrder?.remainingQty || 0}
+                jobType={selectedOrder?.jobType || 'PRINT_LABEL'}
+                isSubmitting={dispatchLoading}
+              />
+
               {/* Order Detail Modal */}
               <Dialog open={orderModalOpen} onOpenChange={setOrderModalOpen}>
                 <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto bg-card border border-border">
@@ -1993,11 +2036,35 @@ export default function DashboardPage() {
                       </TableEl>
                     </div>
                   )}
-                  <DialogFooter className="mt-4">
-                    <Button variant="outline" onClick={() => setOrderModalOpen(false)}>Đóng</Button>
-                    <Button onClick={() => fetchOrderItems(selectedOrder?.orderNo)} disabled={orderItemsLoading}>
-                      <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${orderItemsLoading ? 'animate-spin' : ''}`} /> Làm mới
-                    </Button>
+                  <DialogFooter className="mt-4 flex-col items-stretch gap-2">
+                    {/* Dispatch result banner */}
+                    {dispatchResult && (
+                      <div className={`rounded-lg px-3 py-2 text-sm flex items-center gap-2 ${
+                        dispatchResult.success
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                      }`}>
+                        {dispatchResult.success
+                          ? `✓ Đã dispatch ${dispatchResult.dispatched}/${dispatchResult.total} jobs → ${
+                              dispatchResult.target === 'production-printer' ? 'Máy in vật lý (CUPS)' : 'Máy mô phỏng'
+                            }`
+                          : '✗ Dispatch thất bại. Vui lòng thử lại.'}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <Button variant="outline" onClick={() => setOrderModalOpen(false)}>Đóng</Button>
+                      <Button onClick={() => fetchOrderItems(selectedOrder?.orderNo)} disabled={orderItemsLoading}>
+                        <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${orderItemsLoading ? 'animate-spin' : ''}`} /> Làm mới
+                      </Button>
+                      <Button
+                        id="btn-dispatch-order"
+                        className="bg-brand hover:bg-brand/90 text-white ml-auto"
+                        onClick={() => { setDispatchResult(null); setDispatchDialogOpen(true) }}
+                        disabled={dispatchLoading}
+                      >
+                        <Zap className="h-3.5 w-3.5 mr-1.5" /> Dispatch...
+                      </Button>
+                    </div>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>

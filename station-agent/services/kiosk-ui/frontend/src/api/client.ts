@@ -71,5 +71,38 @@ export const commandsApi = {
     reasonDescription: string; 
     overrideType: string; 
   }) =>
-    client.post<{ success: boolean; eventId: string }>('/commands/manual-override', data)
+    client.post<{ success: boolean; eventId: string }>('/commands/manual-override', data),
+
+  dispatchOrder: (data: {
+    orderNo: string
+    dispatchTarget: 'simulation' | 'production-printer'
+    notes?: string
+  }) =>
+    client.post<{ success: boolean; orderNo: string; dispatchTarget: string; dispatched: number; total: number }>(
+      '/commands/dispatch-order', data
+    ),
 }
+
+
+export const printerApi = {
+  list: () => client.get<any[]>('/printers'),
+  discover: () => client.get<any[]>('/printers/discover'),
+  health: (printerCode: string) => client.get<{
+    printerCode: string
+    displayName: string
+    driverType: string
+    cupsQueueName?: string
+    status: string
+    isReady: boolean
+    checkedAt: string
+  }>(`/printers/${printerCode}/health`),
+  testConnection: (printerCode: string) => client.post<{
+    printerCode: string
+    driverType: string
+    cupsQueueName?: string
+    status: string
+    isReachable: boolean
+    checkedAt: string
+  }>(`/printers/${printerCode}/test-connection`),
+}
+

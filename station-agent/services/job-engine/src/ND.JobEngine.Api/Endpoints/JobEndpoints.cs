@@ -91,11 +91,25 @@ public static class JobEndpointExtensions
             return Results.Created($"/api/jobs/{result.Id}", result);
         });
 
-        group.MapPost("/{id}/process", async (string id, ProcessJobHandler handler, CancellationToken ct) =>
+        group.MapPost("/{id}/process", async (string id, HttpContext ctx, ProcessJobHandler handler, CancellationToken ct) =>
         {
-            await handler.HandleAsync(new ProcessJobCommand(id), ct);
+            string? dispatchTarget = null;
+            if (ctx.Request.ContentLength > 0)
+            {
+                try
+                {
+                    using var reader = new System.IO.StreamReader(ctx.Request.Body);
+                    var body = await reader.ReadToEndAsync(ct);
+                    var doc = System.Text.Json.JsonDocument.Parse(body);
+                    if (doc.RootElement.TryGetProperty("dispatchTarget", out var dt))
+                        dispatchTarget = dt.GetString();
+                }
+                catch { /* ignore parse errors */ }
+            }
+            await handler.HandleAsync(new ProcessJobCommand(id, DispatchTarget: dispatchTarget), ct);
             return Results.Accepted();
         });
+
 
         return app;
     }

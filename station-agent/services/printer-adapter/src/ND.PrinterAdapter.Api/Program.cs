@@ -16,6 +16,7 @@ using Serilog;
 using FluentValidation;
 using ND.PrinterAdapter.Application.DTOs;
 using ND.PrinterAdapter.Application.Validation;
+using ND.PrinterAdapter.Application.Dtos;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,6 +35,7 @@ builder.Services.AddSingleton<RedisHeartbeatCache>();
 
 builder.Services.AddSingleton<ISystemClock, SystemClock>();
 builder.Services.AddSingleton<IPrinterAdapter, ZplTcpPrinterAdapter>();
+builder.Services.AddSingleton<IPrinterDriverFactory, PrinterDriverFactory>();
 
 // Label rendering strategy
 builder.Services.AddSingleton<ILabelRenderer, ZplRenderer>();
@@ -57,6 +59,7 @@ builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 // Register hosted consumer
 builder.Services.AddHostedService<JobProcessingConsumer>();
 builder.Services.AddHostedService<HeartbeatHostedService>();
+builder.Services.AddHostedService<PrinterHealthService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
@@ -73,7 +76,29 @@ using (var scope = app.Services.CreateScope())
     if (!string.IsNullOrEmpty(dbDir)) Directory.CreateDirectory(dbDir);
     await db.Database.EnsureCreatedAsync();
 
-    // Seed default printer (printer-01)
+    // Safe schema upgrade for existing databases — SQLite only.
+    // EnsureCreated does not add new columns to existing tables, so we do it manually.
+    // These are idempotent: SQLite throws "duplicate column name" if it already exists,
+    // which we catch and ignore.
+    var conn = db.Database.GetDbConnection();
+    await conn.OpenAsync();
+    foreach (var sql in new[]
+    {
+        "ALTER TABLE printer_printers ADD COLUMN driver_type TEXT NOT NULL DEFAULT 'simulation'",
+        "ALTER TABLE printer_printers ADD COLUMN cups_queue_name TEXT"
+    })
+    {
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = sql;
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch { /* Column already exists — safe to ignore */ }
+    }
+    await conn.CloseAsync();
+
+    // Seed default printers (including the physical CUPS printer)
     var printerHost = Environment.GetEnvironmentVariable("PRINTER_HOST") ?? app.Configuration["Printer:Host"] ?? "localhost";
     var printerPort = int.TryParse(Environment.GetEnvironmentVariable("PRINTER_PORT") ?? app.Configuration["Printer:Port"], out var p) ? p : 9100;
     await PrinterDbSeeder.SeedAsync(db, printerHost, printerPort);
@@ -85,7 +110,65 @@ if (app.Environment.IsDevelopment())
 // ── Infrastructure endpoints ────────────────────────────────────────────────
 
 app.MapGet("/api/printers", async (PrinterDbContext db, CancellationToken ct) =>
-    Results.Ok(await db.Printers.ToListAsync(ct)));
+    Results.Ok(await db.Printers.Select(p => new
+    {
+        p.Id, p.PrinterCode, p.DisplayName, p.IpAddress, p.Port,
+        p.Protocol, p.Vendor, p.Status, p.DriverType, p.CupsQueueName,
+        p.GroupId, p.LastHeartbeatAt
+    }).ToListAsync(ct)));
+
+app.MapGet("/api/printers/discover", async (IPrinterDriverFactory driverFactory, ILoggerFactory loggerFactory, CancellationToken ct) =>
+{
+    // Use CupsPrinterDriver discovery to enumerate CUPS queues
+    var cupsQueue = Environment.GetEnvironmentVariable("CUPS_QUEUE") ?? "Zebra_Technologies_ZTC_GK420t";
+    var cupsDriver = driverFactory.ResolveByType("cups", cupsQueueName: cupsQueue);
+    var discovered = await cupsDriver.DiscoverAsync(ct);
+    return Results.Ok(discovered);
+});
+
+app.MapGet("/api/printers/{code}/health", async (string code, PrinterDbContext db, IPrinterDriverFactory driverFactory, CancellationToken ct) =>
+{
+    var printer = await db.Printers.FirstOrDefaultAsync(p => p.PrinterCode == code, ct);
+    if (printer is null)
+        return Results.NotFound(new { error = $"Printer '{code}' not found" });
+
+    var driver = driverFactory.Resolve(printer);
+    var status = await driver.GetStatusAsync(ct);
+    var isReady = status is ND.PrinterAdapter.Application.Dtos.PrinterDriverStatus.Idle
+                       or ND.PrinterAdapter.Application.Dtos.PrinterDriverStatus.Printing;
+
+    return Results.Ok(new
+    {
+        printerCode = printer.PrinterCode,
+        displayName = printer.DisplayName,
+        driverType = printer.DriverType,
+        cupsQueueName = printer.CupsQueueName,
+        status = status.ToString(),
+        isReady,
+        checkedAt = DateTimeOffset.UtcNow
+    });
+});
+
+app.MapPost("/api/printers/{code}/test-connection", async (string code, PrinterDbContext db, IPrinterDriverFactory driverFactory, CancellationToken ct) =>
+{
+    var printer = await db.Printers.FirstOrDefaultAsync(p => p.PrinterCode == code, ct);
+    if (printer is null)
+        return Results.NotFound(new { error = $"Printer '{code}' not found" });
+
+    var driver = driverFactory.Resolve(printer);
+    var isHealthy = await driver.HealthCheckAsync(ct);
+    var status = await driver.GetStatusAsync(ct);
+
+    return Results.Ok(new
+    {
+        printerCode = printer.PrinterCode,
+        driverType = printer.DriverType,
+        cupsQueueName = printer.CupsQueueName,
+        status = status.ToString(),
+        isReachable = isHealthy,
+        checkedAt = DateTimeOffset.UtcNow
+    });
+});
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "printer-adapter" }));
 

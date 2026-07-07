@@ -16,7 +16,8 @@ public record ProcessJobCommand(
     int RetrySequence = 0,
     string? ReasonCode = null,
     string? ReasonDescription = null,
-    string? OverrideJobType = null
+    string? OverrideJobType = null,
+    string? DispatchTarget = null
 );
 
 public sealed class ProcessJobHandler
@@ -165,7 +166,8 @@ public sealed class ProcessJobHandler
             job.SourceSystem,
             attempt.AttemptNo,
             payloadJson: job.PayloadJson,
-            targetPrinter: job.AssignedPrinter);
+            targetPrinter: job.AssignedPrinter,
+            dispatchTarget: command.DispatchTarget);
 
         var routingKey = firstStep is not null 
             ? CompleteJobStepHandler.GetStepRoutingKey(firstStep.StepName) 
