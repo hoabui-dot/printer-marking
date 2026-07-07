@@ -535,14 +535,29 @@ export default function DashboardPage() {
     return visionResult
   }
 
-  // Fetch active template on mount
-  useEffect(() => {
+  const fetchActiveTemplate = useCallback(() => {
     client.get('/label-templates/active')
       .then((res: any) => {
         setActiveTemplate(res.data)
       })
       .catch((err: any) => console.error("Error fetching active template:", err))
   }, [])
+
+  // Fetch active template on mount
+  useEffect(() => {
+    fetchActiveTemplate()
+  }, [fetchActiveTemplate])
+
+  // Retry fetching active template every 10s if it's null
+  useEffect(() => {
+    if (activeTemplate) return
+    const timer = setInterval(() => {
+      if (!activeTemplate) {
+        fetchActiveTemplate()
+      }
+    }, 10000)
+    return () => clearInterval(timer)
+  }, [activeTemplate, fetchActiveTemplate])
 
   // Fetch active job details, attempts & steps reactively
   useEffect(() => {

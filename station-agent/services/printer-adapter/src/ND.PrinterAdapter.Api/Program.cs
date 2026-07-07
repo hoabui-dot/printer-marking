@@ -195,8 +195,11 @@ app.MapGet("/api/label-templates", async (
 // GET /api/label-templates/active
 app.MapGet("/api/label-templates/active", async (
     PrinterDbContext db,
+    ILoggerFactory loggerFactory,
     CancellationToken ct) =>
 {
+    var logger = loggerFactory.CreateLogger("PrinterAdapter.Api");
+    logger.LogInformation("[API] GET /api/label-templates/active called.");
     var targetTemplate = await db.LabelTemplates.FirstOrDefaultAsync(t => t.Name == "Industrial Product QR Label", ct);
     if (targetTemplate is null)
     {
@@ -310,20 +313,33 @@ app.MapGet("/api/label-templates/active", async (
         }
     }
 
-    return Results.Ok(new
+    logger.LogInformation("[API] Returning active template '{TemplateName}', version={Version}. Raw TemplateJson length={Length}",
+        targetTemplate.Name, targetTemplate.Version, targetTemplate.TemplateJson.Length);
+    try
     {
-        targetTemplate.Id,
-        targetTemplate.Name,
-        targetTemplate.Description,
-        targetTemplate.Dpi,
-        targetTemplate.LabelWidth,
-        targetTemplate.LabelHeight,
-        templateJson = System.Text.Json.JsonDocument.Parse(targetTemplate.TemplateJson).RootElement,
-        targetTemplate.Version,
-        targetTemplate.IsActive,
-        targetTemplate.CreatedAt,
-        targetTemplate.UpdatedAt
-    });
+        var parsed = System.Text.Json.JsonDocument.Parse(targetTemplate.TemplateJson).RootElement;
+        logger.LogInformation("[API] Successfully parsed TemplateJson into JsonElement.");
+        return Results.Ok(new
+        {
+            targetTemplate.Id,
+            targetTemplate.Name,
+            targetTemplate.Description,
+            targetTemplate.Dpi,
+            targetTemplate.LabelWidth,
+            targetTemplate.LabelHeight,
+            templateJson = parsed,
+            targetTemplate.Version,
+            targetTemplate.IsActive,
+            targetTemplate.CreatedAt,
+            targetTemplate.UpdatedAt
+        });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "[API] Failed to parse TemplateJson for '{TemplateName}'. Raw value: {RawValue}", 
+            targetTemplate.Name, targetTemplate.TemplateJson);
+        throw;
+    }
 });
 
 // POST /api/label-templates/preview

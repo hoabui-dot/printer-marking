@@ -38,33 +38,53 @@ export function LabelPreview({
   width = 400,
   className = '',
 }: LabelPreviewProps) {
+  console.log("[LabelPreview] Render start. Template:", template, "Data:", data);
   // Parse template if passed as string or contains templateJson string
   let parsedTemplate: LabelTemplate | null = null
   let jsonStr: string | null = null
 
   if (typeof template === 'string') {
     jsonStr = template
+    console.log("[LabelPreview] Template is raw string.");
   } else if (template && typeof template === 'object') {
     const wrapper = template as any
     const rawJson = wrapper.templateJson || wrapper.TemplateJson
+    console.log("[LabelPreview] Template is object. rawJson type:", typeof rawJson);
     if (typeof rawJson === 'string') {
       jsonStr = rawJson
     } else if (rawJson && typeof rawJson === 'object') {
       parsedTemplate = rawJson as LabelTemplate
+      console.log("[LabelPreview] Resolved parsedTemplate directly from object rawJson:", parsedTemplate);
     } else if (Array.isArray(wrapper.elements)) {
       parsedTemplate = wrapper
+      console.log("[LabelPreview] Resolved parsedTemplate directly from wrapper elements:", parsedTemplate);
     }
   }
 
   if (jsonStr) {
     try {
       parsedTemplate = JSON.parse(jsonStr)
-    } catch {
+      console.log("[LabelPreview] JSON.parse succeeded. parsedTemplate:", parsedTemplate);
+    } catch (err) {
+      console.error("[LabelPreview] JSON.parse failed on jsonStr:", jsonStr, "Error:", err);
       parsedTemplate = null
     }
   }
 
+  if (!template) {
+    console.warn("[LabelPreview] Render aborted: template is null or undefined.");
+    return (
+      <div
+        className={`flex items-center justify-center border border-dashed border-border rounded-lg bg-surface-2 text-muted-fg text-xs italic ${className}`}
+        style={{ width, height: (width * 3) / 5 }}
+      >
+        Đang tải Template...
+      </div>
+    )
+  }
+
   if (!parsedTemplate) {
+    console.warn("[LabelPreview] Render aborted: parsedTemplate is null or undefined (parse failure).");
     return (
       <div
         className={`flex items-center justify-center border border-dashed border-border rounded-lg bg-surface-2 text-muted-fg text-xs italic ${className}`}
