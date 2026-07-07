@@ -173,26 +173,47 @@ app.MapPost("/api/label-templates/preview", async (LabelPreviewRequest req, Canc
     try
     {
         using var client = new HttpClient();
-        var dpiStr = req.Dpi == 300 ? "300dpmm" : "8dpmm";
-        var url = $"http://api.labelary.com/v1/printers/{dpiStr}/labels/{req.Width}x{req.Height}/0/";
-        
+        client.Timeout = TimeSpan.FromSeconds(15);
+
+        // Labelary API uses dots-per-mm (dpmm) — not raw DPI:
+        //   8dpmm  = 203 DPI  (most common desktop/industrial label printer)
+        //   12dpmm = 300 DPI
+        //   24dpmm = 600 DPI
+        var dpiStr = req.Dpi switch
+        {
+            >= 500 => "24dpmm",
+            >= 250 => "12dpmm",
+            _      => "8dpmm"    // default: 203 DPI
+        };
+
+        // Labelary format: /v1/printers/{dpmm}/labels/{widthInch}x{heightInch}/0/
+        var widthInch  = req.Width  > 0 ? req.Width  : 4.0;
+        var heightInch = req.Height > 0 ? req.Height : 2.0;
+        var url = $"http://api.labelary.com/v1/printers/{dpiStr}/labels/{widthInch}x{heightInch}/0/";
+
         using var content = new StringContent(req.Zpl, System.Text.Encoding.UTF8, "application/x-www-form-urlencoded");
         client.DefaultRequestHeaders.Add("Accept", "image/png");
-        
+
         var response = await client.PostAsync(url, content, ct);
         if (!response.IsSuccessStatusCode)
         {
-            return Results.BadRequest(new { error = $"Labelary returned error: {response.StatusCode}" });
+            var body = await response.Content.ReadAsStringAsync(ct);
+            return Results.BadRequest(new { error = $"Labelary returned {response.StatusCode}: {body}" });
         }
-        
+
         var bytes = await response.Content.ReadAsByteArrayAsync(ct);
         return Results.File(bytes, "image/png");
+    }
+    catch (TaskCanceledException)
+    {
+        return Results.BadRequest(new { error = "Preview request timed out (Labelary API unreachable)" });
     }
     catch (Exception ex)
     {
         return Results.BadRequest(new { error = $"Failed to proxy preview request: {ex.Message}" });
     }
 });
+
 
 // GET /api/label-templates/{id}
 app.MapGet("/api/label-templates/{id}", async (string id, ILabelTemplateRepository repo, CancellationToken ct) =>

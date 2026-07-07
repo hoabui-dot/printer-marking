@@ -7,6 +7,7 @@ import client, { rbacApi, jobsApi, commandsApi } from '@/api/client'
 import { useAuth } from '@/context/AuthContext'
 import { PROTECTED_ADMIN_USERNAME, CREATABLE_ROLES } from '@/constants/roles'
 import { translatePermission, translateRole, translateJobType } from '@/lib/utils'
+import { BarcodePreview } from '@/components/BarcodePreview'
 
 // Icons
 import {
@@ -365,8 +366,6 @@ export default function DashboardPage() {
   const [activeJobDetails, setActiveJobDetails] = useState<any>(null)
   const [activeJobSteps, setActiveJobSteps] = useState<any[]>([])
   const [activeTemplate, setActiveTemplate] = useState<any>(null)
-  const [previewImgUrl, setPreviewImgUrl] = useState<string>('')
-  const [loadingPreview, setLoadingPreview] = useState<boolean>(false)
 
   // Helper to resolve variables from the active job
   const getResolvedData = (): Record<string, string> => {
@@ -559,43 +558,9 @@ export default function DashboardPage() {
     };
   }, [production?.jobId, production?.jobStatus])
 
-  // Parse tags & render preview
-  useEffect(() => {
-    if (!activeJobDetails || !activeTemplate) {
-      setPreviewImgUrl('')
-      return
-    }
 
-    setLoadingPreview(true)
-    const resolvedData = getResolvedData()
-
-    // 1. Call render endpoint to compile ZPL
-    client.post('/label-templates/render', {
-      templateJson: activeTemplate.TemplateJson || activeTemplate.templateJson,
-      data: resolvedData
-    })
-      .then(renderRes => {
-        const zpl = renderRes.data.zpl
-        // 2. Call preview proxy to render image
-        client.post('/label-templates/preview', {
-          zpl: zpl,
-          dpi: activeTemplate.Dpi || activeTemplate.dpi || 203,
-          width: activeTemplate.LabelWidth || activeTemplate.labelWidth || 4,
-          height: activeTemplate.LabelHeight || activeTemplate.labelHeight || 2.4
-        }, { responseType: 'blob' })
-          .then(previewRes => {
-            const blob = new Blob([previewRes.data], { type: 'image/png' })
-            const url = URL.createObjectURL(blob)
-            setPreviewImgUrl(url)
-          })
-          .catch(err => console.error("Error generating label preview image:", err))
-          .finally(() => setLoadingPreview(false))
-      })
-      .catch(err => {
-        console.error("Error rendering template to ZPL:", err)
-        setLoadingPreview(false)
-      })
-  }, [activeJobDetails, activeTemplate])
+  // Note: barcode preview is now rendered client-side by <BarcodePreview> using JsBarcode.
+  // The Labelary HTTP pipeline (render → preview) has been removed — no state or effects needed.
 
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false)
   const [selectedDetailRecord, setSelectedDetailRecord] = useState<ProductionRecord | null>(null)
@@ -1417,7 +1382,7 @@ export default function DashboardPage() {
                 {/* RIGHT COLUMN: Panels 4 (Label Preview) & 7 (Job Timeline) */}
                 <div className="space-y-6">
 
-                  {/* PANEL 4: Label Preview */}
+                  {/* PANEL 4: Label Preview — barcode rendered client-side via JsBarcode */}
                   <Card className="border border-border bg-card shadow-sm hover:shadow-md transition-shadow">
                     <CardHeader className="py-4 px-6 border-b border-border bg-brand/5 dark:bg-brand-dark/10">
                       <CardTitle className="text-sm font-bold tracking-wider text-brand uppercase flex items-center gap-2">
@@ -1425,38 +1390,46 @@ export default function DashboardPage() {
                         4. Xem trước nhãn in (Label Preview)
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="p-6">
-                      <div className="flex flex-col items-center justify-center">
-                        <div className="w-full flex justify-between text-xs text-muted-fg font-semibold mb-3 border-b border-border/50 pb-2">
-                          <span>Mẫu nhãn: {activeTemplate?.name || 'Mẫu nhãn tiêu chuẩn'}</span>
-                          <span>DPI: {activeTemplate?.dpi || 203}</span>
-                        </div>
+                    <CardContent className="p-4">
+                      {/* Template meta row */}
+                      <div className="w-full flex justify-between text-xs text-muted-fg font-semibold mb-3 border-b border-border/50 pb-2">
+                        <span>Mẫu nhãn: {activeTemplate?.name || 'Mẫu nhãn tiêu chuẩn'}</span>
+                        <span>DPI: {activeTemplate?.dpi || 203} | Code128</span>
+                      </div>
 
-                        <div className="w-full min-h-[190px] flex items-center justify-center border border-dashed border-border/70 rounded-lg p-2 bg-slate-50 dark:bg-zinc-950/50 shadow-inner relative">
-                          {loadingPreview ? (
-                            <div className="flex flex-col items-center gap-2 text-muted-fg text-sm">
-                              <RefreshCw className="h-8 w-8 animate-spin text-brand" />
-                              Đang kết xuất nhãn...
-                            </div>
-                          ) : (isCurrentJob && previewImgUrl) ? (
-                            <img
-                              src={previewImgUrl}
-                              alt="ZPL Label Preview"
-                              className="max-w-full rounded-md border border-border shadow-md object-contain bg-white transition-opacity duration-300"
+                      {/* Barcode preview — rendered by JsBarcode, no external API */}
+                      <div className="w-full min-h-[160px] flex items-center justify-center border border-dashed border-border/60 rounded-lg bg-white dark:bg-zinc-950/30 shadow-inner p-3">
+                        {(() => {
+                          const barcodeValue = activeJobDetails?.productSerial || ''
+                          return (
+                            <BarcodePreview
+                              value={barcodeValue}
+                              symbology="CODE128"
+                              showText={true}
+                              lineWidth={1.6}
+                              height={55}
+                              className="w-full"
                             />
-                          ) : (
-                            <div className="text-center p-4 text-muted-fg text-sm flex flex-col items-center gap-2">
-                              <PrinterIcon className="h-10 w-10 text-muted-fg/40" />
-                              Chưa có thông tin kết xuất nhãn in hiện tại.
-                            </div>
-                          )}
+                          )
+                        })()}
+                      </div>
+
+                      {/* Serial info row */}
+                      {activeJobDetails?.productSerial && (
+                        <div className="mt-2 flex items-center justify-between text-xs">
+                          <span className="text-muted-fg">Serial (mã vạch):</span>
+                          <span className="font-mono font-bold text-foreground text-[11px]">
+                            {activeJobDetails.productSerial}
+                          </span>
                         </div>
-                        <div className="w-full text-center text-xs text-muted-fg mt-2 italic">
-                          * Bản xem trước tự động cập nhật từ cấu hình Template ZPL.
-                        </div>
+                      )}
+
+                      <div className="w-full text-center text-xs text-muted-fg mt-2 italic">
+                        * Bản xem trước được kết xuất trực tiếp từ serial — giống hệt mã vạch in thực tế.
                       </div>
                     </CardContent>
                   </Card>
+
 
                   {/* PANEL 7: Job Timeline */}
                   <Card className="border border-border bg-card shadow-sm hover:shadow-md transition-shadow">
@@ -2644,6 +2617,24 @@ export default function DashboardPage() {
                 <span className="text-muted-fg font-medium">Số Serial / UID:</span>
                 <span className="col-span-2 font-mono text-foreground">{selectedRecord.productSerial || '—'}</span>
               </div>
+
+              {/* Barcode preview — same value as physically printed label */}
+              {selectedRecord.productSerial && (
+                <div className="border border-border/50 rounded-lg bg-white overflow-hidden">
+                  <div className="px-3 pt-2 text-xs font-semibold text-muted-fg uppercase tracking-wider border-b border-border/30">
+                    Xem trước mã vạch (Code 128)
+                  </div>
+                  <BarcodePreview
+                    value={selectedRecord.productSerial}
+                    symbology="CODE128"
+                    showText={true}
+                    lineWidth={1.6}
+                    height={50}
+                    className="w-full py-1"
+                  />
+                </div>
+              )}
+
               <div className="grid grid-cols-3 gap-2 border-b border-border/50 pb-2">
                 <span className="text-muted-fg font-medium">Loại công việc:</span>
                 <span className="col-span-2 font-semibold text-foreground">{translateJobType(selectedRecord.jobType)}</span>
@@ -2676,6 +2667,7 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+
 
           <DialogFooter className="pt-2">
             <Button variant="outline" className="w-full text-sm" onClick={() => setSelectedRecord(null)}>
@@ -2898,8 +2890,8 @@ export default function DashboardPage() {
                 <span className="font-semibold text-foreground text-base">{selectedDetailRecord.productCode}</span>
               </div>
               <div>
-                <span className="text-muted-fg block text-xs uppercase font-semibold">Sản lượng hoàn thành</span>
-                <span className="font-mono text-foreground text-base">{selectedDetailRecord.productSerial || '—'}</span>
+                <span className="text-muted-fg block text-xs uppercase font-semibold">Serial / Mã vạch</span>
+                <span className="font-mono text-foreground text-sm font-bold">{selectedDetailRecord.productSerial || '—'}</span>
               </div>
               <div>
                 <span className="text-muted-fg block text-xs uppercase font-semibold">Trạng thái hiện tại</span>
@@ -2967,7 +2959,7 @@ export default function DashboardPage() {
                             setDetailTab('progress'); // Auto-switch to progress view
                           }}
                           className={[
-                            'p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-3 min-h-[110px]',
+                            'p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-3',
                             isSelected
                               ? 'bg-brand/10 border-brand/50 ring-1 ring-brand/30 shadow-sm font-semibold'
                               : 'bg-card hover:bg-surface-1 border-border hover:border-muted-fg/40 shadow-sm'
@@ -2977,12 +2969,26 @@ export default function DashboardPage() {
                             <div>
                               <div className="font-bold text-sm text-foreground">Sản phẩm #{idx + 1}</div>
                               <div className="font-mono text-xs text-muted-fg mt-0.5 break-all max-w-[170px]">
-                                Serial: {piece.productSerial || 'Không có serial'}
+                                {piece.productSerial || 'Không có serial'}
                               </div>
                             </div>
                             <StatusBadge status={piece.currentStatus} jobType={piece.jobType} />
                           </div>
-                          
+
+                          {/* Barcode preview — client-side JsBarcode, same value as physical print */}
+                          {piece.productSerial && (
+                            <div className="bg-white rounded-md border border-border/40 overflow-hidden">
+                              <BarcodePreview
+                                value={piece.productSerial}
+                                symbology="CODE128"
+                                showText={true}
+                                lineWidth={1.2}
+                                height={36}
+                                className="w-full"
+                              />
+                            </div>
+                          )}
+
                           <div className="flex justify-between items-center text-[10px] text-muted-fg pt-2 border-t border-border/50 font-medium">
                             <span>Thời gian: {new Date(piece.updatedAt).toLocaleTimeString('vi-VN')}</span>
                             <span className="text-brand-light font-bold hover:underline">Xem chi tiết &rarr;</span>
