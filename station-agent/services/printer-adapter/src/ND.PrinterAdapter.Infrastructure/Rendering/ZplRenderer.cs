@@ -118,16 +118,17 @@ public sealed class ZplRenderer : ILabelRenderer
         var height = GetInt(el, "height", 80);
         var value = ResolveBinding(el, data);
         var symbology = el.TryGetProperty("symbology", out var sym) ? sym.GetString() ?? "Code128" : "Code128";
+        var barWidth = GetInt(el, "barWidth", 3);
 
         return symbology.ToUpperInvariant() switch
         {
-            "CODE128"  => $"^FO{x},{y}^BCN,{height},Y,N,N^FD{EscapeZpl(value)}^FS\n",
-            "CODE39"   => $"^FO{x},{y}^B3N,N,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
-            "EAN13"    => $"^FO{x},{y}^BEN,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
-            "UPCA"     => $"^FO{x},{y}^BUN,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
-            "EAN8"     => $"^FO{x},{y}^B8N,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
-            "ITF"      => $"^FO{x},{y}^BIN,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
-            _          => $"^FO{x},{y}^BCN,{height},Y,N,N^FD{EscapeZpl(value)}^FS\n" // default Code128
+            "CODE128"  => $"^FO{x},{y}^BY{barWidth}^BCN,{height},Y,N,N^FD{EscapeZpl(value)}^FS\n",
+            "CODE39"   => $"^FO{x},{y}^BY{barWidth}^B3N,N,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
+            "EAN13"    => $"^FO{x},{y}^BY{barWidth}^BEN,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
+            "UPCA"     => $"^FO{x},{y}^BY{barWidth}^BUN,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
+            "EAN8"     => $"^FO{x},{y}^BY{barWidth}^B8N,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
+            "ITF"      => $"^FO{x},{y}^BY{barWidth}^BIN,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
+            _          => $"^FO{x},{y}^BY{barWidth}^BCN,{height},Y,N,N^FD{EscapeZpl(value)}^FS\n" // default Code128
         };
     }
 

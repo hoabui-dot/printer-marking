@@ -144,6 +144,7 @@ public sealed class CompleteJobStepHandler
                 var startHistory = JobHistory.Record(job.Id, job.CurrentStatus, job.CurrentStatus, $"STEP_{nextStep.StepName}_STARTED", performedBy: "system", attemptId: activeAttempt.Id, note: $"Bắt đầu bước {nextStep.StepName}");
                 await _historyRepository.AddAsync(startHistory, cancellationToken);
 
+                var resolvedDispatchTarget = ExtractDispatchTarget(job.PayloadJson);
                 var jobEvent = JobProcessingEvent.From(
                     job.Id,
                     job.JobNo,
@@ -151,7 +152,10 @@ public sealed class CompleteJobStepHandler
                     job.ProductCode,
                     job.ProductSerial,
                     job.SourceSystem,
-                    activeAttempt.AttemptNo);
+                    activeAttempt.AttemptNo,
+                    payloadJson: job.PayloadJson,
+                    targetPrinter: job.AssignedPrinter,
+                    dispatchTarget: resolvedDispatchTarget);
 
                 var nextRoutingKey = GetStepRoutingKey(nextStep.StepName);
                 var outboxEvent = JobEngineOutboxEvent.Create(
@@ -219,6 +223,7 @@ public sealed class CompleteJobStepHandler
                     var startHistory = JobHistory.Record(job.Id, job.CurrentStatus, job.CurrentStatus, "STEP_PLC_REJECT_STARTED", performedBy: "system", attemptId: activeAttempt.Id, note: "Bắt đầu bước PLC_REJECT do Vision check lỗi");
                     await _historyRepository.AddAsync(startHistory, cancellationToken);
 
+                    var resolvedDispatchTarget = ExtractDispatchTarget(job.PayloadJson);
                     var jobEvent = JobProcessingEvent.From(
                         job.Id,
                         job.JobNo,
@@ -226,7 +231,10 @@ public sealed class CompleteJobStepHandler
                         job.ProductCode,
                         job.ProductSerial,
                         job.SourceSystem,
-                        activeAttempt.AttemptNo);
+                        activeAttempt.AttemptNo,
+                        payloadJson: job.PayloadJson,
+                        targetPrinter: job.AssignedPrinter,
+                        dispatchTarget: resolvedDispatchTarget);
 
                     var outboxEvent = JobEngineOutboxEvent.Create(
                         nameof(Job),
@@ -404,5 +412,35 @@ public sealed class CompleteJobStepHandler
         {
             _logger.LogError(ex, "Failed to update production item status for JobNo={JobNo} JobId={JobId}", jobNo, jobId);
         }
+    }
+
+    private static string? ExtractDispatchTarget(string? payloadJson)
+    {
+        if (string.IsNullOrEmpty(payloadJson))
+            return null;
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(payloadJson);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("data", out var dataArr) && dataArr.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                foreach (var item in dataArr.EnumerateArray())
+                {
+                    var tag = item.TryGetProperty("tag", out var tProp) ? tProp.GetString() : null;
+                    var val = item.TryGetProperty("value", out var vProp) ? vProp.GetString() : null;
+                    if (string.Equals(tag, "dispatch_target", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return val;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore parse failures
+        }
+
+        return null;
     }
 }

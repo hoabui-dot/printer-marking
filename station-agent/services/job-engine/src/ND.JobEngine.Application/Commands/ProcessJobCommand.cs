@@ -157,6 +157,7 @@ public sealed class ProcessJobHandler
         await _transitionRepository.AddAsync(transition, cancellationToken);
 
         // Record outbox event for job processing
+        var resolvedDispatchTarget = command.DispatchTarget ?? ExtractDispatchTarget(job.PayloadJson);
         var jobEvent = JobProcessingEvent.From(
             job.Id,
             job.JobNo,
@@ -167,7 +168,7 @@ public sealed class ProcessJobHandler
             attempt.AttemptNo,
             payloadJson: job.PayloadJson,
             targetPrinter: job.AssignedPrinter,
-            dispatchTarget: command.DispatchTarget);
+            dispatchTarget: resolvedDispatchTarget);
 
         var routingKey = firstStep is not null 
             ? CompleteJobStepHandler.GetStepRoutingKey(firstStep.StepName) 
@@ -236,5 +237,35 @@ public sealed class ProcessJobHandler
             ],
             _ => [JobStep.Create(attemptId, "DEFAULT", 1)]
         };
+    }
+
+    private static string? ExtractDispatchTarget(string? payloadJson)
+    {
+        if (string.IsNullOrEmpty(payloadJson))
+            return null;
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(payloadJson);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("data", out var dataArr) && dataArr.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                foreach (var item in dataArr.EnumerateArray())
+                {
+                    var tag = item.TryGetProperty("tag", out var tProp) ? tProp.GetString() : null;
+                    var val = item.TryGetProperty("value", out var vProp) ? vProp.GetString() : null;
+                    if (string.Equals(tag, "dispatch_target", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return val;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore parse failures
+        }
+
+        return null;
     }
 }

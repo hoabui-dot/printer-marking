@@ -195,58 +195,62 @@ app.MapGet("/api/label-templates/active", async (
     PrinterDbContext db,
     CancellationToken ct) =>
 {
-    var template = await db.LabelTemplates.FirstOrDefaultAsync(t => t.IsActive, ct);
-    if (template is null)
+    var targetTemplate = await db.LabelTemplates.FirstOrDefaultAsync(t => t.Name == "Basic Product Barcode", ct);
+    if (targetTemplate is null)
     {
-        // Seed default template if none exists
         var defaultJson = @"
 {
   ""width"": 100,
   ""height"": 60,
   ""dpi"": 203,
   ""elements"": [
-    { ""type"": ""text"", ""x"": 50, ""y"": 40, ""fontSize"": 18, ""text"": ""PRODUCT:"" },
-    { ""type"": ""text"", ""x"": 220, ""y"": 40, ""fontSize"": 18, ""binding"": ""product_name"" },
-    { ""type"": ""text"", ""x"": 50, ""y"": 80, ""fontSize"": 14, ""text"": ""SKU:"" },
-    { ""type"": ""text"", ""x"": 120, ""y"": 80, ""fontSize"": 14, ""binding"": ""product_code"" },
-    { ""type"": ""text"", ""x"": 280, ""y"": 80, ""fontSize"": 14, ""text"": ""REV:"" },
-    { ""type"": ""text"", ""x"": 340, ""y"": 80, ""fontSize"": 14, ""binding"": ""revision"" },
-    { ""type"": ""text"", ""x"": 50, ""y"": 120, ""fontSize"": 14, ""text"": ""LOT:"" },
-    { ""type"": ""text"", ""x"": 120, ""y"": 120, ""fontSize"": 14, ""binding"": ""lot_number"" },
-    { ""type"": ""text"", ""x"": 280, ""y"": 120, ""fontSize"": 14, ""text"": ""BATCH:"" },
-    { ""type"": ""text"", ""x"": 360, ""y"": 120, ""fontSize"": 14, ""binding"": ""batch_number"" },
-    { ""type"": ""text"", ""x"": 50, ""y"": 160, ""fontSize"": 14, ""text"": ""PO:"" },
-    { ""type"": ""text"", ""x"": 120, ""y"": 160, ""fontSize"": 14, ""binding"": ""production_order"" },
-    { ""type"": ""text"", ""x"": 280, ""y"": 160, ""fontSize"": 14, ""text"": ""WO:"" },
-    { ""type"": ""text"", ""x"": 340, ""y"": 160, ""fontSize"": 14, ""binding"": ""work_order"" },
-    { ""type"": ""text"", ""x"": 50, ""y"": 200, ""fontSize"": 14, ""text"": ""SERIAL:"" },
-    { ""type"": ""text"", ""x"": 150, ""y"": 200, ""fontSize"": 14, ""binding"": ""serial_number"" },
-    { ""type"": ""text"", ""x"": 50, ""y"": 240, ""fontSize"": 14, ""text"": ""MFG DATE:"" },
-    { ""type"": ""text"", ""x"": 180, ""y"": 240, ""fontSize"": 14, ""binding"": ""manufacture_date"" },
-    { ""type"": ""text"", ""x"": 50, ""y"": 280, ""fontSize"": 14, ""text"": ""OPERATOR:"" },
-    { ""type"": ""text"", ""x"": 180, ""y"": 280, ""fontSize"": 14, ""binding"": ""operator"" },
-    { ""type"": ""text"", ""x"": 50, ""y"": 320, ""fontSize"": 14, ""text"": ""STATION:"" },
-    { ""type"": ""text"", ""x"": 160, ""y"": 320, ""fontSize"": 14, ""binding"": ""station"" },
-    { ""type"": ""text"", ""x"": 50, ""y"": 360, ""fontSize"": 14, ""text"": ""ORIGIN:"" },
-    { ""type"": ""text"", ""x"": 150, ""y"": 360, ""fontSize"": 14, ""binding"": ""country"" },
-    { ""type"": ""datamatrix"", ""x"": 500, ""y"": 100, ""magnification"": 6, ""binding"": ""trace_id"" },
-    { ""type"": ""barcode"", ""x"": 50, ""y"": 420, ""height"": 60, ""symbology"": ""Code128"", ""binding"": ""serial_number"" }
+    { ""type"": ""barcode"", ""x"": 100, ""y"": 140, ""height"": 180, ""symbology"": ""Code128"", ""binding"": ""serial_number"" }
   ]
 }
 ";
-        template = LabelTemplate.Create(
-            "Standard Industrial Rubber Label",
-            "Professional standard template containing ECC200 Data Matrix, Code 128 barcode, and planning variables.",
+        targetTemplate = LabelTemplate.Create(
+            "Basic Product Barcode",
+            "Clean label template displaying only a 1D Code128 barcode and its human-readable serial number.",
             203,
             100,
             60,
             defaultJson
         );
 
-        await db.LabelTemplates.AddAsync(template, ct);
+        await db.LabelTemplates.AddAsync(targetTemplate, ct);
         await db.SaveChangesAsync(ct);
     }
-    return Results.Ok(template);
+
+    if (!targetTemplate.IsActive)
+    {
+        var allTemplates = await db.LabelTemplates.ToListAsync(ct);
+        foreach (var t in allTemplates)
+        {
+            if (t.Name == "Basic Product Barcode")
+                t.Activate();
+            else
+                t.Deactivate();
+        }
+        await db.SaveChangesAsync(ct);
+    }
+    else
+    {
+        var otherActive = await db.LabelTemplates.AnyAsync(t => t.Name != "Basic Product Barcode" && t.IsActive, ct);
+        if (otherActive)
+        {
+            var allTemplates = await db.LabelTemplates.ToListAsync(ct);
+            foreach (var t in allTemplates)
+            {
+                if (t.Name == "Basic Product Barcode")
+                    t.Activate();
+                else
+                    t.Deactivate();
+            }
+            await db.SaveChangesAsync(ct);
+        }
+    }
+
+    return Results.Ok(targetTemplate);
 });
 
 // POST /api/label-templates/preview

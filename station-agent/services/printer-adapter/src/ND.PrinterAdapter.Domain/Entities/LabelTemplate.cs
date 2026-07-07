@@ -60,4 +60,5 @@ public sealed class LabelTemplate : Entity
     }
 
     public void Deactivate() => IsActive = false;
+    public void Activate() => IsActive = true;
 }

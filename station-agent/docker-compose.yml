@@ -152,6 +152,8 @@ services:
       - RabbitMq__Password=${RABBITMQ_PASS:-guest}
       - RabbitMq__VirtualHost=/
       - RabbitMq__DefaultExchange=station.events
+      - CUPS_SERVER=127.0.0.1:8631
+      - CUPS_USER=root
     volumes:
       - ./sqlite-databases:/data
       - printer-logs:/logs
