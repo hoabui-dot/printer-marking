@@ -209,20 +209,22 @@ app.MapGet("/api/label-templates/active", async (
   ""height"": 30,
   ""dpi"": 203,
   ""elements"": [
-    { ""type"": ""text"", ""x"": 15, ""y"": 15, ""fontSize"": 10, ""text"": ""WON SEAL TECH CO., LTD."" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 55, ""fontSize"": 10, ""binding"": ""product_name"", ""defaultValue"": ""Bearing Seal"" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 95, ""fontSize"": 9, ""text"": ""Product :"" },
-    { ""type"": ""text"", ""x"": 100, ""y"": 95, ""fontSize"": 9, ""binding"": ""product_code"", ""defaultValue"": ""BEARING-SEAL-01"" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 140, ""fontSize"": 9, ""text"": ""Serial  :"" },
-    { ""type"": ""text"", ""x"": 100, ""y"": 140, ""fontSize"": 9, ""binding"": ""serial_number"", ""defaultValue"": ""SN-PO-2026-0001-000001"" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 185, ""fontSize"": 9, ""text"": ""Batch   :"" },
-    { ""type"": ""text"", ""x"": 100, ""y"": 185, ""fontSize"": 9, ""binding"": ""batch_number"", ""defaultValue"": ""BATCH-01"" },
-    { ""type"": ""text"", ""x"": 220, ""y"": 185, ""fontSize"": 9, ""text"": ""Rev :"" },
-    { ""type"": ""text"", ""x"": 280, ""y"": 185, ""fontSize"": 9, ""binding"": ""revision"", ""defaultValue"": ""A"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 20, ""fontSize"": 14, ""text"": ""WON SEAL TECH CO., LTD."" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 55, ""fontSize"": 11, ""binding"": ""product_name"", ""defaultValue"": ""Bearing Seal"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 95, ""fontSize"": 9, ""text"": ""Product:"" },
+    { ""type"": ""text"", ""x"": 100, ""y"": 95, ""fontSize"": 10, ""binding"": ""product_code"", ""defaultValue"": ""BEARING-SEAL-01"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 135, ""fontSize"": 9, ""text"": ""Serial:"" },
+    { ""type"": ""text"", ""x"": 100, ""y"": 135, ""fontSize"": 10, ""binding"": ""serial_number"", ""defaultValue"": ""SN-PO-2026-0001-000001"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 175, ""fontSize"": 9, ""text"": ""Batch:"" },
+    { ""type"": ""text"", ""x"": 80, ""y"": 175, ""fontSize"": 9, ""binding"": ""batch_number"", ""defaultValue"": ""BATCH-01"" },
+    { ""type"": ""text"", ""x"": 170, ""y"": 175, ""fontSize"": 9, ""text"": ""Rev:"" },
+    { ""type"": ""text"", ""x"": 215, ""y"": 175, ""fontSize"": 9, ""binding"": ""revision"", ""defaultValue"": ""A"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 210, ""fontSize"": 9, ""text"": ""Date:"" },
+    { ""type"": ""text"", ""x"": 100, ""y"": 210, ""fontSize"": 9, ""binding"": ""production_date"", ""defaultValue"": ""2026-07-07"" },
     {
       ""type"": ""qr"",
-      ""x"": 280,
-      ""y"": 15,
+      ""x"": 270,
+      ""y"": 70,
       ""magnification"": 4,
       ""payloadTemplate"": ""{\""serial\"":\""{serial_number}\"",\""product\"":\""{product_code}\"",\""revision\"":\""{revision}\"",\""batch\"":\""{batch_number}\""}""
     }
@@ -243,7 +245,7 @@ app.MapGet("/api/label-templates/active", async (
     }
     else
     {
-        if (targetTemplate.TemplateJson.Contains("\n  \"\"serial\"\"") || targetTemplate.TemplateJson.Contains("\\n") || targetTemplate.TemplateJson.Contains("\n"))
+        if (!targetTemplate.TemplateJson.Contains("production_date") || targetTemplate.TemplateJson.Contains("\n") || targetTemplate.TemplateJson.Contains("x\"\": 280"))
         {
             var defaultJson = @"
 {
@@ -251,20 +253,22 @@ app.MapGet("/api/label-templates/active", async (
   ""height"": 30,
   ""dpi"": 203,
   ""elements"": [
-    { ""type"": ""text"", ""x"": 15, ""y"": 15, ""fontSize"": 10, ""text"": ""WON SEAL TECH CO., LTD."" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 55, ""fontSize"": 10, ""binding"": ""product_name"", ""defaultValue"": ""Bearing Seal"" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 95, ""fontSize"": 9, ""text"": ""Product :"" },
-    { ""type"": ""text"", ""x"": 100, ""y"": 95, ""fontSize"": 9, ""binding"": ""product_code"", ""defaultValue"": ""BEARING-SEAL-01"" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 140, ""fontSize"": 9, ""text"": ""Serial  :"" },
-    { ""type"": ""text"", ""x"": 100, ""y"": 140, ""fontSize"": 9, ""binding"": ""serial_number"", ""defaultValue"": ""SN-PO-2026-0001-000001"" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 185, ""fontSize"": 9, ""text"": ""Batch   :"" },
-    { ""type"": ""text"", ""x"": 100, ""y"": 185, ""fontSize"": 9, ""binding"": ""batch_number"", ""defaultValue"": ""BATCH-01"" },
-    { ""type"": ""text"", ""x"": 220, ""y"": 185, ""fontSize"": 9, ""text"": ""Rev :"" },
-    { ""type"": ""text"", ""x"": 280, ""y"": 185, ""fontSize"": 9, ""binding"": ""revision"", ""defaultValue"": ""A"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 20, ""fontSize"": 14, ""text"": ""WON SEAL TECH CO., LTD."" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 55, ""fontSize"": 11, ""binding"": ""product_name"", ""defaultValue"": ""Bearing Seal"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 95, ""fontSize"": 9, ""text"": ""Product:"" },
+    { ""type"": ""text"", ""x"": 100, ""y"": 95, ""fontSize"": 10, ""binding"": ""product_code"", ""defaultValue"": ""BEARING-SEAL-01"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 135, ""fontSize"": 9, ""text"": ""Serial:"" },
+    { ""type"": ""text"", ""x"": 100, ""y"": 135, ""fontSize"": 10, ""binding"": ""serial_number"", ""defaultValue"": ""SN-PO-2026-0001-000001"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 175, ""fontSize"": 9, ""text"": ""Batch:"" },
+    { ""type"": ""text"", ""x"": 80, ""y"": 175, ""fontSize"": 9, ""binding"": ""batch_number"", ""defaultValue"": ""BATCH-01"" },
+    { ""type"": ""text"", ""x"": 170, ""y"": 175, ""fontSize"": 9, ""text"": ""Rev:"" },
+    { ""type"": ""text"", ""x"": 215, ""y"": 175, ""fontSize"": 9, ""binding"": ""revision"", ""defaultValue"": ""A"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 210, ""fontSize"": 9, ""text"": ""Date:"" },
+    { ""type"": ""text"", ""x"": 100, ""y"": 210, ""fontSize"": 9, ""binding"": ""production_date"", ""defaultValue"": ""2026-07-07"" },
     {
       ""type"": ""qr"",
-      ""x"": 280,
-      ""y"": 15,
+      ""x"": 270,
+      ""y"": 70,
       ""magnification"": 4,
       ""payloadTemplate"": ""{\""serial\"":\""{serial_number}\"",\""product\"":\""{product_code}\"",\""revision\"":\""{revision}\"",\""batch\"":\""{batch_number}\""}""
     }
