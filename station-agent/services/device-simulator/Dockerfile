@@ -14,14 +14,9 @@ WORKDIR /repo
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
     DOTNET_GCConserveMemory=9
 
-# Copy Directory props
 COPY Directory.Build.props ./
 COPY Directory.Packages.props ./
-
-# Copy shared projects
 COPY shared/ shared/
-
-# Copy service source
 COPY services/device-simulator/ services/device-simulator/
 
 # Inject fresh frontend build into wwwroot (overrides any pre-built stale files)
@@ -48,5 +43,6 @@ COPY --chown=app:app --from=build /app .
 
 USER app
 EXPOSE 8080
+ENV DOTNET_ENVIRONMENT=Production
 ENV ASPNETCORE_URLS=http://+:8080
 ENTRYPOINT ["dotnet", "ND.DeviceSimulator.Api.dll"]
