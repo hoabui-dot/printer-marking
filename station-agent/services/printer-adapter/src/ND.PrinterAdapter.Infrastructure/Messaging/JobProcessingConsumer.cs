@@ -87,7 +87,7 @@ public sealed class JobProcessingConsumer : BackgroundService
       ""x"": 280,
       ""y"": 15,
       ""magnification"": 4,
-      ""payloadTemplate"": ""{\n  \""serial\"": \""{serial_number}\"",\n  \""product\"": \""{product_code}\"",\n  \""revision\"": \""{revision}\"",\n  \""batch\"": \""{batch_number}\""\n}""
+      ""payloadTemplate"": ""{\""serial\"":\""{serial_number}\"",\""product\"":\""{product_code}\"",\""revision\"":\""{revision}\"",\""batch\"":\""{batch_number}\""}""
     }
   ]
 }
@@ -103,6 +103,48 @@ public sealed class JobProcessingConsumer : BackgroundService
 
             await db.LabelTemplates.AddAsync(targetTemplate, ct);
             await db.SaveChangesAsync(ct);
+        }
+        else
+        {
+            if (targetTemplate.TemplateJson.Contains("\n  \"\"serial\"\"") || targetTemplate.TemplateJson.Contains("\\n") || targetTemplate.TemplateJson.Contains("\n"))
+            {
+                var defaultJson = @"
+{
+  ""width"": 50,
+  ""height"": 30,
+  ""dpi"": 203,
+  ""elements"": [
+    { ""type"": ""text"", ""x"": 15, ""y"": 15, ""fontSize"": 10, ""text"": ""WON SEAL TECH CO., LTD."" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 55, ""fontSize"": 10, ""binding"": ""product_name"", ""defaultValue"": ""Bearing Seal"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 95, ""fontSize"": 9, ""text"": ""Product :"" },
+    { ""type"": ""text"", ""x"": 100, ""y"": 95, ""fontSize"": 9, ""binding"": ""product_code"", ""defaultValue"": ""BEARING-SEAL-01"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 140, ""fontSize"": 9, ""text"": ""Serial  :"" },
+    { ""type"": ""text"", ""x"": 100, ""y"": 140, ""fontSize"": 9, ""binding"": ""serial_number"", ""defaultValue"": ""SN-PO-2026-0001-000001"" },
+    { ""type"": ""text"", ""x"": 15, ""y"": 185, ""fontSize"": 9, ""text"": ""Batch   :"" },
+    { ""type"": ""text"", ""x"": 100, ""y"": 185, ""fontSize"": 9, ""binding"": ""batch_number"", ""defaultValue"": ""BATCH-01"" },
+    { ""type"": ""text"", ""x"": 220, ""y"": 185, ""fontSize"": 9, ""text"": ""Rev :"" },
+    { ""type"": ""text"", ""x"": 280, ""y"": 185, ""fontSize"": 9, ""binding"": ""revision"", ""defaultValue"": ""A"" },
+    {
+      ""type"": ""qr"",
+      ""x"": 280,
+      ""y"": 15,
+      ""magnification"": 4,
+      ""payloadTemplate"": ""{\""serial\"":\""{serial_number}\"",\""product\"":\""{product_code}\"",\""revision\"":\""{revision}\"",\""batch\"":\""{batch_number}\""}""
+    }
+  ]
+}
+";
+                targetTemplate.Update(
+                    "Industrial Product QR Label",
+                    "Won Seal Tech Co., Ltd. 50x30mm Professional QR Code manufacturing label.",
+                    203,
+                    50,
+                    30,
+                    defaultJson
+                );
+                db.LabelTemplates.Update(targetTemplate);
+                await db.SaveChangesAsync(ct);
+            }
         }
 
         if (!targetTemplate.IsActive)

@@ -234,7 +234,7 @@ public sealed class ZplRenderer : ILabelRenderer
 
     private static string EscapeZpl(string value)
     {
-        return value.Replace("^", " ").Replace("~", " ");
+        return value.Replace("^", " ").Replace("~", " ").Replace("\r", "").Replace("\n", "");
     }
 
     private static int GetInt(JsonElement el, string property, int defaultValue)
