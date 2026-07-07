@@ -46,9 +46,6 @@ services:
   # ─────────────────────────────────────────────
   mqtt-adapter:
     image: vanhoadotbui2628/mqtt-adapter:latest
-    build:
-      context: .
-      dockerfile: services/mqtt-adapter/docker/Dockerfile
     container_name: station-mqtt-adapter
     restart: unless-stopped
     depends_on:
@@ -83,9 +80,6 @@ services:
   # ─────────────────────────────────────────────
   job-engine:
     image: vanhoadotbui2628/job-engine:latest
-    build:
-      context: .
-      dockerfile: services/job-engine/docker/Dockerfile
     container_name: station-job-engine
     restart: unless-stopped
     depends_on:
@@ -124,9 +118,6 @@ services:
   # ─────────────────────────────────────────────
   printer-adapter:
     image: vanhoadotbui2628/printer-adapter:latest
-    build:
-      context: .
-      dockerfile: services/printer-adapter/docker/Dockerfile
     container_name: station-printer-adapter
     restart: unless-stopped
     depends_on:
@@ -162,9 +153,6 @@ services:
   # ─────────────────────────────────────────────
   laser-adapter:
     image: vanhoadotbui2628/laser-adapter:latest
-    build:
-      context: .
-      dockerfile: services/laser-adapter/docker/Dockerfile
     container_name: station-laser-adapter
     restart: unless-stopped
     depends_on:
@@ -198,9 +186,6 @@ services:
   # ─────────────────────────────────────────────
   vision-service:
     image: vanhoadotbui2628/vision-service:latest
-    build:
-      context: .
-      dockerfile: services/vision-service/docker/Dockerfile
     container_name: station-vision-service
     restart: unless-stopped
     depends_on:
@@ -226,9 +211,6 @@ services:
   # ─────────────────────────────────────────────
   plc-adapter:
     image: vanhoadotbui2628/plc-adapter:latest
-    build:
-      context: .
-      dockerfile: services/plc-adapter/docker/Dockerfile
     container_name: station-plc-adapter
     restart: unless-stopped
     depends_on:
@@ -252,9 +234,6 @@ services:
   # ─────────────────────────────────────────────
   kiosk-ui:
     image: vanhoadotbui2628/kiosk-ui:latest
-    build:
-      context: .
-      dockerfile: services/kiosk-ui/docker/Dockerfile
     container_name: station-kiosk-ui
     restart: unless-stopped
     depends_on:
@@ -294,9 +273,6 @@ services:
   # ─────────────────────────────────────────────
   device-simulator:
     image: vanhoadotbui2628/device-simulator:latest
-    build:
-      context: .
-      dockerfile: services/device-simulator/Dockerfile
     container_name: station-device-simulator
     restart: unless-stopped
     depends_on:
@@ -330,9 +306,6 @@ services:
   # ─────────────────────────────────────────────
   projection-service:
     image: vanhoadotbui2628/projection-service:latest
-    build:
-      context: .
-      dockerfile: services/projection-service/docker/Dockerfile
     container_name: station-projection-service
     restart: unless-stopped
     depends_on:
