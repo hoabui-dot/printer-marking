@@ -106,3 +106,35 @@ export const printerApi = {
   }>(`/printers/${printerCode}/test-connection`),
 }
 
+export const templateApi = {
+  list: (params?: { search?: string; dpi?: number; status?: string; includeArchived?: boolean }) =>
+    client.get<any[]>('/label-templates', { params }),
+  getById: (id: string) => client.get<any>(`/label-templates/${id}`),
+  getDefault: () => client.get<any>('/label-templates/default'),
+  create: (data: { name: string; description?: string; dpi: number; labelWidth: number; labelHeight: number; templateJson: string }) =>
+    client.post<any>('/label-templates', data),
+  update: (id: string, data: { name: string; description?: string; dpi: number; labelWidth: number; labelHeight: number; templateJson: string }) =>
+    client.put<any>(`/label-templates/${id}`, data),
+  delete: (id: string) => client.delete(`/label-templates/${id}`),
+  duplicate: (id: string) => client.post<any>(`/label-templates/${id}/duplicate`),
+  publish: (id: string) => client.post<any>(`/label-templates/${id}/publish`),
+  archive: (id: string) => client.post<any>(`/label-templates/${id}/archive`),
+  setDefault: (id: string) => client.post<any>(`/label-templates/${id}/set-default`),
+  exportTemplate: (id: string) => client.get(`/label-templates/${id}/export`, { responseType: 'blob' }),
+  importTemplate: (data: object) => client.post<any>('/label-templates/import', data),
+  getVersions: (id: string) => client.get<any[]>(`/label-templates/${id}/versions`),
+  render: (templateJson: string, data: Record<string, string>) =>
+    client.post<{ zpl: string; rendererType: string }>('/label-templates/render', { templateJson, data }),
+  printTest: (id: string, data: { printerCode?: string; data?: Record<string, string>; correlationId?: string }) =>
+    client.post<any>(`/label-templates/${id}/print-test`, data),
+  // Printer assignments
+  getAssignments: () => client.get<any[]>('/printer-template-assignments'),
+  getAssignment: (printerCode: string) => client.get<any>(`/printer-template-assignments/${printerCode}`),
+  assignTemplate: (printerCode: string, templateId: string) =>
+    client.post('/printer-template-assignments', { printerCode, templateId }),
+  removeAssignment: (printerCode: string) => client.delete(`/printer-template-assignments/${printerCode}`),
+  // Print history
+  getPrintHistory: (page = 1, pageSize = 50) =>
+    client.get<any[]>('/print-history', { params: { page, pageSize } }),
+  getPrintHistoryDetail: (id: string) => client.get<any>(`/print-history/${id}`),
+}

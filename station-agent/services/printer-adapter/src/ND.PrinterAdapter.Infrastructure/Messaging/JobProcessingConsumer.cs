@@ -61,126 +61,50 @@ public sealed class JobProcessingConsumer : BackgroundService
         await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
     }
 
-    private async Task<LabelTemplate> EnsureDefaultTemplateAsync(PrinterDbContext db, CancellationToken ct)
+    private async Task<LabelTemplate> EnsureDefaultTemplateAsync(PrinterDbContext db, string printerCode, CancellationToken ct)
     {
-        var targetTemplate = await db.LabelTemplates.FirstOrDefaultAsync(t => t.Name == "Industrial Product QR Label", ct);
-        if (targetTemplate is null)
-        {
-            var defaultJson = @"
-{
-  ""width"": 50,
-  ""height"": 30,
-  ""dpi"": 203,
-  ""elements"": [
-    { ""type"": ""text"", ""x"": 15, ""y"": 20, ""fontSize"": 14, ""text"": ""WON SEAL TECH CO., LTD."" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 55, ""fontSize"": 11, ""binding"": ""product_name"", ""defaultValue"": ""Bearing Seal"" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 95, ""fontSize"": 9, ""text"": ""Product:"" },
-    { ""type"": ""text"", ""x"": 100, ""y"": 95, ""fontSize"": 10, ""binding"": ""product_code"", ""defaultValue"": ""BEARING-SEAL-01"" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 135, ""fontSize"": 9, ""text"": ""Serial:"" },
-    { ""type"": ""text"", ""x"": 100, ""y"": 135, ""fontSize"": 10, ""binding"": ""serial_number"", ""defaultValue"": ""SN-PO-2026-0001-000001"" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 175, ""fontSize"": 9, ""text"": ""Batch:"" },
-    { ""type"": ""text"", ""x"": 80, ""y"": 175, ""fontSize"": 9, ""binding"": ""batch_number"", ""defaultValue"": ""BATCH-01"" },
-    { ""type"": ""text"", ""x"": 170, ""y"": 175, ""fontSize"": 9, ""text"": ""Rev:"" },
-    { ""type"": ""text"", ""x"": 215, ""y"": 175, ""fontSize"": 9, ""binding"": ""revision"", ""defaultValue"": ""A"" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 210, ""fontSize"": 9, ""text"": ""Date:"" },
-    { ""type"": ""text"", ""x"": 100, ""y"": 210, ""fontSize"": 9, ""binding"": ""production_date"", ""defaultValue"": ""2026-07-07"" },
-    {
-      ""type"": ""qr"",
-      ""x"": 270,
-      ""y"": 70,
-      ""magnification"": 4,
-      ""payloadTemplate"": ""{\""serial\"":\""{serial_number}\"",\""product\"":\""{product_code}\"",\""revision\"":\""{revision}\"",\""batch\"":\""{batch_number}\""}""
-    }
-  ]
-}
-";
-            targetTemplate = LabelTemplate.Create(
-                "Industrial Product QR Label",
-                "Won Seal Tech Co., Ltd. 50x30mm Professional QR Code manufacturing label.",
-                203,
-                50,
-                30,
-                defaultJson
-            );
+        // 1. Check if this specific printer has an assigned template
+        var assignment = await db.PrinterTemplateAssignments
+            .FirstOrDefaultAsync(a => a.PrinterCode == printerCode, ct);
 
-            await db.LabelTemplates.AddAsync(targetTemplate, ct);
-            await db.SaveChangesAsync(ct);
-        }
-        else
+        if (assignment is not null)
         {
-            if (!targetTemplate.TemplateJson.Contains("production_date") || targetTemplate.TemplateJson.Contains("\n") || targetTemplate.TemplateJson.Contains("x\"\": 280"))
+            var assigned = await db.LabelTemplates
+                .FirstOrDefaultAsync(t => t.Id == assignment.TemplateId && t.IsActive && t.Status == "published", ct);
+            if (assigned is not null)
             {
-                var defaultJson = @"
-{
-  ""width"": 50,
-  ""height"": 30,
-  ""dpi"": 203,
-  ""elements"": [
-    { ""type"": ""text"", ""x"": 15, ""y"": 20, ""fontSize"": 14, ""text"": ""WON SEAL TECH CO., LTD."" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 55, ""fontSize"": 11, ""binding"": ""product_name"", ""defaultValue"": ""Bearing Seal"" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 95, ""fontSize"": 9, ""text"": ""Product:"" },
-    { ""type"": ""text"", ""x"": 100, ""y"": 95, ""fontSize"": 10, ""binding"": ""product_code"", ""defaultValue"": ""BEARING-SEAL-01"" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 135, ""fontSize"": 9, ""text"": ""Serial:"" },
-    { ""type"": ""text"", ""x"": 100, ""y"": 135, ""fontSize"": 10, ""binding"": ""serial_number"", ""defaultValue"": ""SN-PO-2026-0001-000001"" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 175, ""fontSize"": 9, ""text"": ""Batch:"" },
-    { ""type"": ""text"", ""x"": 80, ""y"": 175, ""fontSize"": 9, ""binding"": ""batch_number"", ""defaultValue"": ""BATCH-01"" },
-    { ""type"": ""text"", ""x"": 170, ""y"": 175, ""fontSize"": 9, ""text"": ""Rev:"" },
-    { ""type"": ""text"", ""x"": 215, ""y"": 175, ""fontSize"": 9, ""binding"": ""revision"", ""defaultValue"": ""A"" },
-    { ""type"": ""text"", ""x"": 15, ""y"": 210, ""fontSize"": 9, ""text"": ""Date:"" },
-    { ""type"": ""text"", ""x"": 100, ""y"": 210, ""fontSize"": 9, ""binding"": ""production_date"", ""defaultValue"": ""2026-07-07"" },
-    {
-      ""type"": ""qr"",
-      ""x"": 270,
-      ""y"": 70,
-      ""magnification"": 4,
-      ""payloadTemplate"": ""{\""serial\"":\""{serial_number}\"",\""product\"":\""{product_code}\"",\""revision\"":\""{revision}\"",\""batch\"":\""{batch_number}\""}""
-    }
-  ]
-}
-";
-                targetTemplate.Update(
-                    "Industrial Product QR Label",
-                    "Won Seal Tech Co., Ltd. 50x30mm Professional QR Code manufacturing label.",
-                    203,
-                    50,
-                    30,
-                    defaultJson
-                );
-                db.LabelTemplates.Update(targetTemplate);
-                await db.SaveChangesAsync(ct);
+                _logger.LogInformation("[Consumer] Using printer-assigned template '{Name}' v{Version} for printer '{Printer}'",
+                    assigned.Name, assigned.Version, printerCode);
+                return assigned;
             }
+            _logger.LogWarning("[Consumer] Assigned template '{Id}' for printer '{Printer}' not found or not published — falling back to default",
+                assignment.TemplateId, printerCode);
         }
 
-        if (!targetTemplate.IsActive)
+        // 2. Use the system default template (IsDefault = true)
+        var defaultTemplate = await db.LabelTemplates
+            .FirstOrDefaultAsync(t => t.IsDefault && t.IsActive && t.Status == "published", ct);
+
+        if (defaultTemplate is not null)
         {
-            var allTemplates = await db.LabelTemplates.ToListAsync(ct);
-            foreach (var t in allTemplates)
-            {
-                if (t.Name == "Industrial Product QR Label")
-                    t.Activate();
-                else
-                    t.Deactivate();
-            }
-            await db.SaveChangesAsync(ct);
-        }
-        else
-        {
-            var otherActive = await db.LabelTemplates.AnyAsync(t => t.Name != "Industrial Product QR Label" && t.IsActive, ct);
-            if (otherActive)
-            {
-                var allTemplates = await db.LabelTemplates.ToListAsync(ct);
-                foreach (var t in allTemplates)
-                {
-                    if (t.Name == "Industrial Product QR Label")
-                        t.Activate();
-                    else
-                        t.Deactivate();
-                }
-                await db.SaveChangesAsync(ct);
-            }
+            _logger.LogInformation("[Consumer] Using system default template '{Name}' v{Version}",
+                defaultTemplate.Name, defaultTemplate.Version);
+            return defaultTemplate;
         }
 
-        return targetTemplate;
+        // 3. Fallback: any active published template
+        var fallback = await db.LabelTemplates
+            .Where(t => t.IsActive && t.Status == "published")
+            .OrderByDescending(t => t.UpdatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        if (fallback is not null)
+        {
+            _logger.LogWarning("[Consumer] No default template set — using fallback template '{Name}'", fallback.Name);
+            return fallback;
+        }
+
+        throw new InvalidOperationException("No published label template found in the database. Ensure at least one template is seeded.");
     }
 
     private async Task HandleMessageAsync(string payloadJson, CancellationToken cancellationToken)
@@ -261,8 +185,8 @@ public sealed class JobProcessingConsumer : BackgroundService
             return;
         }
 
-        // 1. Ensure active template is seeded & loaded
-        var template = await EnsureDefaultTemplateAsync(db, cancellationToken);
+        // 1. Load template: respect printer-specific assignment → system default → any published
+        var template = await EnsureDefaultTemplateAsync(db, printer.PrinterCode, cancellationToken);
 
         // 2. Read payload json variables directly from event payload
         var variables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

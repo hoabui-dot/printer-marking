@@ -9,6 +9,7 @@ import { useAuth } from '@/context/AuthContext'
 import { PROTECTED_ADMIN_USERNAME, CREATABLE_ROLES } from '@/constants/roles'
 import { translatePermission, translateRole, translateJobType } from '@/lib/utils'
 import { LabelPreview } from '@/components/LabelPreview'
+import { LabelTemplatesTab } from '@/components/LabelTemplatesTab'
 
 // Icons
 import {
@@ -44,7 +45,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 
-type KioskTab = 'dashboard' | 'history' | 'traceability' | 'orders' | 'queue' | 'alarms' | 'config' | 'diagnostics' | 'connectivity' | 'rbac'
+import { FileText } from 'lucide-react'
+
+type KioskTab = 'dashboard' | 'history' | 'traceability' | 'orders' | 'queue' | 'alarms' | 'config' | 'diagnostics' | 'connectivity' | 'rbac' | 'templates'
 
 const getTodayStr = () => {
   const d = new Date()
@@ -979,6 +982,7 @@ export default function DashboardPage() {
     { key: 'diagnostics' as KioskTab, label: 'Chẩn đoán hệ thống', icon: LineChart, show: true },
     { key: 'connectivity' as KioskTab, label: 'Kết nối mạng', icon: Cpu, show: true },
     { key: 'rbac' as KioskTab, label: 'Quản lý phân quyền', icon: Users, show: isSuperAdmin },
+    { key: 'templates' as KioskTab, label: 'Label Templates', icon: FileText, show: true },
   ]
 
   /* ═══════════════════════════════════════════════════════ */
@@ -2496,6 +2500,13 @@ export default function DashboardPage() {
                   </CardContent>
                 </Card>
               </div>
+            </div>
+          )}
+
+          {/* ════ TAB: LABEL TEMPLATES ═══════════════════════════ */}
+          {tab === 'templates' && (
+            <div className="max-w-7xl mx-auto w-full">
+              <LabelTemplatesTab />
             </div>
           )}
 

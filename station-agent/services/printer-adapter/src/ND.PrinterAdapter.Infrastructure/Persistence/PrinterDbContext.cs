@@ -14,6 +14,7 @@ public sealed class PrinterDbContext : DbContext, IUnitOfWork
     public DbSet<LabelTemplate> LabelTemplates => Set<LabelTemplate>();
     public DbSet<LabelTemplateVersion> LabelTemplateVersions => Set<LabelTemplateVersion>();
     public DbSet<PrintHistory> PrintHistories => Set<PrintHistory>();
+    public DbSet<PrinterTemplateAssignment> PrinterTemplateAssignments => Set<PrinterTemplateAssignment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -81,6 +82,10 @@ public sealed class PrinterDbContext : DbContext, IUnitOfWork
             e.Property(x => x.TemplateJson).HasColumnName("template_json").IsRequired();
             e.Property(x => x.Version).HasColumnName("version");
             e.Property(x => x.IsActive).HasColumnName("is_active");
+            e.Property(x => x.Status).HasColumnName("status").HasDefaultValue("published").IsRequired();
+            e.Property(x => x.IsDefault).HasColumnName("is_default").HasDefaultValue(false);
+            e.Property(x => x.CreatedBy).HasColumnName("created_by");
+            e.Property(x => x.UpdatedBy).HasColumnName("updated_by");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at").IsRequired();
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         });
@@ -123,7 +128,20 @@ public sealed class PrinterDbContext : DbContext, IUnitOfWork
             e.Property(x => x.TimelineJson).HasColumnName("timeline_json");
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         });
+
+        // ── Printer Template Assignments ──────────────────────────────────────
+        modelBuilder.Entity<PrinterTemplateAssignment>(e =>
+        {
+            e.ToTable("printer_template_assignments");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.PrinterCode).HasColumnName("printer_code").IsRequired();
+            e.HasIndex(x => x.PrinterCode).IsUnique();
+            e.Property(x => x.TemplateId).HasColumnName("template_id").IsRequired();
+            e.Property(x => x.TemplateName).HasColumnName("template_name");
+            e.Property(x => x.AssignedBy).HasColumnName("assigned_by");
+            e.Property(x => x.AssignedAt).HasColumnName("assigned_at").IsRequired();
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+        });
     }
 }
-
-

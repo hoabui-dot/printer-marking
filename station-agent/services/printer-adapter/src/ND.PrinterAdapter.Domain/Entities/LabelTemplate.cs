@@ -17,6 +17,15 @@ public sealed class LabelTemplate : Entity
     public string TemplateJson { get; private set; } = default!;
     public int Version { get; private set; } = 1;
     public bool IsActive { get; private set; } = true;
+
+    /// <summary>Status: draft | published | archived</summary>
+    public string Status { get; private set; } = "published";
+
+    /// <summary>True if this is the system-wide default template.</summary>
+    public bool IsDefault { get; private set; } = false;
+
+    public string? CreatedBy { get; private set; }
+    public string? UpdatedBy { get; private set; }
     public string UpdatedAt { get; private set; } = DateTime.UtcNow.ToString("o");
 
     private LabelTemplate() { }
@@ -27,7 +36,9 @@ public sealed class LabelTemplate : Entity
         int dpi,
         double labelWidth,
         double labelHeight,
-        string templateJson)
+        string templateJson,
+        string status = "published",
+        string? createdBy = null)
     {
         return new LabelTemplate
         {
@@ -39,6 +50,10 @@ public sealed class LabelTemplate : Entity
             TemplateJson = templateJson,
             Version = 1,
             IsActive = true,
+            Status = status,
+            IsDefault = false,
+            CreatedBy = createdBy,
+            UpdatedBy = createdBy,
             UpdatedAt = DateTime.UtcNow.ToString("o")
         };
     }
@@ -47,7 +62,7 @@ public sealed class LabelTemplate : Entity
     /// Updates the template JSON, bumping the version number.
     /// The caller must also snapshot a new LabelTemplateVersion before calling this.
     /// </summary>
-    public void Update(string name, string? description, int dpi, double labelWidth, double labelHeight, string templateJson)
+    public void Update(string name, string? description, int dpi, double labelWidth, double labelHeight, string templateJson, string? updatedBy = null)
     {
         Name = name;
         Description = description;
@@ -56,8 +71,34 @@ public sealed class LabelTemplate : Entity
         LabelHeight = labelHeight;
         TemplateJson = templateJson;
         Version += 1;
+        UpdatedBy = updatedBy;
         UpdatedAt = DateTime.UtcNow.ToString("o");
     }
+
+    public void Publish(string? updatedBy = null)
+    {
+        Status = "published";
+        UpdatedBy = updatedBy;
+        UpdatedAt = DateTime.UtcNow.ToString("o");
+    }
+
+    public void Archive(string? updatedBy = null)
+    {
+        Status = "archived";
+        IsDefault = false;
+        UpdatedBy = updatedBy;
+        UpdatedAt = DateTime.UtcNow.ToString("o");
+    }
+
+    public void SetAsDefault()
+    {
+        IsDefault = true;
+        if (Status != "published")
+            Status = "published";
+        UpdatedAt = DateTime.UtcNow.ToString("o");
+    }
+
+    public void UnsetDefault() => IsDefault = false;
 
     public void Deactivate() => IsActive = false;
     public void Activate() => IsActive = true;
