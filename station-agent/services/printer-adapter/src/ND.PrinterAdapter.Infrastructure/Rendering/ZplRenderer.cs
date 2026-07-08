@@ -136,7 +136,23 @@ public sealed class ZplRenderer : ILabelRenderer
     {
         var x = GetInt(el, "x", 0);
         var y = GetInt(el, "y", 0);
-        var magnification = GetInt(el, "magnification", 4);
+        
+        int magnification;
+        if (el.TryGetProperty("width", out var wProp) && wProp.ValueKind == JsonValueKind.Number)
+        {
+            var width = wProp.GetInt32();
+            magnification = Math.Clamp((int)Math.Round(width / 25.0), 1, 10);
+        }
+        else if (el.TryGetProperty("height", out var hProp) && hProp.ValueKind == JsonValueKind.Number)
+        {
+            var height = hProp.GetInt32();
+            magnification = Math.Clamp((int)Math.Round(height / 25.0), 1, 10);
+        }
+        else
+        {
+            magnification = GetInt(el, "magnification", 4);
+        }
+
         var errorCorrection = el.TryGetProperty("errorCorrection", out var ec) ? ec.GetString() ?? "M" : "M";
         var value = ResolveQrPayload(el, data);
 
@@ -144,6 +160,7 @@ public sealed class ZplRenderer : ILabelRenderer
         // Then ^FD followed by error correction level + A (Auto) + data + ^FS
         return $"^FO{x},{y}^BQN,2,{magnification}^FD{errorCorrection}A,{EscapeZpl(value)}^FS\n";
     }
+
 
     private string ResolveQrPayload(JsonElement el, IDictionary<string, string> data)
     {

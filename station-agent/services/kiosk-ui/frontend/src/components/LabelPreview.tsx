@@ -228,10 +228,9 @@ export function LabelPreview({
 
           case 'qr': {
             const qrPayload = resolveQrPayload(el)
-            // Visual size estimation based on magnification:
-            // Mag 4 => ~100 dots wide. Mag 3 => ~75 dots wide.
-            const mag = el.magnification ?? 4
-            const qrSize = mag * 25 * scale // estimate 25 modules
+            // If width and height are specified, use them, otherwise estimate from magnification
+            const qrWidth = el.width ? el.width * scale : (el.magnification ?? 4) * 25 * scale
+            const qrHeight = el.height ? el.height * scale : (el.magnification ?? 4) * 25 * scale
             return (
               <div
                 key={idx}
@@ -239,19 +238,20 @@ export function LabelPreview({
                 style={{
                   left: `${x}px`,
                   top: `${y}px`,
-                  width: `${qrSize}px`,
-                  height: `${qrSize}px`,
+                  width: `${qrWidth}px`,
+                  height: `${qrHeight}px`,
                 }}
               >
                 <QRCodeSVG
                   value={qrPayload}
-                  size={qrSize - 4}
+                  size={Math.min(qrWidth, qrHeight) - 4}
                   level="M"
                   includeMargin={false}
                 />
               </div>
             )
           }
+
 
           case 'barcode': {
             const value = resolveBinding(el)

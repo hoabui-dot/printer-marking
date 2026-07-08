@@ -257,7 +257,10 @@ services:
       - PROJECTION_SERVICE_URL=http://projection-service:5009
       - JOB_ENGINE_HOST=${JOB_ENGINE_HOST:-job-engine}
       - JOB_ENGINE_PORT=${JOB_ENGINE_PORT:-5002}
+      - PRINTER_ADAPTER_HOST=printer-adapter
+      - PRINTER_ADAPTER_PORT=5003
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5007,http://192.168.1.87:5007,http://localhost:5222,http://192.168.1.87:5222,http://localhost:3000}
+
       - RabbitMq__Host=rabbitmq
       - RabbitMq__Port=5672
       - RabbitMq__Username=${RABBITMQ_USER:-guest}
