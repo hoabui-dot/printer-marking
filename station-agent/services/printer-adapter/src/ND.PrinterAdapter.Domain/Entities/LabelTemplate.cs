@@ -11,6 +11,28 @@ public sealed class LabelTemplate : Entity
 {
     public string Name { get; private set; } = default!;
     public string? Description { get; private set; }
+
+    /// <summary>Short machine-readable code, e.g. "LBL-WIP-60x40".</summary>
+    public string? TemplateCode { get; private set; }
+
+    /// <summary>Label category: WIP | PALLET | SHELF | INSPECTION | MATERIAL | SHEET | ISSUE | PRODUCT</summary>
+    public string? Category { get; private set; }
+
+    /// <summary>Orientation: PORTRAIT | LANDSCAPE</summary>
+    public string? Orientation { get; private set; } = "PORTRAIT";
+
+    /// <summary>Letter revision: A, B, C …</summary>
+    public string? Revision { get; private set; } = "A";
+
+    /// <summary>JSON array of supported barcode symbologies, e.g. ["CODE128","QR"]</summary>
+    public string? SupportedBarcodeTypes { get; private set; }
+
+    /// <summary>JSON array of compatible printer models, e.g. ["GK420t","ZT230"]</summary>
+    public string? SupportedPrinterModels { get; private set; }
+
+    /// <summary>JSON array of compatible station types, e.g. ["PRINT_STATION","MARK_STATION"]</summary>
+    public string? CompatibleStationTypes { get; private set; }
+
     public int Dpi { get; private set; } = 203;
     public double LabelWidth { get; private set; }   // mm
     public double LabelHeight { get; private set; }  // mm
@@ -38,12 +60,26 @@ public sealed class LabelTemplate : Entity
         double labelHeight,
         string templateJson,
         string status = "published",
-        string? createdBy = null)
+        string? createdBy = null,
+        string? templateCode = null,
+        string? category = null,
+        string? orientation = "PORTRAIT",
+        string? revision = "A",
+        string? supportedBarcodeTypes = null,
+        string? supportedPrinterModels = null,
+        string? compatibleStationTypes = null)
     {
         return new LabelTemplate
         {
             Name = name,
             Description = description,
+            TemplateCode = templateCode,
+            Category = category,
+            Orientation = orientation ?? "PORTRAIT",
+            Revision = revision ?? "A",
+            SupportedBarcodeTypes = supportedBarcodeTypes,
+            SupportedPrinterModels = supportedPrinterModels,
+            CompatibleStationTypes = compatibleStationTypes,
             Dpi = dpi,
             LabelWidth = labelWidth,
             LabelHeight = labelHeight,
@@ -62,10 +98,31 @@ public sealed class LabelTemplate : Entity
     /// Updates the template JSON, bumping the version number.
     /// The caller must also snapshot a new LabelTemplateVersion before calling this.
     /// </summary>
-    public void Update(string name, string? description, int dpi, double labelWidth, double labelHeight, string templateJson, string? updatedBy = null)
+    public void Update(
+        string name,
+        string? description,
+        int dpi,
+        double labelWidth,
+        double labelHeight,
+        string templateJson,
+        string? updatedBy = null,
+        string? templateCode = null,
+        string? category = null,
+        string? orientation = null,
+        string? revision = null,
+        string? supportedBarcodeTypes = null,
+        string? supportedPrinterModels = null,
+        string? compatibleStationTypes = null)
     {
         Name = name;
         Description = description;
+        if (templateCode is not null) TemplateCode = templateCode;
+        if (category is not null) Category = category;
+        if (orientation is not null) Orientation = orientation;
+        if (revision is not null) Revision = revision;
+        if (supportedBarcodeTypes is not null) SupportedBarcodeTypes = supportedBarcodeTypes;
+        if (supportedPrinterModels is not null) SupportedPrinterModels = supportedPrinterModels;
+        if (compatibleStationTypes is not null) CompatibleStationTypes = compatibleStationTypes;
         Dpi = dpi;
         LabelWidth = labelWidth;
         LabelHeight = labelHeight;

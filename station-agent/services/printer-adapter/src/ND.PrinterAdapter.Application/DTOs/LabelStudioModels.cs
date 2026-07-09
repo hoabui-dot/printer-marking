@@ -8,7 +8,14 @@ public record CreateTemplateRequest(
     int Dpi,
     double LabelWidth,
     double LabelHeight,
-    string TemplateJson);
+    string TemplateJson,
+    string? TemplateCode = null,
+    string? Category = null,
+    string? Orientation = "PORTRAIT",
+    string? Revision = "A",
+    string? SupportedBarcodeTypes = null,
+    string? SupportedPrinterModels = null,
+    string? CompatibleStationTypes = null);
 
 public record UpdateTemplateRequest(
     string Name,
@@ -16,7 +23,14 @@ public record UpdateTemplateRequest(
     int Dpi,
     double LabelWidth,
     double LabelHeight,
-    string TemplateJson);
+    string TemplateJson,
+    string? TemplateCode = null,
+    string? Category = null,
+    string? Orientation = null,
+    string? Revision = null,
+    string? SupportedBarcodeTypes = null,
+    string? SupportedPrinterModels = null,
+    string? CompatibleStationTypes = null);
 
 public record RenderRequest(
     string TemplateJson,

@@ -11,6 +11,9 @@ import { translatePermission, translateRole, translateJobType } from '@/lib/util
 import { LabelPreview } from '@/components/LabelPreview'
 import { LabelTemplatesTab } from '@/components/LabelTemplatesTab'
 import { PrinterManagementTab } from '@/components/PrinterManagementTab'
+import { StationActivityLog } from '@/components/StationActivityLog'
+import { ProductionExecutionDetailModal } from '@/components/ProductionExecutionDetailModal'
+import { useLastProductionExecution } from '@/stores/lastProductionExecutionStore'
 
 // Icons
 import {
@@ -55,102 +58,21 @@ const getTodayStr = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-const translateStepName = (name: string) => {
-  if (!name) return '—';
-  const n = name.toUpperCase();
-  if (n === 'PRINT_LABEL') return 'In nhãn hàng (Print Label)';
-  if (n === 'LASER_MARK') return 'Khắc laser (Laser Mark)';
-  if (n === 'VISION_CHECK') return 'Kiểm tra vision (Vision Check)';
-  if (n === 'PLC_REJECT') return 'PLC loại bỏ sản phẩm lỗi (PLC Reject)';
-  return name;
-};
 
-
-
-const translateReasonCode = (code: string) => {
-  if (!code) return '—';
-  const c = code.toUpperCase();
-  if (c === 'PRINT_QUALITY') return 'Lỗi chất lượng in';
-  if (c === 'LASER_UNREADABLE') return 'Mã khắc không đọc được';
-  if (c === 'WRONG_LABEL') return 'Sai nhãn sản phẩm';
-  if (c === 'VERIFICATION_FAILED') return 'Lỗi xác thực vision';
-  if (c === 'CUSTOMER_COMPLAINT') return 'Khiếu nại từ khách hàng';
-  if (c === 'OPERATOR_MISTAKE') return 'Thao tác viên nhầm lẫn';
-  if (c === 'MAINTENANCE_TEST') return 'Kiểm tra & Bảo trì';
-  if (c === 'OTHER') return 'Lý do khác';
-  return code;
-};
-
-const translateStepSource = (stepName: string) => {
-  const n = stepName?.toUpperCase();
-  if (n === 'PRINT_LABEL') return 'Máy in nhãn (Label Printer)';
-  if (n === 'LASER_MARK') return 'Máy khắc Laser (Laser Marker)';
-  if (n === 'VISION_CHECK') return 'Camera ngoại quan (Vision Camera)';
-  if (n === 'PLC_REJECT') return 'Bộ điều khiển PLC (PLC Controller)';
-  return 'Hệ thống';
-};
-
-const translateStepDevice = (stepName: string) => {
-  const n = stepName?.toUpperCase();
-  if (n === 'PRINT_LABEL') return 'Virtual Printer';
-  if (n === 'LASER_MARK') return 'Virtual Laser';
-  if (n === 'VISION_CHECK') return 'Virtual Vision';
-  if (n === 'PLC_REJECT') return 'Virtual PLC';
-  return 'Station Agent';
-};
-
-const parseFailureMessage = (stepName: string, errorMessage: string) => {
-  if (!errorMessage) return null;
-  try {
-    const data = JSON.parse(errorMessage);
-    if (data && (data.status === 'failed' || data.reason)) {
-      const source = translateStepSource(stepName);
-      let reason = data.reason;
-      if (reason === 'QR Code mismatch') reason = 'Sai lệch mã QR (QR Code mismatch)';
-      else if (reason === 'Unreadable marking') reason = 'Mã khắc không đọc được (Unreadable marking)';
-      else if (reason === 'Missing marking') reason = 'Thiếu dấu khắc/nhãn (Missing marking)';
-
-      return {
-        source,
-        reason,
-        expected: data.expected,
-        actual: data.actual,
-        device: data.device || translateStepDevice(stepName),
-        rawResponse: errorMessage
-      };
-    }
-  } catch (e) {
-    // Not JSON
-  }
-  return {
-    source: translateStepSource(stepName),
-    reason: errorMessage,
-    expected: null,
-    actual: null,
-    device: translateStepDevice(stepName),
-    rawResponse: errorMessage
-  };
-};
-
-const getStepStatusBadge = (status: string) => {
-  const s = status?.toUpperCase();
-  if (s === 'COMPLETED') return <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-semibold">Hoàn thành</span>;
-  if (s === 'FAILED') return <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/30 text-xs font-semibold">Thất bại</span>;
-  if (s === 'PROCESSING') return <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-brand/10 text-brand-light border border-brand/30 text-xs font-semibold animate-pulse">Đang chạy</span>;
-  if (s === 'SKIPPED') return <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/30 text-xs font-semibold">Bỏ qua</span>;
-  return <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-400 border border-gray-500/30 text-xs font-semibold">Chờ</span>;
-};
 
 export default function DashboardPage() {
   const stationId = 'STATION-01'
   const navigate = useNavigate()
   const { user: currentUser, logout } = useAuth()
   const { isConnected, production, devices, todayRecords, activities, alarms, setAlarms } = useDashboard(stationId)
+  const lastExecution = useLastProductionExecution() // kept for future KPI bar — store is synced by useDashboard
+  void lastExecution // suppress unused warning until KPI bar is implemented
   const gatewayDevice = devices.find((d: any) => d.deviceId === 'gateway-01')
   const isGatewayOnline = gatewayDevice?.isOnline ?? false
   const { historyData, loading: loadingHistory, error: historyError, fetchHistory } = useProductionRecords()
 
   const [tab, setTab] = useState<KioskTab>('dashboard')
+  const [connectivitySubTab, setConnectivitySubTab] = useState<'devices' | 'printers' | 'plc' | 'camera'>('devices')
   const [currentTime, setCurrentTime] = useState(new Date())
 
   useEffect(() => {
@@ -401,7 +323,7 @@ export default function DashboardPage() {
 
   // History Detail Dialog States
   const [activeJobDetails, setActiveJobDetails] = useState<any>(null)
-  const [activeJobSteps, setActiveJobSteps] = useState<any[]>([])
+  const [_activeJobSteps, setActiveJobSteps] = useState<any[]>([])
   const [activeTemplate, setActiveTemplate] = useState<any>(null)
 
   // Helper to resolve variables from the active job
@@ -503,41 +425,7 @@ export default function DashboardPage() {
     return resolvedData
   }
 
-  const getVisionResult = () => {
-    const visionStep = activeJobSteps.find((s: any) => s.stepName === 'VISION' || s.stepName === 'VISION_CHECK')
-    let visionResult = {
-      result: 'PENDING',
-      ocrText: '—',
-      confidence: 0,
-      defectCode: null as string | null,
-      durationMs: 0
-    }
-
-    if (visionStep && visionStep.status === 'COMPLETED' && visionStep.resultJson) {
-      try {
-        const res = JSON.parse(visionStep.resultJson)
-        visionResult = {
-          result: res.result || res.Result || 'PASS',
-          ocrText: res.ocrText || res.OcrText || '—',
-          confidence: res.confidence || res.Confidence || 0.985,
-          defectCode: res.defectCode || res.DefectCode || null,
-          durationMs: res.durationMs || res.DurationMs || 520
-        }
-      } catch (e) {
-        visionResult.result = 'PASS'
-        const resolved = getResolvedData()
-        visionResult.ocrText = resolved.serial_number || '—'
-        visionResult.confidence = 0.99
-      }
-    } else if (visionStep && visionStep.status === 'FAILED') {
-      visionResult.result = 'FAIL'
-      visionResult.defectCode = 'BAD_OCR'
-      visionResult.confidence = 0.45
-    } else if (visionStep && visionStep.status === 'PROCESSING') {
-      visionResult.result = 'PROCESSING'
-    }
-    return visionResult
-  }
+  // getVisionResult removed — Panel 6 (Camera Verification) moved out of Dashboard tab
 
   const fetchActiveTemplate = useCallback(() => {
     client.get('/label-templates/active')
@@ -616,15 +504,8 @@ export default function DashboardPage() {
 
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false)
   const [selectedDetailRecord, setSelectedDetailRecord] = useState<ProductionRecord | null>(null)
-  const [detailAttempts, setDetailAttempts] = useState<any[]>([])
-  const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(null)
-  const [attemptSteps, setAttemptSteps] = useState<Record<string, any[]>>({})
-  const [loadingDetail, setLoadingDetail] = useState(false)
-
-  const [detailPieces, setDetailPieces] = useState<any[]>([])
-  const [selectedPieceJobId, setSelectedPieceJobId] = useState<string | null>(null)
-  const [loadingPieces, setLoadingPieces] = useState(false)
-  const [detailTab, setDetailTab] = useState<'pieces' | 'progress'>('pieces')
+  // Note: detail dialog state (detailAttempts, detailPieces, etc.) has been moved
+  // into ProductionExecutionDetailModal which manages its own loading state.
 
   const isSuperAdmin =
     currentUser?.roles?.includes('SUPER_ADMIN') ||
@@ -814,16 +695,7 @@ export default function DashboardPage() {
     return 'REPROCESS';
   };
 
-  const translateTriggerType = (type: string) => {
-    if (!type) return '—';
-    const t = type.toUpperCase();
-    if (t === 'AUTO') return 'Yêu cầu tự động (Original)';
-    if (t === 'MANUALREPRINT') return 'In lại nhãn (Manual Reprint)';
-    if (t === 'MANUALREMARKING') return 'Khắc lại laser (Manual Re-marking)';
-    if (t === 'MANUALREPROCESSING') return 'Làm lại quy trình (Manual Reprocess)';
-    if (t === 'MANUAL_RETRY') return 'Thử lại thủ công';
-    return type;
-  };
+  // translateTriggerType moved to ProductionExecutionDetailModal
 
   // Fetch attempts ofselected reprint record to populate parentAttemptId
   useEffect(() => {
@@ -844,79 +716,7 @@ export default function DashboardPage() {
     }
   }, [selectedReprintRecord]);
 
-  // Fetch pieces belonging to the selected Work Order
-  useEffect(() => {
-    let active = true;
-    if (selectedDetailRecord && selectedDetailRecord.jobNo) {
-      setLoadingPieces(true);
-      setDetailPieces([]);
-      setSelectedPieceJobId(null);
-      setDetailTab('pieces');
-
-      client.get(`/projection/records/work-order/${selectedDetailRecord.jobNo}`)
-        .then(res => {
-          if (active) {
-            setDetailPieces(res.data);
-            if (res.data && res.data.length > 0) {
-              const sorted = [...res.data].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-              const match = sorted.find((p: any) => p.jobId === selectedDetailRecord.jobId) || sorted[0];
-              setSelectedPieceJobId(match.jobId);
-            }
-          }
-        })
-        .catch(err => {
-          console.error("Failed to load work order pieces:", err);
-        })
-        .finally(() => {
-          if (active) setLoadingPieces(false);
-        });
-    } else {
-      setDetailPieces([]);
-      setSelectedPieceJobId(null);
-    }
-    return () => { active = false };
-  }, [selectedDetailRecord]);
-
-  // Fetch attempts and history for history detail modal (based on selected piece)
-  useEffect(() => {
-    let active = true;
-    if (selectedPieceJobId) {
-      setLoadingDetail(true)
-      setSelectedAttemptId(null)
-      setAttemptSteps({})
-
-      jobsApi.getAttempts(selectedPieceJobId)
-        .then(attemptsRes => {
-          if (active) {
-            setDetailAttempts(attemptsRes.data)
-            if (attemptsRes.data && attemptsRes.data.length > 0) {
-              const latest = [...attemptsRes.data].sort((a: any, b: any) => b.attemptNo - a.attemptNo)[0];
-              setSelectedAttemptId(latest.id);
-            }
-          }
-        })
-        .catch(err => {
-          console.error("Failed to load job details:", err)
-        })
-        .finally(() => {
-          if (active) setLoadingDetail(false)
-        })
-    }
-    return () => { active = false };
-  }, [selectedPieceJobId])
-
-  // Fetch steps for selected attempt in history detail modal
-  useEffect(() => {
-    if (selectedAttemptId && !attemptSteps[selectedAttemptId]) {
-      jobsApi.getAttemptSteps(selectedAttemptId)
-        .then(res => {
-          setAttemptSteps(prev => ({ ...prev, [selectedAttemptId]: res.data }))
-        })
-        .catch(err => {
-          console.error("Failed to load attempt steps:", err)
-        })
-    }
-  }, [selectedAttemptId])
+  // Note: piece / attempt / step fetching has moved into ProductionExecutionDetailModal.
 
   const handleTriggerReprint = () => {
     if (!selectedReprintRecord) return
@@ -982,9 +782,8 @@ export default function DashboardPage() {
     { key: 'config' as KioskTab, label: 'Cấu hình thiết bị', icon: Settings, show: isSuperAdmin },
     { key: 'diagnostics' as KioskTab, label: 'Chẩn đoán hệ thống', icon: LineChart, show: true },
     { key: 'connectivity' as KioskTab, label: 'Kết nối mạng', icon: Cpu, show: true },
-    { key: 'printers' as KioskTab, label: 'Thiết bị in', icon: PrinterIcon, show: true },
     { key: 'rbac' as KioskTab, label: 'Quản lý phân quyền', icon: Users, show: isSuperAdmin },
-    { key: 'templates' as KioskTab, label: 'Label Templates', icon: FileText, show: true },
+    { key: 'templates' as KioskTab, label: 'Mẫu nhãn in', icon: FileText, show: true },
   ]
 
   /* ═══════════════════════════════════════════════════════ */
@@ -1130,16 +929,9 @@ export default function DashboardPage() {
               current_step: '—'
             };
 
-            const visionResult = isCurrentJob ? getVisionResult() : {
-              result: 'PENDING',
-              ocrText: '—',
-              confidence: 0,
-              defectCode: null as string | null,
-              durationMs: 0
-            };
+            // visionResult removed — Panel 6 (Camera Verification) moved out of Dashboard tab
 
-            const printerDevice = devices.find((d: any) => d.deviceType === 'PRINTER' || d.deviceId.includes('printer'));
-            const isPrinterOnline = printerDevice?.isOnline ?? false;
+
 
             const planned = parseInt(resolved.planned_quantity || '0', 10);
             const completed = parseInt(resolved.completed_quantity || '0', 10);
@@ -1148,7 +940,7 @@ export default function DashboardPage() {
             return (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
 
-                {/* LEFT COLUMN: Panels 1, 2, 3, 5, 6 */}
+                {/* LEFT COLUMN: Panels 1 & 2 */}
                 <div className="lg:col-span-2 space-y-6">
 
                   {/* PANEL 1: Production Information */}
@@ -1263,292 +1055,37 @@ export default function DashboardPage() {
                     </CardContent>
                   </Card>
 
-                  {/* PANEL 3: Traceability */}
-                  <Card className="border border-border bg-card shadow-sm hover:shadow-md transition-shadow">
-                    <CardHeader className="py-4 px-6 border-b border-border bg-amber-900/5 dark:bg-amber-950/20">
-                      <CardTitle className="text-sm font-bold tracking-wider text-amber-500 uppercase flex items-center gap-2">
-                        <Zap className="h-4 w-4" />
-                        3. Truy xuất nguồn gốc sản phẩm (Traceability)
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-6">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <span className="text-xs uppercase text-muted-fg font-semibold">Số Serial sản phẩm (Serial Number)</span>
-                          <div className="text-sm font-bold font-mono text-foreground">{resolved.serial_number}</div>
-                        </div>
-                        <div>
-                          <span className="text-xs uppercase text-muted-fg font-semibold">Mã định danh Trace ID (Trace ID)</span>
-                          <div className="text-sm font-bold font-mono text-foreground">{resolved.trace_id}</div>
-                        </div>
-                        <div className="sm:col-span-2 p-3 bg-surface-2 rounded-lg border border-border/50">
-                          <div className="flex flex-col gap-1 text-xs">
-                            <div className="flex justify-between font-mono">
-                              <span className="text-muted-fg">Barcode Payload (Code128):</span>
-                              <span className="text-foreground font-semibold">{resolved.serial_number}</span>
-                            </div>
-                            <div className="flex justify-between font-mono">
-                              <span className="text-muted-fg">DataMatrix Payload (ECC200):</span>
-                              <span className="text-foreground font-semibold">{resolved.trace_id}</span>
-                            </div>
-                            <div className="flex justify-between font-mono pt-1 mt-1 border-t border-border/30">
-                              <span className="text-muted-fg">Thời gian khởi tạo (Timestamp):</span>
-                              <span className="text-foreground">{activeJobDetails?.createdAt ? new Date(activeJobDetails.createdAt).toLocaleString('vi-VN') : '—'}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* PANEL 5: Printer Information */}
-                  <Card className="border border-border bg-card shadow-sm hover:shadow-md transition-shadow">
-                    <CardHeader className="py-4 px-6 border-b border-border bg-emerald-900/5 dark:bg-emerald-950/20">
-                      <CardTitle className="text-sm font-bold tracking-wider text-emerald-500 uppercase flex items-center gap-2">
-                        <PrinterIcon className="h-4 w-4" />
-                        5. Thông tin cấu hình máy in (Printer Info)
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-6">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <span className="text-xs uppercase text-muted-fg font-semibold">Trạng thái kết nối (Connection)</span>
-                          <div className="text-sm font-semibold flex items-center gap-2">
-                            <span className={`h-2.5 w-2.5 rounded-full ${isPrinterOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
-                            {isPrinterOnline ? 'ONLINE (TCP/IP)' : 'OFFLINE'}
-                          </div>
-                        </div>
-                        <div>
-                          <span className="text-xs uppercase text-muted-fg font-semibold">Địa chỉ IP / Port (Zebra ZPL)</span>
-                          <div className="text-sm font-bold font-mono text-foreground">
-                            {printerDevice ? '192.168.1.150' : '—'}:{printerDevice ? '9100' : '—'}
-                          </div>
-                        </div>
-                        <div>
-                          <span className="text-xs uppercase text-muted-fg font-semibold">Độ phân giải (DPI / Density)</span>
-                          <div className="text-sm font-medium text-foreground">203 DPI (8 dpmm)</div>
-                        </div>
-                        <div>
-                          <span className="text-xs uppercase text-muted-fg font-semibold">Kích thước nhãn (Label Size)</span>
-                          <div className="text-sm font-medium text-foreground">100mm x 60mm (4x2.4 in)</div>
-                        </div>
-                        <div className="sm:col-span-2 grid grid-cols-2 gap-4 pt-2 border-t border-border/50">
-                          <div>
-                            <div className="flex justify-between text-xs font-semibold text-muted-fg mb-1">
-                              <span>MỰC IN (RIBBON LEVEL)</span>
-                              <span>86%</span>
-                            </div>
-                            <div className="w-full bg-surface-2 rounded-full h-1.5 overflow-hidden">
-                              <div className="bg-emerald-500 h-full" style={{ width: '86%' }}></div>
-                            </div>
-                          </div>
-                          <div>
-                            <div className="flex justify-between text-xs font-semibold text-muted-fg mb-1">
-                              <span>CUỘN GIẤY (MEDIA LEVEL)</span>
-                              <span>94%</span>
-                            </div>
-                            <div className="w-full bg-surface-2 rounded-full h-1.5 overflow-hidden">
-                              <div className="bg-emerald-500 h-full" style={{ width: '94%' }}></div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="sm:col-span-2 text-xs text-muted-fg font-semibold flex gap-4 pt-1">
-                          <span>NHIỆT ĐỘ ĐẦU IN: 28°C (Bình thường)</span>
-                          <span>TỐC ĐỘ: 4 ips</span>
-                          <span>ĐỘ ĐẬM (DARKNESS): 25</span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* PANEL 6: Verification Info */}
-                  <Card className="border border-border bg-card shadow-sm hover:shadow-md transition-shadow">
-                    <CardHeader className="py-4 px-6 border-b border-border bg-rose-900/5 dark:bg-rose-950/20">
-                      <CardTitle className="text-sm font-bold tracking-wider text-rose-500 uppercase flex items-center gap-2">
-                        <Camera className="h-4 w-4" />
-                        6. Kết quả xác thực camera ngoại quan (Verification Result)
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-6">
-                      <div className="flex flex-col md:flex-row items-center gap-6">
-
-                        {/* Big PASS/FAIL indicator */}
-                        <div className="flex flex-col items-center justify-center p-6 rounded-xl border border-border/40 bg-surface-2 w-full md:w-44 h-32 relative overflow-hidden shadow-inner">
-                          <span className="text-xs uppercase text-muted-fg font-bold tracking-widest mb-1.5">KẾT QUẢ</span>
-                          {visionResult.result === 'PASS' && (
-                            <div className="text-3xl font-extrabold text-emerald-500 tracking-wider drop-shadow-[0_0_12px_rgba(16,185,129,0.3)] flex items-center gap-1.5 animate-bounce">
-                              <CheckCircle2 className="h-7 w-7" />
-                              PASS
-                            </div>
-                          )}
-                          {visionResult.result === 'FAIL' && (
-                            <div className="text-3xl font-extrabold text-red-500 tracking-wider drop-shadow-[0_0_12px_rgba(239,68,68,0.3)] flex items-center gap-1.5">
-                              <ShieldAlert className="h-7 w-7" />
-                              FAIL
-                            </div>
-                          )}
-                          {visionResult.result === 'PROCESSING' && (
-                            <div className="text-xl font-extrabold text-amber-500 tracking-wider animate-pulse flex items-center gap-2">
-                              <RefreshCw className="h-5 w-5 animate-spin" />
-                              ĐANG QUÉT
-                            </div>
-                          )}
-                          {visionResult.result === 'PENDING' && (
-                            <div className="text-xl font-bold text-muted-fg tracking-wider">
-                              ĐANG CHỜ
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Vision details */}
-                        <div className="flex-1 space-y-2 w-full text-sm">
-                          <div className="flex justify-between border-b border-border/30 pb-1.5">
-                            <span className="text-muted-fg">Mã OCR đọc được (OCR text):</span>
-                            <span className="font-mono font-bold text-foreground">{visionResult.ocrText}</span>
-                          </div>
-                          <div className="flex justify-between border-b border-border/30 pb-1.5">
-                            <span className="text-muted-fg">Độ tin cậy xác thực (Confidence):</span>
-                            <span className="font-mono font-bold text-foreground">
-                              {visionResult.confidence > 0 ? `${(visionResult.confidence * 100).toFixed(1)}%` : '—'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between border-b border-border/30 pb-1.5">
-                            <span className="text-muted-fg">Mã lỗi phát hiện (Defect Code):</span>
-                            <span className={`font-semibold font-mono ${visionResult.defectCode ? 'text-red-500' : 'text-emerald-500'}`}>
-                              {visionResult.defectCode || 'Không có lỗi (None)'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-muted-fg">Kiểm tra trùng lặp (Duplicate check):</span>
-                            <span className="text-emerald-500 font-semibold flex items-center gap-1">
-                              <CheckCircle2 className="h-4 w-4" />
-                              HỢP LỆ (PASS)
-                            </span>
-                          </div>
-                        </div>
-
-                      </div>
-                    </CardContent>
-                  </Card>
+                  {/* Panel 3 (Traceability) and Panel 6 (Camera Verification) have been
+                      removed from the Dashboard per refactor-kiosk-ui.md §7.
+                      Both are available in their dedicated tabs. */}
 
                 </div>
 
-                {/* RIGHT COLUMN: Panels 4 (Label Preview) & 7 (Job Timeline) */}
+                {/* RIGHT COLUMN: Station Activity Log (last 10 production orders) */}
                 <div className="space-y-6">
 
-                  {/* PANEL 4: Label Preview — barcode rendered client-side via JsBarcode */}
+                  {/* Station Activity Log — last 10 production orders, compact operator view */}
                   <Card className="border border-border bg-card shadow-sm hover:shadow-md transition-shadow">
-                    <CardHeader className="py-4 px-6 border-b border-border bg-brand/5 dark:bg-brand-dark/10">
-                      <CardTitle className="text-sm font-bold tracking-wider text-brand uppercase flex items-center gap-2">
-                        <PrinterIcon className="h-4 w-4" />
-                        4. Xem trước nhãn in (Label Preview)
+                    <CardHeader className="py-4 px-5 border-b border-border">
+                      <CardTitle className="text-sm font-bold tracking-wider text-muted-fg uppercase flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-brand" />
+                        Nhật ký trạm — 10 lệnh gần nhất
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="p-4">
-                      {/* Template meta row */}
-                      <div className="w-full flex justify-between text-xs text-muted-fg font-semibold mb-3 border-b border-border/50 pb-2">
-                        <span>Mẫu nhãn: {activeTemplate?.name || 'Mẫu nhãn tiêu chuẩn'}</span>
-                        <span>DPI: {activeTemplate?.dpi || 203} | Code128</span>
-                      </div>
-
-                      {/* Label preview — rendered client-side from template JSON, no external API */}
-                      <div className="w-full min-h-[200px] flex items-center justify-center border border-dashed border-border/60 rounded-lg p-2 bg-slate-50 dark:bg-zinc-950/40 shadow-inner relative">
-                        {(() => {
-                          const resolvedData = getResolvedData()
-                          const hasData = !!activeJobDetails?.productSerial
-                          
-                          if (!hasData) {
-                            return (
-                              <div className="text-center p-4 text-muted-fg text-sm flex flex-col items-center gap-2">
-                                <PrinterIcon className="h-10 w-10 text-muted-fg/40" />
-                                Chưa có thông tin kết xuất nhãn in hiện tại.
-                              </div>
-                            )
-                          }
-
-                          return (
-                            <LabelPreview
-                              template={activeTemplate}
-                              data={resolvedData}
-                              width={300}
-                              className="rounded-md border border-border shadow-md"
-                            />
-                          )
-                        })()}
-                      </div>
-
-                      {/* Serial info row */}
-                      {activeJobDetails?.productSerial && (
-                        <div className="mt-2 flex items-center justify-between text-xs">
-                          <span className="text-muted-fg">Serial (mã vạch/QR):</span>
-                          <span className="font-mono font-bold text-foreground text-[11px]">
-                            {activeJobDetails.productSerial}
-                          </span>
-                        </div>
-                      )}
-
-                      <div className="w-full text-center text-xs text-muted-fg mt-2 italic">
-                        * Bản xem trước tự động cập nhật từ cấu hình Template ZPL.
-                      </div>
-                    </CardContent>
-                  </Card>
-
-
-                  {/* PANEL 7: Job Timeline */}
-                  <Card className="border border-border bg-card shadow-sm hover:shadow-md transition-shadow">
-                    <CardHeader className="py-4 px-6 border-b border-border bg-slate-900/5 dark:bg-slate-950/20">
-                      <CardTitle className="text-sm font-bold tracking-wider text-slate-500 uppercase flex items-center gap-2">
-                        <Clock className="h-4 w-4" />
-                        7. Nhật ký công việc trạm (Station Activity Log)
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-4">
-                      <div className="relative border-l border-border/70 ml-2 pl-4 space-y-4 max-h-[360px] overflow-y-auto pr-2">
-                        {activities.map((activity: any) => (
-                          <div key={activity.id}
-                            onClick={() => {
-                              if (!activity.jobNo) return;
-                              const dummyRecord: any = {
-                                id: activity.id,
-                                jobId: activity.jobId || '',
-                                jobNo: activity.jobNo,
-                                productCode: activity.productCode || 'GENERIC',
-                                productSerial: 'Set of commands',
-                                jobType: activity.jobType || 'PRINT_ONLY',
-                                currentStatus: activity.status || 'PROCESSING',
-                                stationId: stationId,
-                                createdAt: activity.occurredAt,
-                                updatedAt: activity.occurredAt
-                              };
-                              setSelectedDetailRecord(dummyRecord);
-                              setIsDetailDialogOpen(true);
-                            }}
-                            className="relative text-xs cursor-pointer hover:bg-surface-2 p-1.5 rounded transition-colors group"
-                          >
-                            {/* Indicator dot */}
-                            <span className={`absolute -left-[21px] mt-1.5 h-2.5 w-2.5 rounded-full border-2 border-card ${activity.status === 'SUCCESS' || activity.status === 'COMPLETED' ? 'bg-emerald-500' :
-                                activity.status === 'FAILED' ? 'bg-red-500' : 'bg-brand'
-                              }`}></span>
-
-                            <div className="flex justify-between items-center text-muted-fg font-mono mb-0.5">
-                              <span className="font-bold text-foreground uppercase tracking-wider group-hover:text-brand transition-colors">{activity.eventType}</span>
-                              <span>{new Date(activity.occurredAt).toLocaleTimeString('vi-VN')}</span>
-                            </div>
-                            <p className="text-muted-fg text-xs leading-relaxed">{activity.message}</p>
-                          </div>
-                        ))}
-                        {activities.length === 0 && (
-                          <div className="text-center p-4 text-muted-fg text-sm">
-                            Chưa ghi nhận hoạt động nào hôm nay.
-                          </div>
-                        )}
-                      </div>
+                    <CardContent className="p-0">
+                      <StationActivityLog
+                        records={todayRecords}
+                        onRowClick={(record) => {
+                          setSelectedDetailRecord(record)
+                          setIsDetailDialogOpen(true)
+                        }}
+                      />
                     </CardContent>
                   </Card>
 
                 </div>
 
-                {/* Action reprint buttons */}
+                {/* Bottom action bar */}
                 <div className="lg:col-span-3 flex justify-between items-center pt-4 border-t border-border/50">
                   <div className="text-sm font-semibold flex items-center gap-1.5 text-muted-fg">
                     <span className={`h-2.5 w-2.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
@@ -1787,75 +1324,143 @@ export default function DashboardPage() {
           {/* ════ TAB: CONNECTIVITY ══════════════════════════ */}
           {tab === 'connectivity' && (
             <div className="space-y-6 max-w-7xl mx-auto">
-              {/* Gateway status panel */}
-              <Card className="border-2 border-brand/20 bg-brand/5 overflow-hidden">
-                <div className="p-6 flex flex-col md:flex-row items-center justify-between gap-6">
-                  <div>
-                    <h3 className="font-extrabold text-base text-foreground flex items-center gap-2">
-                      <Flame className="h-5 w-5 text-brand" />
-                      Cổng truyền thông Factory Gateway
-                    </h3>
-                    <p className="text-sm text-muted-fg mt-1">
-                      Cổng trung chuyển nhận lệnh từ ERP nhà máy. Trạng thái hiện tại:
-                      <strong className={isGatewayOnline ? 'text-emerald-400 ml-1' : 'text-red-400 ml-1'}>
-                        {isGatewayOnline ? 'Kết nối an toàn (Hoạt động)' : 'Mất kết nối trung tâm'}
-                      </strong>.
-                    </p>
-                  </div>
-                </div>
-              </Card>
+              {/* Sub-tabs navigation */}
+              <div className="flex gap-2 border-b border-border mb-4">
+                {[
+                  { key: 'devices', label: 'Mạng lưới thiết bị' },
+                  { key: 'printers', label: 'Thiết bị in' },
+                  { key: 'plc', label: 'Thiết bị PLC' },
+                  { key: 'camera', label: 'Thiết bị Camera' }
+                ].map(sub => (
+                  <button
+                    key={sub.key}
+                    onClick={() => setConnectivitySubTab(sub.key as 'devices' | 'printers' | 'plc' | 'camera')}
+                    className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all ${
+                      connectivitySubTab === sub.key
+                        ? 'border-brand text-brand font-bold'
+                        : 'border-transparent text-muted-fg hover:text-foreground'
+                    }`}
+                  >
+                    {sub.label}
+                  </button>
+                ))}
+              </div>
 
-              {/* Device Grid */}
-              <Card className="border border-border bg-card">
-                <CardHeader className="border-b border-border py-4 px-6">
-                  <CardTitle className="text-base font-bold uppercase tracking-wider flex items-center gap-2">
-                    <Cpu className="h-4 w-4 text-brand" />
-                    Mạng lưới thiết bị đầu cuối
-                  </CardTitle>
-                  <CardDescription className="text-sm">Theo dõi thời gian thực của các phần cứng tại chỗ</CardDescription>
-                </CardHeader>
-                <CardContent className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    {devices.filter(d => d.deviceType !== 'GATEWAY').map((device) => {
-                      const DeviceIcon =
-                        device.deviceType === 'PLC' ? Cpu :
-                          device.deviceType === 'PRINTER' ? PrinterIcon :
-                            device.deviceType === 'LASER' ? Zap :
-                              device.deviceType === 'VISION_CAMERA' ? Camera :
-                                Cpu;
-
-                      return (
-                        <div key={device.deviceId} className="border border-border bg-surface-1 rounded-xl p-4 flex flex-col justify-between h-36 hover:border-brand/20 transition-all duration-300">
-                          <div className="flex items-center justify-between">
-                            <div className={`p-2.5 rounded-lg border ${device.isOnline ? 'border-emerald-500/10 bg-emerald-500/5 text-emerald-400' : 'border-red-500/10 bg-red-500/5 text-red-400'
-                              }`}>
-                              <DeviceIcon className="h-5 w-5" />
-                            </div>
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${device.isOnline ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                              }`}>
-                              <span className={`h-1.5 w-1.5 rounded-full ${device.isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`}></span>
-                              {device.isOnline ? 'Online' : 'Offline'}
-                            </span>
-                          </div>
-
-                          <div className="mt-4">
-                            <p className="font-extrabold text-base text-foreground">{device.deviceId.toUpperCase()}</p>
-                            <div className="flex justify-between items-center mt-1 text-xs text-muted-fg font-medium">
-                              <span>Phân loại: {device.deviceType}</span>
-                              <span>{new Date(device.lastSeenAt).toLocaleTimeString('vi-VN')}</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {devices.filter(d => d.deviceType !== 'GATEWAY').length === 0 && (
-                      <div className="col-span-4 text-center py-10 text-muted-fg text-base">
-                        Đang kết nối để quét danh sách thiết bị...
+              {connectivitySubTab === 'devices' && (
+                <div className="space-y-6 animate-in fade-in duration-200">
+                  {/* Gateway status panel */}
+                  <Card className="border-2 border-brand/20 bg-brand/5 overflow-hidden">
+                    <div className="p-6 flex flex-col md:flex-row items-center justify-between gap-6">
+                      <div>
+                        <h3 className="font-extrabold text-base text-foreground flex items-center gap-2">
+                          <Flame className="h-5 w-5 text-brand" />
+                          Cổng truyền thông Factory Gateway
+                        </h3>
+                        <p className="text-sm text-muted-fg mt-1">
+                          Cổng trung chuyển nhận lệnh từ ERP nhà máy. Trạng thái hiện tại:
+                          <strong className={isGatewayOnline ? 'text-emerald-400 ml-1' : 'text-red-400 ml-1'}>
+                            {isGatewayOnline ? 'Kết nối an toàn (Hoạt động)' : 'Mất kết nối trung tâm'}
+                          </strong>.
+                        </p>
                       </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+                    </div>
+                  </Card>
+
+                  {/* Device Grid */}
+                  <Card className="border border-border bg-card">
+                    <CardHeader className="border-b border-border py-4 px-6">
+                      <CardTitle className="text-base font-bold uppercase tracking-wider flex items-center gap-2">
+                        <Cpu className="h-4 w-4 text-brand" />
+                        Mạng lưới thiết bị đầu cuối
+                      </CardTitle>
+                      <CardDescription className="text-sm">Theo dõi thời gian thực của các phần cứng tại chỗ</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        {devices.filter((d: any) => d.deviceType !== 'GATEWAY').map((device: any) => {
+                          const DeviceIcon =
+                            device.deviceType === 'PLC' ? Cpu :
+                              device.deviceType === 'PRINTER' ? PrinterIcon :
+                                device.deviceType === 'LASER' ? Zap :
+                                  device.deviceType === 'VISION_CAMERA' ? Camera :
+                                    Cpu;
+
+                          return (
+                            <div key={device.deviceId} className="border border-border bg-surface-1 rounded-xl p-4 flex flex-col justify-between h-36 hover:border-brand/20 transition-all duration-300">
+                              <div className="flex items-center justify-between">
+                                <div className={`p-2.5 rounded-lg border ${device.isOnline ? 'border-emerald-500/10 bg-emerald-500/5 text-emerald-400' : 'border-red-500/10 bg-red-500/5 text-red-400'
+                                  }`}>
+                                  <DeviceIcon className="h-5 w-5" />
+                                </div>
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${device.isOnline ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                                  }`}>
+                                  <span className={`h-1.5 w-1.5 rounded-full ${device.isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`}></span>
+                                  {device.isOnline ? 'Online' : 'Offline'}
+                                </span>
+                              </div>
+
+                              <div className="mt-4">
+                                <p className="font-extrabold text-base text-foreground">{device.deviceId.toUpperCase()}</p>
+                                <div className="flex justify-between items-center mt-1 text-xs text-muted-fg font-medium">
+                                  <span>Phân loại: {device.deviceType}</span>
+                                  <span>{new Date(device.lastSeenAt).toLocaleTimeString('vi-VN')}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {devices.filter((d: any) => d.deviceType !== 'GATEWAY').length === 0 && (
+                          <div className="col-span-4 text-center py-10 text-muted-fg text-base">
+                            Đang kết nối để quét danh sách thiết bị...
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {connectivitySubTab === 'printers' && (
+                <div className="animate-in fade-in duration-200">
+                  <PrinterManagementTab />
+                </div>
+              )}
+
+              {connectivitySubTab === 'plc' && (
+                <div className="space-y-6 animate-in fade-in duration-200">
+                  <Card className="border border-border bg-card">
+                    <CardHeader className="border-b border-border py-4 px-6">
+                      <CardTitle className="text-base font-bold uppercase tracking-wider flex items-center gap-2">
+                        <Cpu className="h-4 w-4 text-brand" />
+                        Trạng thái thiết bị PLC
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <div className="text-muted-fg text-sm">
+                        Kết nối trực tiếp tới máy PLC qua giao thức Modbus TCP/IP (Port: 502). Trạng thái hiện tại hoạt động ổn định.
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {connectivitySubTab === 'camera' && (
+                <div className="space-y-6 animate-in fade-in duration-200">
+                  <Card className="border border-border bg-card">
+                    <CardHeader className="border-b border-border py-4 px-6">
+                      <CardTitle className="text-base font-bold uppercase tracking-wider flex items-center gap-2">
+                        <Camera className="h-4 w-4 text-brand" />
+                        Trạng thái thiết bị Camera ngoại quan
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <div className="text-muted-fg text-sm">
+                        Kết nối camera kiểm tra ngoại quan (Cognex / Keyence). Giao thức TCP/IP. Trạng thái hiện tại sẵn sàng.
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
             </div>
           )}
 
@@ -2512,12 +2117,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* ════ TAB: PRINTER MANAGEMENT ════════════════════════ */}
-          {tab === 'printers' && (
-            <div className="max-w-7xl mx-auto w-full">
-              <PrinterManagementTab />
-            </div>
-          )}
+
 
           {/* ════ TAB: RBAC ══════════════════════════════════ */}
           {tab === 'rbac' && isSuperAdmin && (
@@ -2593,7 +2193,7 @@ export default function DashboardPage() {
                                     Admin hệ thống
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-zinc-800 text-zinc-300 border border-zinc-700 uppercase tracking-wide">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-muted text-muted-foreground border border-border uppercase tracking-wide">
                                     <User className="h-3.5 w-3.5" />
                                     Nhân viên
                                   </span>
@@ -2985,385 +2585,13 @@ export default function DashboardPage() {
 
 
       {/* ── DIALOG: History Details & Audit Trail ────────── */}
-      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-        <DialogContent className="w-[95vw] md:max-w-5xl bg-card border-border text-foreground overflow-y-auto md:overflow-hidden md:flex md:flex-col max-h-[95vh] md:max-h-[90vh]">
-          <DialogHeader className="pb-4 border-b border-border">
-            <DialogTitle className="flex items-center gap-2 text-brand font-bold text-xl">
-              <History className="h-5 w-5" />
-              Chi tiết lịch sử & Tiến trình gia công
-            </DialogTitle>
-            <DialogDescription className="text-muted-fg text-sm">
-              Theo dõi chi tiết các lần chạy (attempts), tiến trình từng bước và nhật ký sự kiện của lệnh sản xuất.
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedDetailRecord && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-lg bg-surface-2/60 border border-border/50 text-sm">
-              <div>
-                <span className="text-muted-fg block text-xs uppercase font-semibold">Lệnh sản xuất</span>
-                <span className="font-bold text-foreground font-mono text-base">{selectedDetailRecord.jobNo}</span>
-              </div>
-              <div>
-                <span className="text-muted-fg block text-xs uppercase font-semibold">Mã sản phẩm</span>
-                <span className="font-semibold text-foreground text-base">{selectedDetailRecord.productCode}</span>
-              </div>
-              <div>
-                <span className="text-muted-fg block text-xs uppercase font-semibold">Serial / Mã vạch</span>
-                <span className="font-mono text-foreground text-sm font-bold">{selectedDetailRecord.productSerial || '—'}</span>
-              </div>
-              <div>
-                <span className="text-muted-fg block text-xs uppercase font-semibold">Trạng thái hiện tại</span>
-                <div className="mt-0.5">
-                  <StatusBadge status={selectedDetailRecord.currentStatus} jobType={selectedDetailRecord.jobType} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Tab Navigation */}
-          <div className="flex border-b border-border mt-2">
-            <button
-              onClick={() => setDetailTab('pieces')}
-              className={[
-                'px-6 py-2.5 font-bold text-sm tracking-wider uppercase border-b-2 transition-all flex items-center gap-2',
-                detailTab === 'pieces'
-                  ? 'border-brand text-brand bg-brand/5'
-                  : 'border-transparent text-muted-fg hover:text-foreground hover:bg-surface-2'
-              ].join(' ')}
-            >
-              <Database className="h-4 w-4" />
-              Sản phẩm chi tiết ({detailPieces.length})
-            </button>
-            <button
-              onClick={() => setDetailTab('progress')}
-              disabled={!selectedPieceJobId}
-              className={[
-                'px-6 py-2.5 font-bold text-sm tracking-wider uppercase border-b-2 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed',
-                detailTab === 'progress'
-                  ? 'border-brand text-brand bg-brand/5'
-                  : 'border-transparent text-muted-fg hover:text-foreground hover:bg-surface-2'
-              ].join(' ')}
-            >
-              <Clock className="h-4 w-4" />
-              Tiến trình & Lần chạy thiết bị
-            </button>
-          </div>
-
-          {/* Tab 1: Pieces List */}
-          {detailTab === 'pieces' && (
-            <div className="py-4 flex-1 overflow-hidden flex flex-col min-h-[350px]">
-              <div className="border border-border rounded-lg bg-surface-2/30 flex-1 overflow-hidden flex flex-col">
-                <div className="p-3 border-b border-border bg-surface-2 font-bold text-sm uppercase tracking-wider text-muted-fg flex justify-between items-center">
-                  <span>Danh sách sản phẩm trong lệnh</span>
-                  <Badge variant="outline" className="bg-background">{detailPieces.length}</Badge>
-                </div>
-                <div className="flex-1 overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                  {loadingPieces ? (
-                    <div className="col-span-full text-center py-20 text-muted-fg text-sm animate-pulse">
-                      Đang tải danh sách sản phẩm...
-                    </div>
-                  ) : detailPieces.length === 0 ? (
-                    <div className="col-span-full text-center py-20 text-muted-fg text-sm">
-                      Không có sản phẩm nào được ghi nhận.
-                    </div>
-                  ) : (
-                    detailPieces.map((piece: any, idx: number) => {
-                      const isSelected = selectedPieceJobId === piece.jobId;
-                      return (
-                        <div
-                          key={piece.id}
-                          onClick={() => {
-                            setSelectedPieceJobId(piece.jobId);
-                            setDetailTab('progress'); // Auto-switch to progress view
-                          }}
-                          className={[
-                            'p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-3',
-                            isSelected
-                              ? 'bg-brand/10 border-brand/50 ring-1 ring-brand/30 shadow-sm font-semibold'
-                              : 'bg-card hover:bg-surface-1 border-border hover:border-muted-fg/40 shadow-sm'
-                          ].join(' ')}
-                        >
-                          <div className="flex justify-between items-start gap-2">
-                            <div>
-                              <div className="font-bold text-sm text-foreground">Sản phẩm #{idx + 1}</div>
-                              <div className="font-mono text-xs text-muted-fg mt-0.5 break-all max-w-[170px]">
-                                {piece.productSerial || 'Không có serial'}
-                              </div>
-                            </div>
-                            <StatusBadge status={piece.currentStatus} jobType={piece.jobType} />
-                          </div>
-
-                          {/* Label preview — client-side dynamic rendering from active template */}
-                          {piece.productSerial && (
-                            <div className="flex justify-center bg-white rounded-md border border-border/40 overflow-hidden p-1">
-                              <LabelPreview
-                                template={activeTemplate}
-                                data={{
-                                  production_order: selectedDetailRecord?.jobNo || '—',
-                                  work_order: piece.productSerial || 'N/A',
-                                  product_name: (selectedDetailRecord?.productCode || '—') + ' Bearing Seal',
-                                  product_code: selectedDetailRecord?.productCode || '—',
-                                  revision: 'Rev A',
-                                  lot_number: 'LOT-2026-07-A',
-                                  batch_number: 'BATCH-01',
-                                  serial_number: piece.productSerial || 'N/A',
-                                }}
-                                width={180}
-                                className="rounded border border-border/50"
-                              />
-                            </div>
-                          )}
-
-                          <div className="flex justify-between items-center text-[10px] text-muted-fg pt-2 border-t border-border/50 font-medium">
-                            <span>Thời gian: {new Date(piece.updatedAt).toLocaleTimeString('vi-VN')}</span>
-                            <span className="text-brand-light font-bold hover:underline">Xem chi tiết &rarr;</span>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Tab 2: Attempts & Steps Progress */}
-          {detailTab === 'progress' && (
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 py-4 md:overflow-hidden flex-1 min-h-0">
-              {/* Left Column: Attempts List */}
-              <div className="md:col-span-4 flex flex-col md:overflow-hidden border border-border rounded-lg bg-surface-2/30 max-h-[250px] md:max-h-none">
-                <div className="p-3 border-b border-border bg-surface-2 font-bold text-sm uppercase tracking-wider text-muted-fg flex items-center justify-between">
-                  <span>Danh sách lần chạy</span>
-                  <Badge variant="outline" className="bg-background">{detailAttempts.length}</Badge>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                  {!selectedPieceJobId ? (
-                    <div className="text-center py-10 text-muted-fg text-xs">Chọn sản phẩm ở bên trái.</div>
-                  ) : loadingDetail ? (
-                    <div className="text-center py-10 text-muted-fg text-xs animate-pulse">Đang tải danh sách...</div>
-                  ) : detailAttempts.length === 0 ? (
-                    <div className="text-center py-10 text-muted-fg text-sm">Không có dữ liệu lần chạy.</div>
-                  ) : (
-                    [...detailAttempts].sort((a, b) => b.attemptNo - a.attemptNo).map((attempt) => {
-                      const isSelected = selectedAttemptId === attempt.id;
-                      const triggerText = translateTriggerType(attempt.triggerType);
-                      const isSuccess = attempt.resultStatus?.toUpperCase() === 'COMPLETED' || attempt.resultStatus?.toUpperCase() === 'SUCCESS';
-                      const isFailed = attempt.resultStatus?.toUpperCase() === 'FAILED';
-
-                      return (
-                        <div
-                          key={attempt.id}
-                          onClick={() => setSelectedAttemptId(attempt.id)}
-                          className={[
-                            'p-3 rounded-lg cursor-pointer border transition-all space-y-2',
-                            isSelected
-                              ? 'bg-brand/10 border-brand/50 text-foreground ring-1 ring-brand/30'
-                              : 'border-transparent bg-surface-1 hover:bg-surface-2 hover:border-border text-muted-fg hover:text-foreground'
-                          ].join(' ')}
-                        >
-                          <div className="flex justify-between items-center font-bold">
-                            <span className={isSelected ? 'text-brand-light text-sm' : 'text-foreground text-sm'}>
-                              Lần chạy #{attempt.attemptNo}
-                            </span>
-                            <span className="text-[10px] font-mono text-muted-fg/80">
-                              {attempt.startedAt ? new Date(attempt.startedAt).toLocaleTimeString('vi-VN') : '—'}
-                            </span>
-                          </div>
-
-                          <div className="text-xs space-y-1">
-                            <div className="flex justify-between">
-                              <span className="opacity-75">Hành động:</span>
-                              <span className="font-semibold text-foreground text-[11px] truncate max-w-[150px]">{triggerText}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="opacity-75">Vận hành viên:</span>
-                              <span className="font-semibold text-foreground text-[11px]">
-                                {attempt.triggerType?.toUpperCase() === 'AUTO' ? 'Hệ thống' : (attempt.triggeredByUserId || 'Hệ thống')}
-                              </span>
-                            </div>
-                            {attempt.reasonCode && (
-                              <div className="bg-surface-2/80 p-1.5 rounded mt-1 border border-border/30">
-                                <div className="flex justify-between font-semibold text-[10px] text-orange-400">
-                                  <span>Lý do:</span>
-                                  <span>{translateReasonCode(attempt.reasonCode)}</span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="flex justify-between items-center pt-1 border-t border-border/30 text-xs">
-                            <span className="opacity-75 text-[10px]">Trạng thái:</span>
-                            <Badge className={[
-                              'px-1.5 py-0 text-[10px] font-semibold',
-                              isSuccess ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                                isFailed ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                                  'bg-brand/10 text-brand-light border border-brand/20 animate-pulse'
-                            ].join(' ')}>
-                              {attempt.resultStatus === 'COMPLETED' || attempt.resultStatus === 'SUCCESS' ? 'OK' :
-                                attempt.resultStatus === 'FAILED' ? 'NG' :
-                                  'Đang chạy'}
-                            </Badge>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              {/* Right Column: Attempt Steps (Col span 8) */}
-              <div className="md:col-span-8 flex flex-col md:overflow-hidden min-h-0">
-
-                {/* Attempt Steps Section */}
-                <div className="flex-1 flex flex-col border border-border rounded-lg bg-surface-2/30 md:overflow-hidden min-h-[300px]">
-                  <div className="p-3 border-b border-border bg-surface-2 font-bold text-sm uppercase tracking-wider text-muted-fg flex items-center justify-between">
-                    <span>Tiến trình từng bước</span>
-                    {selectedAttemptId && (
-                      <span className="font-mono text-xs text-brand-light font-bold bg-brand/10 px-2 py-0.5 rounded border border-brand/20">
-                        ID Lần Chạy: {selectedAttemptId.slice(0, 8)}...
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto p-4">
-                    {!selectedAttemptId ? (
-                      <div className="h-full flex flex-col items-center justify-center text-center text-sm text-muted-fg">
-                        Chọn một lần chạy ở bên trái.
-                      </div>
-                    ) : !attemptSteps[selectedAttemptId] ? (
-                      <div className="h-full flex flex-col items-center justify-center text-center text-sm text-muted-fg animate-pulse">
-                        Đang tải...
-                      </div>
-                    ) : attemptSteps[selectedAttemptId].length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center text-center text-sm text-muted-fg">
-                        Không có dữ liệu bước.
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {(() => {
-                          const failedStep = attemptSteps[selectedAttemptId].find((s: any) => s.status?.toUpperCase() === 'FAILED');
-                          const failure = failedStep ? parseFailureMessage(failedStep.stepName, failedStep.errorMessage) : null;
-                          if (!failure) return null;
-                          return (
-                            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 space-y-3 text-sm">
-                              <h4 className="text-xs font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <span>⚠️</span> Phân Tích Nguyên Nhân Lỗi (Failure Analysis)
-                              </h4>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                                <div>
-                                  <span className="text-muted-fg block mb-0.5 font-medium">Nguồn lỗi:</span>
-                                  <span className="font-semibold text-foreground">{failure.source}</span>
-                                </div>
-                                <div>
-                                  <span className="text-muted-fg block mb-0.5 font-medium">Thiết bị:</span>
-                                  <span className="font-semibold text-foreground bg-surface-3 px-1.5 py-0.5 rounded border border-border inline-block mt-0.5">
-                                    {failure.device}
-                                  </span>
-                                </div>
-                                {failure.expected && (
-                                  <div>
-                                    <span className="text-muted-fg block mb-0.5 font-medium">Giá trị kỳ vọng:</span>
-                                    <span className="font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 inline-block mt-0.5">
-                                      {failure.expected}
-                                    </span>
-                                  </div>
-                                )}
-                                {failure.actual && (
-                                  <div>
-                                    <span className="text-muted-fg block mb-0.5 font-medium">Giá trị thực tế:</span>
-                                    <span className="font-mono text-red-400 font-bold bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20 inline-block mt-0.5">
-                                      {failure.actual}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                              <div className="text-xs">
-                                <span className="text-muted-fg block mb-1 font-medium">Nguyên nhân chi tiết:</span>
-                                <div className="bg-red-500/5 border border-red-500/15 rounded p-2.5 font-semibold text-red-300">
-                                  {failure.reason}
-                                </div>
-                              </div>
-                              {failure.rawResponse && (
-                                <div className="text-xs space-y-1">
-                                  <span className="text-muted-fg block font-medium">Phản hồi thô (Raw JSON):</span>
-                                  <pre className="bg-background border border-border rounded p-2 text-[10px] font-mono text-muted-fg overflow-x-auto max-h-32">
-                                    {failure.rawResponse}
-                                  </pre>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-
-                        <div className="space-y-3">
-                          {attemptSteps[selectedAttemptId].map((step, idx) => {
-                            const stepNum = step.stepOrder || (idx + 1);
-                            const isErr = step.status?.toUpperCase() === 'FAILED';
-
-                            return (
-                              <div
-                                key={step.id}
-                                className="flex items-start gap-4 p-3 border border-border rounded-lg bg-surface-1/50 hover:bg-surface-1 transition-colors text-sm"
-                              >
-                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-3 text-xs font-bold text-muted-fg font-mono border border-border">
-                                  {stepNum}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <h4 className="font-bold text-foreground truncate">{translateStepName(step.stepName)}</h4>
-                                    {getStepStatusBadge(step.status)}
-                                  </div>
-
-                                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-xs text-muted-fg font-medium">
-                                    {step.startedAt && (
-                                      <span>Bắt đầu: {new Date(step.startedAt).toLocaleTimeString('vi-VN')}</span>
-                                    )}
-                                    {step.finishedAt && (
-                                      <span>Hoàn thành: {new Date(step.finishedAt).toLocaleTimeString('vi-VN')}</span>
-                                    )}
-                                  </div>
-
-                                  {isErr && step.errorMessage && (() => {
-                                    let displayedError = step.errorMessage;
-                                    try {
-                                      const parsed = JSON.parse(step.errorMessage);
-                                      if (parsed && parsed.reason) {
-                                        displayedError = parsed.reason;
-                                        if (displayedError === 'QR Code mismatch') displayedError = 'Sai lệch mã QR (QR Code mismatch)';
-                                        else if (displayedError === 'Unreadable marking') displayedError = 'Mã khắc không đọc được (Unreadable marking)';
-                                        else if (displayedError === 'Missing marking') displayedError = 'Thiếu dấu khắc/nhãn (Missing marking)';
-                                      }
-                                    } catch (e) {
-                                      // Not JSON
-                                    }
-                                    return (
-                                      <div className="mt-2 text-xs font-semibold text-red-400 bg-red-500/5 p-2 rounded border border-red-500/20 break-words">
-                                        Lỗi: {displayedError}
-                                      </div>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter className="pt-2 border-t border-border">
-            <Button variant="outline" className="w-full text-sm font-bold" onClick={() => setIsDetailDialogOpen(false)}>
-              Đóng
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-
+      {/* Replaced with reusable ProductionExecutionDetailModal component */}
+      <ProductionExecutionDetailModal
+        open={isDetailDialogOpen}
+        onOpenChange={setIsDetailDialogOpen}
+        record={selectedDetailRecord}
+        activeTemplate={activeTemplate}
+      />
       {/* ── MODAL: Edit permissions ──────────────────────── */}
       <Dialog open={!!editingUser} onOpenChange={(open) => { if (!open) setEditingUser(null) }}>
         <DialogContent className="w-[95vw] sm:max-w-md max-h-[90vh] overflow-y-auto">

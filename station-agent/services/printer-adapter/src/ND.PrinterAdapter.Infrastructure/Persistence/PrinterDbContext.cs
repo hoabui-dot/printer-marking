@@ -81,6 +81,14 @@ public sealed class PrinterDbContext : DbContext, IUnitOfWork
             e.Property(x => x.Id).HasColumnName("id");
             e.Property(x => x.Name).HasColumnName("name").IsRequired();
             e.Property(x => x.Description).HasColumnName("description");
+            e.Property(x => x.TemplateCode).HasColumnName("template_code");
+            e.HasIndex(x => x.TemplateCode).IsUnique().HasFilter("template_code IS NOT NULL");
+            e.Property(x => x.Category).HasColumnName("category");
+            e.Property(x => x.Orientation).HasColumnName("orientation").HasDefaultValue("PORTRAIT");
+            e.Property(x => x.Revision).HasColumnName("revision").HasDefaultValue("A");
+            e.Property(x => x.SupportedBarcodeTypes).HasColumnName("supported_barcode_types");
+            e.Property(x => x.SupportedPrinterModels).HasColumnName("supported_printer_models");
+            e.Property(x => x.CompatibleStationTypes).HasColumnName("compatible_station_types");
             e.Property(x => x.Dpi).HasColumnName("dpi");
             e.Property(x => x.LabelWidth).HasColumnName("label_width");
             e.Property(x => x.LabelHeight).HasColumnName("label_height");
@@ -94,6 +102,7 @@ public sealed class PrinterDbContext : DbContext, IUnitOfWork
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at").IsRequired();
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         });
+
 
         // ── Label Template Versions ──────────────────────────────────────────
         modelBuilder.Entity<LabelTemplateVersion>(e =>

@@ -24,6 +24,13 @@ interface LabelTemplate {
   id: string
   name: string
   description?: string
+  templateCode?: string
+  category?: string
+  orientation?: string
+  revision?: string
+  supportedBarcodeTypes?: string
+  supportedPrinterModels?: string
+  compatibleStationTypes?: string
   dpi: number
   labelWidth: number
   labelHeight: number
@@ -64,6 +71,27 @@ function TemplateBadge({ status, isDefault }: { status: string; isDefault: boole
         </span>
       )}
     </div>
+  )
+}
+
+const CATEGORY_META: Record<string, { label: string; color: string }> = {
+  PRODUCT:    { label: 'Product',    color: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30' },
+  WIP:        { label: 'WIP',        color: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' },
+  PALLET:     { label: 'Pallet',     color: 'bg-violet-500/15 text-violet-400 border-violet-500/30' },
+  SHELF:      { label: 'Shelf',      color: 'bg-teal-500/15 text-teal-400 border-teal-500/30' },
+  INSPECTION: { label: 'Inspection', color: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
+  MATERIAL:   { label: 'Material',   color: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
+  SHEET:      { label: 'Sheet',      color: 'bg-lime-500/15 text-lime-400 border-lime-500/30' },
+  ISSUE:      { label: 'Issue',      color: 'bg-rose-500/15 text-rose-400 border-rose-500/30' },
+}
+
+function CategoryBadge({ category }: { category?: string }) {
+  if (!category) return null
+  const meta = CATEGORY_META[category.toUpperCase()] ?? { label: category, color: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30' }
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${meta.color}`}>
+      {meta.label}
+    </span>
   )
 }
 
@@ -317,8 +345,26 @@ function TemplatePreviewDialog({ open, template, onClose }: { open: boolean; tem
           <DialogTitle className="text-base font-semibold">{template?.name}</DialogTitle>
           <DialogDescription className="text-zinc-400 text-xs">
             v{template?.version} · {template?.labelWidth}×{template?.labelHeight}mm · {template?.dpi} DPI
+            {template?.orientation && ` · ${template.orientation}`}
+            {template?.revision && ` · Rev ${template.revision}`}
           </DialogDescription>
         </DialogHeader>
+        {/* Metadata row */}
+        {(template?.category || template?.templateCode) && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {template?.category && <CategoryBadge category={template.category} />}
+            {template?.templateCode && (
+              <span className="font-mono text-[11px] text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded border border-zinc-700">
+                {template.templateCode}
+              </span>
+            )}
+            {template?.supportedBarcodeTypes && (
+              <span className="text-[11px] text-zinc-500">
+                {(() => { try { return (JSON.parse(template.supportedBarcodeTypes) as string[]).join(' · ') } catch { return template.supportedBarcodeTypes } })()}
+              </span>
+            )}
+          </div>
+        )}
         <div className="flex items-center justify-center py-4 bg-zinc-950 border border-zinc-800 rounded-lg">
           {template && (
             <LabelPreview
@@ -436,6 +482,7 @@ export function LabelTemplatesTab() {
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
 
   // Dialogs
   const [editorOpen, setEditorOpen] = useState(false)
@@ -475,9 +522,13 @@ export function LabelTemplatesTab() {
 
   useEffect(() => { load() }, [load])
 
-  const filtered = templates.filter(t =>
-    !search || t.name.toLowerCase().includes(search.toLowerCase()) || (t.description ?? '').toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = templates.filter(t => {
+    const matchSearch = !search || t.name.toLowerCase().includes(search.toLowerCase()) ||
+      (t.description ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (t.templateCode ?? '').toLowerCase().includes(search.toLowerCase())
+    const matchCategory = categoryFilter === 'all' || (t.category ?? '').toUpperCase() === categoryFilter
+    return matchSearch && matchCategory
+  })
 
   const handlePublish = async (id: string) => {
     try { await templateApi.publish(id); await load() } catch { /* ignore */ }
@@ -572,6 +623,17 @@ export function LabelTemplatesTab() {
           <Input id="tpl-search" value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search templates…" className="pl-8 h-8 text-xs bg-zinc-800 border-zinc-700 text-zinc-100" />
         </div>
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger id="tpl-category-filter" className="w-36 h-8 text-xs bg-zinc-800 border-zinc-700 text-zinc-100">
+            <SelectValue placeholder="All categories" />
+          </SelectTrigger>
+          <SelectContent className="bg-zinc-800 border-zinc-700 text-zinc-100">
+            <SelectItem value="all">All categories</SelectItem>
+            {Object.entries(CATEGORY_META).map(([key, meta]) => (
+              <SelectItem key={key} value={key}>{meta.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger id="tpl-status-filter" className="w-36 h-8 text-xs bg-zinc-800 border-zinc-700 text-zinc-100">
             <SelectValue />
@@ -595,6 +657,7 @@ export function LabelTemplatesTab() {
           <TableHeader>
             <TableRow className="border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900/50">
               <TableHead className="text-zinc-400 text-xs font-medium h-9 pl-4">Name</TableHead>
+              <TableHead className="text-zinc-400 text-xs font-medium h-9">Category</TableHead>
               <TableHead className="text-zinc-400 text-xs font-medium h-9">Size</TableHead>
               <TableHead className="text-zinc-400 text-xs font-medium h-9">DPI</TableHead>
               <TableHead className="text-zinc-400 text-xs font-medium h-9">Ver.</TableHead>
@@ -622,7 +685,13 @@ export function LabelTemplatesTab() {
               <TableRow key={t.id} className="border-zinc-800 hover:bg-zinc-800/30 transition-colors">
                 <TableCell className="pl-4 py-2.5">
                   <div className="font-medium text-zinc-200 text-sm">{t.name}</div>
+                  {t.templateCode && (
+                    <div className="font-mono text-[10px] text-zinc-500 mt-0.5">{t.templateCode}</div>
+                  )}
                   {t.description && <div className="text-zinc-500 text-[11px] truncate max-w-xs">{t.description}</div>}
+                </TableCell>
+                <TableCell className="py-2.5">
+                  <CategoryBadge category={t.category} />
                 </TableCell>
                 <TableCell className="py-2.5 text-xs text-zinc-300 font-mono">{t.labelWidth}×{t.labelHeight}mm</TableCell>
                 <TableCell className="py-2.5 text-xs text-zinc-400">{t.dpi}</TableCell>

@@ -317,8 +317,10 @@ app.MapGet("/api/label-templates", async (
     var templates = await repo.ListAsync(search, dpi, status, includeArchived, ct);
     return Results.Ok(templates.Select(t => new
     {
-        t.Id, t.Name, t.Description, t.Dpi,
-        t.LabelWidth, t.LabelHeight,
+        t.Id, t.Name, t.Description,
+        t.TemplateCode, t.Category, t.Orientation, t.Revision,
+        t.SupportedBarcodeTypes, t.SupportedPrinterModels, t.CompatibleStationTypes,
+        t.Dpi, t.LabelWidth, t.LabelHeight,
         templateJson = System.Text.Json.JsonDocument.Parse(t.TemplateJson).RootElement,
         t.Version, t.Status, t.IsDefault,
         t.IsActive, t.CreatedBy, t.UpdatedBy, t.CreatedAt, t.UpdatedAt
@@ -346,9 +348,12 @@ app.MapGet("/api/label-templates/active", async (
         return Results.Ok(new
         {
             template.Id, template.Name, template.Description,
+            template.TemplateCode, template.Category, template.Orientation, template.Revision,
+            template.SupportedBarcodeTypes, template.SupportedPrinterModels, template.CompatibleStationTypes,
             template.Dpi, template.LabelWidth, template.LabelHeight,
             templateJson = parsed, template.Version, template.Status,
-            template.IsDefault, template.IsActive, template.CreatedAt, template.UpdatedAt
+            template.IsDefault, template.IsActive, template.CreatedBy, template.UpdatedBy,
+            template.CreatedAt, template.UpdatedAt
         });
     }
     catch (Exception ex)
@@ -366,10 +371,12 @@ app.MapGet("/api/label-templates/default", async (ILabelTemplateRepository repo,
     return Results.Ok(new
     {
         template.Id, template.Name, template.Description,
+        template.TemplateCode, template.Category, template.Orientation, template.Revision,
+        template.SupportedBarcodeTypes, template.SupportedPrinterModels, template.CompatibleStationTypes,
         template.Dpi, template.LabelWidth, template.LabelHeight,
         templateJson = System.Text.Json.JsonDocument.Parse(template.TemplateJson).RootElement,
         template.Version, template.Status, template.IsDefault,
-        template.IsActive, template.CreatedAt, template.UpdatedAt
+        template.IsActive, template.CreatedBy, template.UpdatedBy, template.CreatedAt, template.UpdatedAt
     });
 });
 
@@ -562,17 +569,13 @@ app.MapGet("/api/label-templates/{id}", async (string id, ILabelTemplateReposito
     if (template is null) return Results.NotFound();
     return Results.Ok(new
     {
-        template.Id,
-        template.Name,
-        template.Description,
-        template.Dpi,
-        template.LabelWidth,
-        template.LabelHeight,
+        template.Id, template.Name, template.Description,
+        template.TemplateCode, template.Category, template.Orientation, template.Revision,
+        template.SupportedBarcodeTypes, template.SupportedPrinterModels, template.CompatibleStationTypes,
+        template.Dpi, template.LabelWidth, template.LabelHeight,
         templateJson = System.Text.Json.JsonDocument.Parse(template.TemplateJson).RootElement,
-        template.Version,
-        template.IsActive,
-        template.CreatedAt,
-        template.UpdatedAt
+        template.Version, template.Status, template.IsDefault,
+        template.IsActive, template.CreatedBy, template.UpdatedBy, template.CreatedAt, template.UpdatedAt
     });
 });
 
@@ -590,23 +593,23 @@ app.MapPost("/api/label-templates", async (
         return Results.ValidationProblem(validationResult.ToDictionary());
     }
 
-    var template = LabelTemplate.Create(req.Name, req.Description, req.Dpi, req.LabelWidth, req.LabelHeight, req.TemplateJson);
+    var template = LabelTemplate.Create(
+        req.Name, req.Description, req.Dpi, req.LabelWidth, req.LabelHeight, req.TemplateJson,
+        templateCode: req.TemplateCode, category: req.Category, orientation: req.Orientation,
+        revision: req.Revision, supportedBarcodeTypes: req.SupportedBarcodeTypes,
+        supportedPrinterModels: req.SupportedPrinterModels, compatibleStationTypes: req.CompatibleStationTypes);
     await repo.AddAsync(template, ct);
     await uow.SaveChangesAsync(ct);
-    
+
     var response = new
     {
-        template.Id,
-        template.Name,
-        template.Description,
-        template.Dpi,
-        template.LabelWidth,
-        template.LabelHeight,
+        template.Id, template.Name, template.Description,
+        template.TemplateCode, template.Category, template.Orientation, template.Revision,
+        template.SupportedBarcodeTypes, template.SupportedPrinterModels, template.CompatibleStationTypes,
+        template.Dpi, template.LabelWidth, template.LabelHeight,
         templateJson = System.Text.Json.JsonDocument.Parse(template.TemplateJson).RootElement,
-        template.Version,
-        template.IsActive,
-        template.CreatedAt,
-        template.UpdatedAt
+        template.Version, template.Status, template.IsDefault,
+        template.IsActive, template.CreatedBy, template.UpdatedBy, template.CreatedAt, template.UpdatedAt
     };
     return Results.Created($"/api/label-templates/{template.Id}", response);
 });
@@ -633,23 +636,23 @@ app.MapPut("/api/label-templates/{id}", async (
     var snapshot = LabelTemplateVersion.Snapshot(template.Id, template.Version, template.TemplateJson);
     await repo.AddVersionAsync(snapshot, ct);
 
-    template.Update(req.Name, req.Description, req.Dpi, req.LabelWidth, req.LabelHeight, req.TemplateJson);
+    template.Update(
+        req.Name, req.Description, req.Dpi, req.LabelWidth, req.LabelHeight, req.TemplateJson,
+        templateCode: req.TemplateCode, category: req.Category, orientation: req.Orientation,
+        revision: req.Revision, supportedBarcodeTypes: req.SupportedBarcodeTypes,
+        supportedPrinterModels: req.SupportedPrinterModels, compatibleStationTypes: req.CompatibleStationTypes);
     await repo.UpdateAsync(template, ct);
     await uow.SaveChangesAsync(ct);
 
     return Results.Ok(new
     {
-        template.Id,
-        template.Name,
-        template.Description,
-        template.Dpi,
-        template.LabelWidth,
-        template.LabelHeight,
+        template.Id, template.Name, template.Description,
+        template.TemplateCode, template.Category, template.Orientation, template.Revision,
+        template.SupportedBarcodeTypes, template.SupportedPrinterModels, template.CompatibleStationTypes,
+        template.Dpi, template.LabelWidth, template.LabelHeight,
         templateJson = System.Text.Json.JsonDocument.Parse(template.TemplateJson).RootElement,
-        template.Version,
-        template.IsActive,
-        template.CreatedAt,
-        template.UpdatedAt
+        template.Version, template.Status, template.IsDefault,
+        template.IsActive, template.CreatedBy, template.UpdatedBy, template.CreatedAt, template.UpdatedAt
     });
 });
 
@@ -674,7 +677,11 @@ app.MapPost("/api/label-templates/{id}/duplicate", async (
 
     var copy = LabelTemplate.Create(
         $"{original.Name} (copy)", original.Description,
-        original.Dpi, original.LabelWidth, original.LabelHeight, original.TemplateJson);
+        original.Dpi, original.LabelWidth, original.LabelHeight, original.TemplateJson,
+        category: original.Category, orientation: original.Orientation,
+        supportedBarcodeTypes: original.SupportedBarcodeTypes,
+        supportedPrinterModels: original.SupportedPrinterModels,
+        compatibleStationTypes: original.CompatibleStationTypes);
     await repo.AddAsync(copy, ct);
     await uow.SaveChangesAsync(ct);
     

@@ -73,6 +73,7 @@
   --muted-foreground:  var(--muted-fg);
   --accent-foreground: 0 0% 100%;
   --input:             var(--surface-2);
+  --brand-light:       16 90% 42%;   /* Deeper shade for high contrast in light mode */
 }
 
 @theme {

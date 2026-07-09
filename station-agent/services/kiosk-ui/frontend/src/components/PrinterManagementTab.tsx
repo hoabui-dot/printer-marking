@@ -38,97 +38,89 @@ interface LabelTemplate {
 
 function StatusDot({ status }: { status: string }) {
   const s = (status || '').toUpperCase()
-  const color = s === 'ONLINE' || s === 'IDLE' ? '#22c55e'
-    : s === 'PRINTING' ? '#3b82f6' : '#ef4444'
+  const isOnline = s === 'ONLINE' || s === 'IDLE' || s === 'PRINTING'
   return (
-    <span style={{
-      display: 'inline-block', width: 9, height: 9, borderRadius: '50%',
-      background: color, boxShadow: `0 0 6px ${color}88`, marginRight: 6, flexShrink: 0
-    }} />
+    <span className={`inline-block w-2.5 h-2.5 rounded-full mr-2 shrink-0 ${
+      isOnline ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+    }`} />
   )
 }
 
 function PrinterCard({
-  printer, onActivate, onDeactivate,
+  printer, onActivate, onDeactivate, onShowDetails,
 }: {
   printer: ReadyPrinter
   onActivate: (p: ReadyPrinter) => void
-  onDeactivate: (code: string) => void
+  onDeactivate: (p: ReadyPrinter) => void
+  onShowDetails: (p: ReadyPrinter) => void
 }) {
   const active = printer.isActiveForWork
   return (
-    <div style={{
-      background: active
-        ? 'linear-gradient(135deg,rgba(34,197,94,.08) 0%,rgba(16,185,129,.05) 100%)'
-        : 'rgba(255,255,255,.04)',
-      border: `1px solid ${active ? 'rgba(34,197,94,.35)' : 'rgba(255,255,255,.08)'}`,
-      borderRadius: 14, padding: '18px 20px', display: 'flex',
-      flexDirection: 'column', gap: 10,
-      transition: 'all .2s ease', position: 'relative', overflow: 'hidden',
-    }}>
+    <div className={`rounded-xl p-5 flex flex-col gap-3.5 transition-all relative overflow-hidden border ${
+      active
+        ? 'bg-emerald-500/[0.03] dark:bg-emerald-500/[0.06] border-emerald-500/30 dark:border-emerald-500/40 shadow-sm shadow-emerald-500/5'
+        : 'bg-card border-border hover:border-border-strong shadow-sm'
+    }`}>
       {active && (
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, height: 2,
-          background: 'linear-gradient(90deg,#22c55e,#10b981)', borderRadius: '14px 14px 0 0',
-        }} />
+        <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-emerald-500 to-emerald-400" />
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 38, height: 38, borderRadius: 10, flexShrink: 0,
-            background: active ? 'rgba(34,197,94,.15)' : 'rgba(99,102,241,.12)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Printer size={18} color={active ? '#22c55e' : '#818cf8'} />
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className={`w-9.5 h-9.5 rounded-lg flex items-center justify-center shrink-0 ${
+            active ? 'bg-emerald-500/10 text-emerald-500 dark:text-emerald-400' : 'bg-brand/10 text-brand-light'
+          }`}>
+            <Printer size={18} />
           </div>
           <div>
-            <div style={{ fontWeight: 600, fontSize: 14, color: '#f1f5f9' }}>{printer.displayName}</div>
-            <div style={{ fontSize: 11, color: '#64748b', fontFamily: 'monospace' }}>{printer.printerCode}</div>
+            <div className="font-bold text-sm text-foreground">{printer.displayName}</div>
+            <div className="text-[11px] text-muted-fg font-mono tracking-tight mt-0.5">{printer.printerCode}</div>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div className="flex items-center gap-1.5">
           <StatusDot status={printer.status} />
-          <span style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+          <span className="text-[10px] text-muted-fg font-extrabold uppercase tracking-wider">
             {printer.status}
           </span>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'rgba(99,102,241,.12)', color: '#a5b4fc', fontFamily: 'monospace' }}>
+      <div className="flex gap-2 flex-wrap">
+        <span className="text-[11px] px-2.5 py-0.5 rounded-md font-mono bg-brand/5 border border-brand/10 text-brand-light font-medium">
           {printer.ipAddress}:{printer.port}
         </span>
-        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'rgba(255,255,255,.05)', color: '#64748b' }}>
+        <span className="text-[11px] px-2.5 py-0.5 rounded-md bg-muted text-muted-fg border border-border font-medium">
           {printer.protocol} · {printer.driverType}
         </span>
       </div>
 
       {active && printer.activeTemplateName && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 9, background: 'rgba(34,197,94,.09)', border: '1px solid rgba(34,197,94,.2)' }}>
-          <Tag size={12} color="#4ade80" />
-          <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 500 }}>{printer.activeTemplateName}</span>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/[0.06] dark:bg-emerald-500/10 border border-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
+          <Tag size={12} className="shrink-0" />
+          <span className="truncate">{printer.activeTemplateName}</span>
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+      <div className="flex gap-2.5 mt-2">
+        <button
+          onClick={() => onShowDetails(printer)}
+          className="flex-1 py-2 rounded-lg border border-border bg-surface-2 hover:bg-surface-3 text-foreground text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+        >
+          Chi tiết
+        </button>
         {active ? (
           <button
-            onClick={() => onDeactivate(printer.printerCode)}
-            style={{ flex: 1, padding: '8px 14px', borderRadius: 9, border: '1px solid rgba(239,68,68,.3)', background: 'rgba(239,68,68,.08)', color: '#f87171', fontSize: 12, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,.16)' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,.08)' }}
+            onClick={() => onDeactivate(printer)}
+            className="flex-1 py-2 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <XCircle size={13} /> Go khoi danh sach
+            <XCircle size={13} /> Gỡ sản xuất
           </button>
         ) : (
           <button
             onClick={() => onActivate(printer)}
-            style={{ flex: 1, padding: '8px 14px', borderRadius: 9, border: '1px solid rgba(99,102,241,.35)', background: 'rgba(99,102,241,.12)', color: '#a5b4fc', fontSize: 12, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,.22)' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,.12)' }}
+            className="flex-1 py-2 rounded-lg border border-brand/20 bg-brand/5 hover:bg-brand/10 text-brand-light text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <PlusCircle size={13} /> Them vao san xuat
+            <PlusCircle size={13} /> Thêm sản xuất
           </button>
         )}
       </div>
@@ -141,10 +133,16 @@ export function PrinterManagementTab() {
   const [templates, setTemplates] = useState<LabelTemplate[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  
   const [activating, setActivating] = useState<ReadyPrinter | null>(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [activateLoading, setActivateLoading] = useState(false)
   const [activateError, setActivateError] = useState<string | null>(null)
+
+  // Confirm / Details states
+  const [deactivatingPrinter, setDeactivatingPrinter] = useState<ReadyPrinter | null>(null)
+  const [activatingPrinterConfirm, setActivatingPrinterConfirm] = useState<{ printer: ReadyPrinter, templateId: string } | null>(null)
+  const [detailedPrinter, setDetailedPrinter] = useState<ReadyPrinter | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -165,7 +163,7 @@ export function PrinterManagementTab() {
       setPrinters(merged)
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: string } }; message?: string }
-      setError(err?.response?.data?.error ?? err?.message ?? 'Cannot load printer list')
+      setError(err?.response?.data?.error ?? err?.message ?? 'Không thể tải danh sách máy in')
     } finally {
       setLoading(false)
     }
@@ -191,23 +189,13 @@ export function PrinterManagementTab() {
     setActivateError(null)
   }
 
-  const confirmActivate = async () => {
+  const handleTemplateSelected = () => {
     if (!activating || !selectedTemplateId) {
-      setActivateError('Please select a template first')
+      setActivateError('Vui lòng chọn mẫu nhãn trước')
       return
     }
-    setActivateLoading(true)
-    setActivateError(null)
-    try {
-      await templateApi.activatePrinter(activating.printerCode, selectedTemplateId)
-      setActivating(null)
-      await fetchData()
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { error?: string } }; message?: string }
-      setActivateError(err?.response?.data?.error ?? err?.message ?? 'Activation failed')
-    } finally {
-      setActivateLoading(false)
-    }
+    setActivatingPrinterConfirm({ printer: activating, templateId: selectedTemplateId })
+    setActivating(null)
   }
 
   const deactivate = async (code: string) => {
@@ -216,7 +204,7 @@ export function PrinterManagementTab() {
       await fetchData()
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: string } }; message?: string }
-      setError(err?.response?.data?.error ?? err?.message ?? 'Deactivation failed')
+      setError(err?.response?.data?.error ?? err?.message ?? 'Gỡ máy in thất bại')
     }
   }
 
@@ -224,91 +212,95 @@ export function PrinterManagementTab() {
   const readyPrinters   = printers.filter(p => !p.isActiveForWork)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 28, maxWidth: 1200, margin: '0 auto', width: '100%' }}>
+    <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto">
       <style>{"@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}"}</style>
 
       {/* ── Header ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="flex items-center justify-between border-b border-border pb-4">
         <div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: '#f1f5f9', margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#6366f1,#818cf8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Printer size={18} color="#fff" />
+          <h2 className="text-lg font-extrabold text-foreground flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-dark to-brand flex items-center justify-center text-white shrink-0">
+              <Printer size={18} />
             </div>
-            Quan ly thiet bi in
+            Quản lý thiết bị in
           </h2>
-          <p style={{ color: '#64748b', fontSize: 13, margin: '4px 0 0 46px' }}>
-            Thiet bi san sang tu printer-adapter — chon template de dua vao san xuat
+          <p className="text-xs text-muted-fg mt-1 ml-11 leading-relaxed">
+            Thiết bị sẵn sàng kết nối từ printer-adapter — kích hoạt và gán mẫu nhãn in để đưa vào hoạt động sản xuất.
           </p>
         </div>
         <button
           onClick={fetchData} disabled={loading}
-          style={{ padding: '9px 16px', borderRadius: 10, border: '1px solid rgba(255,255,255,.08)', background: 'rgba(255,255,255,.04)', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500 }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.08)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.04)' }}
+          className="px-4 py-2 rounded-lg border border-border bg-surface-2 hover:bg-surface-3 text-muted-fg hover:text-foreground text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-60"
         >
-          <RefreshCw size={14} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
-          Lam moi
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          Làm mới
         </button>
       </div>
 
       {error && (
-        <div style={{ padding: '12px 16px', borderRadius: 10, background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.25)', color: '#f87171', fontSize: 13 }}>
+        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs font-medium">
           {error}
         </div>
       )}
 
       {/* ── Active printers ── */}
-      <section>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#22c55e,#16a34a)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Zap size={14} color="#fff" />
+      <section className="space-y-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center shrink-0">
+            <Zap size={14} />
           </div>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: '#e2e8f0', margin: 0 }}>May in dang san xuat</h3>
-          <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: activePrinters.length > 0 ? 'rgba(34,197,94,.15)' : 'rgba(255,255,255,.06)', color: activePrinters.length > 0 ? '#4ade80' : '#475569' }}>
+          <h3 className="text-sm font-bold text-foreground">Máy in đang sản xuất</h3>
+          <span className={`px-2 py-0.5 rounded-full text-[11px] font-extrabold ${
+            activePrinters.length > 0 ? 'bg-emerald-500/10 text-emerald-500 dark:text-emerald-400' : 'bg-muted text-muted-fg'
+          }`}>
             {activePrinters.length}
           </span>
         </div>
         {activePrinters.length === 0 ? (
-          <div style={{ padding: '32px 20px', textAlign: 'center', borderRadius: 14, border: '1px dashed rgba(255,255,255,.07)', color: '#475569', fontSize: 13 }}>
-            <Printer size={28} style={{ margin: '0 auto 10px', display: 'block', opacity: .25 }} />
-            Chua co may in nao duoc kich hoat.<br />Them tu danh sach thiet bi ben duoi.
+          <div className="py-12 text-center rounded-xl border border-dashed border-border text-muted-fg text-sm flex flex-col items-center justify-center gap-2 bg-surface-2/20">
+            <Printer size={32} className="text-muted-fg/30" />
+            <div>
+              <p className="font-medium text-foreground">Chưa có máy in nào được kích hoạt</p>
+              <p className="text-xs mt-1">Kích hoạt thiết bị từ danh sách sẵn sàng bên dưới để bắt đầu nhận lệnh in.</p>
+            </div>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 14 }}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {activePrinters.map(p => (
-              <PrinterCard key={p.printerCode} printer={p} onActivate={openActivate} onDeactivate={deactivate} />
+              <PrinterCard key={p.printerCode} printer={p} onActivate={openActivate} onDeactivate={setDeactivatingPrinter} onShowDetails={setDetailedPrinter} />
             ))}
           </div>
         )}
       </section>
 
-      <div style={{ height: 1, background: 'rgba(255,255,255,.06)' }} />
-
       {/* ── Ready printers ── */}
-      <section>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#6366f1,#818cf8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Layers size={14} color="#fff" />
+      <section className="space-y-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-brand/10 text-brand-light flex items-center justify-center shrink-0">
+            <Layers size={14} />
           </div>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: '#e2e8f0', margin: 0 }}>Thiet bi san sang (online)</h3>
-          <span style={{ padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: 'rgba(99,102,241,.15)', color: '#a5b4fc' }}>
+          <h3 className="text-sm font-bold text-foreground">Thiết bị sẵn sàng (online)</h3>
+          <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-brand/15 text-brand-light">
             {readyPrinters.length}
           </span>
         </div>
         {loading && printers.length === 0 ? (
-          <div style={{ padding: '40px 20px', textAlign: 'center', color: '#475569', fontSize: 13 }}>
-            <RefreshCw size={22} style={{ margin: '0 auto 10px', display: 'block', opacity: .3, animation: 'spin 1s linear infinite' }} />
-            Dang tai danh sach thiet bi...
+          <div className="py-12 text-center text-muted-fg text-sm flex flex-col items-center justify-center gap-3">
+            <RefreshCw size={24} className="animate-spin text-brand" />
+            <p className="text-xs">Đang quét tìm thiết bị kết nối...</p>
           </div>
         ) : readyPrinters.length === 0 ? (
-          <div style={{ padding: '32px 20px', textAlign: 'center', borderRadius: 14, border: '1px dashed rgba(255,255,255,.07)', color: '#475569', fontSize: 13 }}>
-            <WifiOff size={28} style={{ margin: '0 auto 10px', display: 'block', opacity: .25 }} />
-            Khong co thiet bi nao dang online.
+          <div className="py-12 text-center rounded-xl border border-dashed border-border text-muted-fg text-sm flex flex-col items-center justify-center gap-2 bg-surface-2/20">
+            <WifiOff size={32} className="text-muted-fg/30" />
+            <div>
+              <p className="font-medium text-foreground">Không có thiết bị sẵn sàng</p>
+              <p className="text-xs mt-1">Đảm bảo rằng printer-adapter đang chạy và máy in được kết nối mạng.</p>
+            </div>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 14 }}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {readyPrinters.map(p => (
-              <PrinterCard key={p.printerCode} printer={p} onActivate={openActivate} onDeactivate={deactivate} />
+              <PrinterCard key={p.printerCode} printer={p} onActivate={openActivate} onDeactivate={setDeactivatingPrinter} onShowDetails={setDetailedPrinter} />
             ))}
           </div>
         )}
@@ -316,27 +308,27 @@ export function PrinterManagementTab() {
 
       {/* ── Activate modal ── */}
       <Dialog open={activating !== null} onOpenChange={open => { if (!open) setActivating(null) }}>
-        <DialogContent style={{ background: 'linear-gradient(135deg,#0f172a 0%,#1e293b 100%)', border: '1px solid rgba(99,102,241,.2)', borderRadius: 18, maxWidth: 540 }}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle style={{ color: '#f1f5f9', fontSize: 17, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Printer size={18} color="#818cf8" />
-              Chon template cho {activating?.displayName}
+            <DialogTitle className="text-foreground font-bold flex items-center gap-2.5">
+              <Printer size={18} className="text-brand-light" />
+              Chọn mẫu nhãn cho {activating?.displayName}
             </DialogTitle>
-            <DialogDescription style={{ color: '#64748b', fontSize: 13 }}>
-              Bat buoc chon label template truoc khi them may in vao san xuat.
+            <DialogDescription className="text-muted-fg text-xs mt-1">
+              Bắt buộc gán mẫu thiết kế tem nhãn (ZPL Template) trước khi kích hoạt thiết bị đưa vào sản xuất.
             </DialogDescription>
           </DialogHeader>
 
           {activateError && (
-            <div style={{ padding: '10px 14px', borderRadius: 9, background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', color: '#f87171', fontSize: 13 }}>
+            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs font-medium">
               {activateError}
             </div>
           )}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 320, overflowY: 'auto', padding: '4px 0' }}>
+          <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto py-1 pr-1">
             {templates.length === 0 ? (
-              <div style={{ color: '#475569', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>
-                Khong co template nao duoc publish.
+              <div className="text-muted-fg text-xs text-center py-6">
+                Không tìm thấy mẫu nhãn thiết kế nào khả dụng.
               </div>
             ) : templates.map(t => {
               const sel = t.id === selectedTemplateId
@@ -344,28 +336,201 @@ export function PrinterManagementTab() {
                 <button
                   key={t.id}
                   onClick={() => setSelectedTemplateId(t.id)}
-                  style={{ padding: '12px 16px', borderRadius: 10, cursor: 'pointer', textAlign: 'left', border: `1px solid ${sel ? 'rgba(99,102,241,.5)' : 'rgba(255,255,255,.07)'}`, background: sel ? 'rgba(99,102,241,.12)' : 'rgba(255,255,255,.03)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}
+                  className={`p-3.5 rounded-lg border text-left flex items-center justify-between w-full transition-all cursor-pointer ${
+                    sel
+                      ? 'border-brand bg-brand/5 text-brand-light'
+                      : 'border-border bg-surface-2/50 hover:bg-surface-3 text-muted-fg hover:text-foreground'
+                  }`}
                 >
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: sel ? '#a5b4fc' : '#e2e8f0' }}>{t.name}</div>
-                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{t.labelWidth} x {t.labelHeight} mm · {t.dpi} DPI · v{t.version}</div>
+                    <div className={`text-xs font-bold ${sel ? 'text-brand-light' : 'text-foreground'}`}>{t.name}</div>
+                    <div className="text-[10px] text-muted-fg mt-1">
+                      {t.labelWidth}x{t.labelHeight} mm · {t.dpi} DPI · Phiên bản v{t.version}
+                    </div>
                   </div>
-                  {sel && <CheckCircle2 size={16} color="#818cf8" />}
+                  {sel && <CheckCircle2 size={16} className="text-brand-light" />}
                 </button>
               )
             })}
           </div>
 
-          <DialogFooter style={{ gap: 8 }}>
-            <Button variant="outline" onClick={() => setActivating(null)} style={{ borderColor: 'rgba(255,255,255,.1)', color: '#94a3b8', background: 'transparent' }}>
-              Huy
+          <DialogFooter className="gap-2.5">
+            <Button variant="outline" onClick={() => setActivating(null)}>
+              Hủy
             </Button>
             <Button
-              onClick={confirmActivate}
-              disabled={!selectedTemplateId || activateLoading}
-              style={{ background: selectedTemplateId ? 'linear-gradient(135deg,#6366f1,#818cf8)' : 'rgba(99,102,241,.2)', color: selectedTemplateId ? '#fff' : '#4b5563', border: 'none' }}
+              onClick={handleTemplateSelected}
+              disabled={!selectedTemplateId}
+              className="bg-brand hover:bg-brand-dark text-white font-bold"
             >
-              {activateLoading ? 'Dang xu ly...' : 'Xac nhan & Them vao san xuat'}
+              Tiếp tục
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Confirm Activate modal ── */}
+      <Dialog open={activatingPrinterConfirm !== null} onOpenChange={open => { if (!open) setActivatingPrinterConfirm(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-foreground font-bold flex items-center gap-2">
+              <CheckCircle2 size={18} className="text-emerald-500" />
+              Xác nhận thêm vào sản xuất
+            </DialogTitle>
+            <DialogDescription className="text-muted-fg text-xs leading-relaxed mt-1">
+              Bạn có chắc chắn muốn kích hoạt thiết bị <strong className="text-foreground font-bold">{activatingPrinterConfirm?.printer.displayName}</strong> với mẫu nhãn <strong className="text-brand-light font-bold">{templates.find(t => t.id === activatingPrinterConfirm?.templateId)?.name}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 mt-4">
+            <Button variant="outline" onClick={() => {
+              if (activatingPrinterConfirm) {
+                setActivating(activatingPrinterConfirm.printer)
+                setSelectedTemplateId(activatingPrinterConfirm.templateId)
+              }
+              setActivatingPrinterConfirm(null)
+            }}>
+              Quay lại
+            </Button>
+            <Button
+              onClick={async () => {
+                if (activatingPrinterConfirm) {
+                  setActivateLoading(true)
+                  setActivateError(null)
+                  try {
+                    await templateApi.activatePrinter(activatingPrinterConfirm.printer.printerCode, activatingPrinterConfirm.templateId)
+                    setActivatingPrinterConfirm(null)
+                    await fetchData()
+                  } catch (e: unknown) {
+                    const err = e as { response?: { data?: { error?: string } }; message?: string }
+                    setActivateError(err?.response?.data?.error ?? err?.message ?? 'Kích hoạt máy in thất bại')
+                    setActivating(activatingPrinterConfirm.printer)
+                    setActivatingPrinterConfirm(null)
+                  } finally {
+                    setActivateLoading(false)
+                  }
+                }
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold border-none"
+            >
+              {activateLoading ? 'Đang kích hoạt...' : 'Xác nhận & Thêm'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Confirm Deactivate modal ── */}
+      <Dialog open={deactivatingPrinter !== null} onOpenChange={open => { if (!open) setDeactivatingPrinter(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-foreground font-bold flex items-center gap-2">
+              <XCircle size={18} className="text-red-500" />
+              Xác nhận gỡ khỏi sản xuất
+            </DialogTitle>
+            <DialogDescription className="text-muted-fg text-xs leading-relaxed mt-1">
+              Bạn có chắc chắn muốn ngắt kết nối và gỡ thiết bị <strong className="text-foreground font-bold">{deactivatingPrinter?.displayName}</strong> khỏi danh sách in sản xuất hiện tại không?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 mt-4">
+            <Button variant="outline" onClick={() => setDeactivatingPrinter(null)}>
+              Hủy
+            </Button>
+            <Button
+              onClick={async () => {
+                if (deactivatingPrinter) {
+                  await deactivate(deactivatingPrinter.printerCode)
+                  setDeactivatingPrinter(null)
+                }
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white font-bold border-none"
+            >
+              Xác nhận gỡ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Details modal ── */}
+      <Dialog open={detailedPrinter !== null} onOpenChange={open => { if (!open) setDetailedPrinter(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-foreground font-bold flex items-center gap-2.5">
+              <Printer size={18} className="text-brand-light" />
+              Thông tin cấu hình máy in (Printer Info)
+            </DialogTitle>
+            <DialogDescription className="text-muted-fg text-xs mt-1">
+              Chi tiết các thông số phần cứng hoạt động và trạng thái cảm biến của máy {detailedPrinter?.displayName}.
+            </DialogDescription>
+          </DialogHeader>
+
+          {detailedPrinter && (
+            <div className="flex flex-col gap-5 mt-3">
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Trạng thái kết nối</span>
+                  <div className="text-sm font-semibold flex items-center gap-2 text-foreground">
+                    <span className={`w-2.5 h-2.5 rounded-full ${
+                      (detailedPrinter.status || '').toUpperCase() === 'ONLINE' || (detailedPrinter.status || '').toUpperCase() === 'IDLE'
+                        ? 'bg-emerald-500 animate-pulse'
+                        : 'bg-red-500'
+                    }`} />
+                    {(detailedPrinter.status || '').toUpperCase() === 'ONLINE' || (detailedPrinter.status || '').toUpperCase() === 'IDLE' ? 'ONLINE (TCP/IP)' : 'OFFLINE'}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Địa chỉ IP / Port</span>
+                  <div className="text-sm font-bold font-mono text-foreground">
+                    {detailedPrinter.ipAddress}:{detailedPrinter.port}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Độ phân giải</span>
+                  <div className="text-sm font-medium text-foreground">203 DPI (8 dpmm)</div>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Kích thước nhãn</span>
+                  <div className="text-sm font-medium text-foreground">100mm x 60mm (4x2.4 in)</div>
+                </div>
+
+                <div className="col-span-2 grid grid-cols-2 gap-4 pt-3.5 border-t border-border mt-1">
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-[10px] font-bold text-muted-fg">
+                      <span>MỰC IN (RIBBON LEVEL)</span>
+                      <span className="font-mono">86%</span>
+                    </div>
+                    <div className="w-full bg-surface-3 rounded-full h-1.5 overflow-hidden">
+                      <div className="bg-emerald-500 h-full" style={{ width: '86%' }} />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-[10px] font-bold text-muted-fg">
+                      <span>CUỘN GIẤY (MEDIA LEVEL)</span>
+                      <span className="font-mono">94%</span>
+                    </div>
+                    <div className="w-full bg-surface-3 rounded-full h-1.5 overflow-hidden">
+                      <div className="bg-emerald-500 h-full" style={{ width: '94%' }} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="col-span-2 text-[10px] text-muted-fg font-bold flex flex-wrap gap-x-5 gap-y-1 pt-2 border-t border-border/60">
+                  <span>NHIỆT ĐỘ ĐẦU IN: 28°C (Bình thường)</span>
+                  <span>TỐC ĐỘ IN: 4 ips</span>
+                  <span>ĐỘ ĐẬM (DARKNESS): 25</span>
+                </div>
+
+                {detailedPrinter.isActiveForWork && detailedPrinter.activeTemplateName && (
+                  <div className="col-span-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
+                    <Tag size={12} className="shrink-0" />
+                    <span>Mẫu nhãn hoạt động: {detailedPrinter.activeTemplateName}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="mt-3">
+            <Button onClick={() => setDetailedPrinter(null)}>
+              Đóng
             </Button>
           </DialogFooter>
         </DialogContent>
