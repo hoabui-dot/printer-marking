@@ -398,17 +398,23 @@ def migrate_schema(cursor):
     );
     """)
 
-    # Add new metadata columns (idempotent via try/except)
-    new_columns = [
-        ("template_code", "TEXT"),
-        ("category",      "TEXT"),
-        ("orientation",   "TEXT NOT NULL DEFAULT 'PORTRAIT'"),
-        ("revision",      "TEXT NOT NULL DEFAULT 'A'"),
-        ("supported_barcode_types",    "TEXT"),
-        ("supported_printer_models",   "TEXT"),
-        ("compatible_station_types",   "TEXT"),
+    # Add ALL potentially missing columns (idempotent via try/except)
+    all_columns = [
+        # Base columns missing from early schema versions
+        ("status",      "TEXT NOT NULL DEFAULT 'published'"),
+        ("is_default",  "INTEGER NOT NULL DEFAULT 0"),
+        ("created_by",  "TEXT"),
+        ("updated_by",  "TEXT"),
+        # Phase 4 metadata columns
+        ("template_code",           "TEXT"),
+        ("category",                "TEXT"),
+        ("orientation",             "TEXT NOT NULL DEFAULT 'PORTRAIT'"),
+        ("revision",                "TEXT NOT NULL DEFAULT 'A'"),
+        ("supported_barcode_types", "TEXT"),
+        ("supported_printer_models","TEXT"),
+        ("compatible_station_types","TEXT"),
     ]
-    for col, col_type in new_columns:
+    for col, col_type in all_columns:
         try:
             cursor.execute(f"ALTER TABLE label_templates ADD COLUMN {col} {col_type};")
             print(f"  ✚ Added column '{col}'")
@@ -556,34 +562,67 @@ def find_printer_adapter_container():
     return None
 
 
+def find_db_in_container(container):
+    """Find the printer.db path inside the container."""
+    result = subprocess.run(
+        ["docker", "exec", container, "find", "/", "-name", "printer.db", "-not", "-path", "*/proc/*"],
+        capture_output=True, text=True, timeout=15
+    )
+    lines = [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
+    return lines[0] if lines else "/data/printer.db"
+
+
 def process_database_docker(container):
-    """Copy this script into the container and run it in --local mode."""
-    script_path  = os.path.abspath(__file__)
-    container_script = "/tmp/inject_template_run.py"
-    container_db     = "/app/data/printer.db"
+    """Copy DB out of container, inject locally, copy back in."""
+    container_db = find_db_in_container(container)
+    tmp_db = f"/tmp/printer_inject_{os.getpid()}.db"
 
     print(f"\n{chr(8212)*60}")
-    print(f"Container: {container}  ->  {container_db}")
+    print(f"Container:    {container}")
+    print(f"Container DB: {container_db}")
+    print(f"Tmp copy:     {tmp_db}")
 
-    cp = subprocess.run(
-        ["docker", "cp", script_path, f"{container}:{container_script}"],
+    # 1. Copy DB out
+    cp_out = subprocess.run(
+        ["docker", "cp", f"{container}:{container_db}", tmp_db],
         capture_output=True, text=True
     )
-    if cp.returncode != 0:
-        print(f"  error  docker cp failed: {cp.stderr.strip()}")
+    if cp_out.returncode != 0:
+        print(f"  error  docker cp (out) failed: {cp_out.stderr.strip()}")
+        return False
+    print(f"  Copied DB out of container ({os.path.getsize(tmp_db):,} bytes)")
+
+    # 2. Run injection locally against the temp copy
+    ok = process_database_local(tmp_db)
+    if not ok:
+        if os.path.exists(tmp_db):
+            os.remove(tmp_db)
         return False
 
-    result = subprocess.run(
-        ["docker", "exec", container,
-         "python3", container_script, "--local", "--single-db", container_db],
+    # 3. Copy modified DB back into container
+    cp_in = subprocess.run(
+        ["docker", "cp", tmp_db, f"{container}:{container_db}"],
         capture_output=True, text=True
     )
-    for line in (result.stdout + result.stderr).strip().splitlines():
-        print(f"  {line}")
-
-    if result.returncode != 0:
-        print(f"  error  Container execution failed (exit {result.returncode})")
+    os.remove(tmp_db)
+    if cp_in.returncode != 0:
+        print(f"  error  docker cp (in) failed: {cp_in.stderr.strip()}")
         return False
+
+    print(f"  ok  DB copied back into container.")
+
+    # 4. Signal the container to reload (graceful restart via SIGTERM → Docker restarts it)
+    # Only if the service is configured with restart: always
+    print(f"  Restarting container so EF Core picks up schema changes...")
+    restart = subprocess.run(
+        ["docker", "restart", container],
+        capture_output=True, text=True, timeout=30
+    )
+    if restart.returncode == 0:
+        print(f"  ok  Container restarted.")
+    else:
+        print(f"  warning  Restart failed (manual restart may be needed): {restart.stderr.strip()}")
+
     return True
 
 
