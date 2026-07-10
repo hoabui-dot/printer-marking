@@ -13,7 +13,9 @@ import { LabelTemplatesTab } from '@/components/LabelTemplatesTab'
 import { PrinterManagementTab } from '@/components/PrinterManagementTab'
 import { StationActivityLog } from '@/components/StationActivityLog'
 import { ProductionExecutionDetailModal } from '@/components/ProductionExecutionDetailModal'
+import { AlarmCenterTab } from '@/components/AlarmCenterTab'
 import { useLastProductionExecution } from '@/stores/lastProductionExecutionStore'
+import type { Alarm } from '@/hooks/useDashboard'
 
 // Icons
 import {
@@ -64,7 +66,8 @@ export default function DashboardPage() {
   const stationId = 'STATION-01'
   const navigate = useNavigate()
   const { user: currentUser, logout } = useAuth()
-  const { isConnected, production, devices, todayRecords, activities, alarms, setAlarms } = useDashboard(stationId)
+  const [signalRAlarm, setSignalRAlarm] = useState<Alarm | null>(null)
+  const { isConnected, production, devices, todayRecords, activities } = useDashboard(stationId, setSignalRAlarm)
   const lastExecution = useLastProductionExecution() // kept for future KPI bar — store is synced by useDashboard
   void lastExecution // suppress unused warning until KPI bar is implemented
   const gatewayDevice = devices.find((d: any) => d.deviceId === 'gateway-01')
@@ -231,14 +234,6 @@ export default function DashboardPage() {
     }
   }
 
-  const handleAcknowledgeAlarm = async (alarmId: string) => {
-    try {
-      await client.post(`/projection/alarms/${alarmId}/acknowledge`)
-      setAlarms((prev: any[]) => prev.map(a => a.id === alarmId ? { ...a, isAcknowledged: true, acknowledgedBy: 'Operator', acknowledgedAt: new Date().toISOString() } : a))
-    } catch (err) {
-      console.error('Failed to acknowledge alarm:', err)
-    }
-  }
 
   const handleTraceSearch = async () => {
     if (!searchSerial.trim()) return
@@ -1849,79 +1844,8 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* ════ TAB: ALARMS ════════════════════════════════ */}
           {tab === 'alarms' && (
-            <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-200">
-              <Card className="border border-border bg-card">
-                <CardHeader className="py-4 px-6 border-b border-border bg-brand/5">
-                  <CardTitle className="text-base font-bold tracking-wider text-brand uppercase flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4" />
-                    Trung tâm quản lý báo động (Alarm Center)
-                  </CardTitle>
-                  <CardDescription className="text-sm">Ghi nhận các cảnh báo phần cứng, kết nối mạng và lỗi logic quy trình gia công</CardDescription>
-                </CardHeader>
-                <CardContent className="p-6">
-                  <div className="overflow-x-auto border border-border rounded-xl bg-card">
-                    <TableEl>
-                      <TableHeader className="bg-muted/40">
-                        <TableRow>
-                          <TableHead className="pl-4 font-bold text-foreground text-xs uppercase tracking-wider">Mức độ</TableHead>
-                          <TableHead className="font-bold text-foreground text-xs uppercase tracking-wider">Nguồn</TableHead>
-                          <TableHead className="font-bold text-foreground text-xs uppercase tracking-wider">Nội dung thông báo</TableHead>
-                          <TableHead className="font-bold text-foreground text-xs uppercase tracking-wider">Thiết bị</TableHead>
-                          <TableHead className="font-bold text-foreground text-xs uppercase tracking-wider">Thời gian</TableHead>
-                          <TableHead className="font-bold text-foreground text-xs uppercase tracking-wider">Trạng thái</TableHead>
-                          <TableHead className="pr-4 text-right font-bold text-xs uppercase tracking-wider">Hành động</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {alarms.map((alarm) => (
-                          <TableRow key={alarm.id} className={alarm.isAcknowledged ? 'opacity-60 bg-muted/10' : 'bg-card font-medium'}>
-                            <TableCell className="pl-4">
-                              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-bold ${alarm.severity === 'Critical' ? 'bg-red-500/10 text-red-400' :
-                                  alarm.severity === 'Error' ? 'bg-orange-500/10 text-orange-400' :
-                                    'bg-amber-500/10 text-amber-400'
-                                }`}>
-                                {alarm.severity}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-foreground text-xs font-semibold">{alarm.source}</TableCell>
-                            <TableCell className="text-foreground text-xs">{alarm.message}</TableCell>
-                            <TableCell className="font-mono text-xs text-muted-fg">{alarm.deviceId || '—'}</TableCell>
-                            <TableCell className="text-muted-fg text-xs">{new Date(alarm.createdAt).toLocaleString('vi-VN')}</TableCell>
-                            <TableCell>
-                              {alarm.isAcknowledged ? (
-                                <span className="text-emerald-400 text-xs flex items-center gap-1 font-bold">
-                                  <CheckCircle className="h-3.5 w-3.5" /> Đã xác nhận ({alarm.acknowledgedBy})
-                                </span>
-                              ) : (
-                                <span className="text-orange-400 text-xs font-bold flex items-center gap-1">
-                                  <AlertTriangle className="h-3.5 w-3.5 animate-pulse" /> Chưa xác nhận
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell className="pr-4 text-right">
-                              {!alarm.isAcknowledged && (
-                                <Button size="sm" onClick={() => handleAcknowledgeAlarm(alarm.id)} className="text-xs h-7">
-                                  Xác nhận
-                                </Button>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        {alarms.length === 0 && (
-                          <TableRow>
-                            <TableCell colSpan={7} className="text-center py-10 text-muted-fg text-sm">
-                              Không có báo động nào được ghi nhận.
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </TableEl>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            <AlarmCenterTab stationId={stationId} signalRAlarm={signalRAlarm} />
           )}
 
           {/* ════ TAB: CONFIG ════════════════════════════════ */}

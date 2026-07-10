@@ -61,14 +61,32 @@ export interface ProductionRecord {
 
 export interface Alarm {
   id: string
-  severity: string
+  alarmType: string            // 'DeviceConnection' | 'ProductionError'
+  alarmGroupKey: string
+  severity: string             // 'Warning' | 'Error' | 'Critical'
   source: string
   message: string
   deviceId?: string
+  deviceName?: string
+  productionOrderId?: string
   isAcknowledged: boolean
+  currentState: string         // 'Active' | 'Acknowledged' | 'Resolved'
   acknowledgedBy?: string
   acknowledgedAt?: string
+  firstOccurredAt: string
+  lastOccurredAt: string
+  repeatCount: number
+  resolvedAt?: string
   createdAt: string
+}
+
+export interface PagedAlarmResult {
+  items: Alarm[]
+  totalCount: number
+  page: number
+  pageSize: number
+  totalPages: number
+  activeCount: number
 }
 
 // ---------------------------------------------------------------------------
@@ -148,12 +166,11 @@ function syncStoreFromRecord(data: ProductionRecord) {
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
-export function useDashboard(stationId: string) {
+export function useDashboard(stationId: string, onAlarmRaised?: (alarm: Alarm) => void) {
   const [production, setProduction] = useState<ProductionView | null>(null)
   const [activities, setActivities] = useState<ActivityLog[]>([])
   const [devices, setDevices] = useState<DeviceStatus[]>([])
   const [todayRecords, setTodayRecords] = useState<ProductionRecord[]>([])
-  const [alarms, setAlarms] = useState<Alarm[]>([])
   const [isConnected, setIsConnected] = useState(false)
 
   const baseUrl = import.meta.env.VITE_PROJECTION_URL ||
@@ -190,12 +207,9 @@ export function useDashboard(stationId: string) {
   }, [])
 
   const handleAlarmRaised = useCallback((data: Alarm) => {
-    setAlarms(prev => {
-      const exists = prev.some(a => a.id === data.id)
-      if (exists) return prev.map(a => a.id === data.id ? data : a)
-      return [data, ...prev]
-    })
-  }, [])
+    // Forward to AlarmCenterTab via callback — alarm state is managed there
+    onAlarmRaised?.(data)
+  }, [onAlarmRaised])
 
   // Keep a ref to the connection so we can stop it on cleanup
   const connRef = useRef<signalR.HubConnection | null>(null)
@@ -206,14 +220,13 @@ export function useDashboard(stationId: string) {
     // 1. Initial REST fetch from projection service
     const fetchInitialData = async () => {
       try {
-        const [prodRes, actRes, devRes, todayRecsRes, alarmsRes] = await Promise.all([
+        const [prodRes, actRes, devRes, todayRecsRes] = await Promise.all([
           axios.get<ProductionView>(`${baseUrl}/api/projection/production?stationId=${stationId}`).catch(() => null),
           axios.get<ActivityLog[]>(`${baseUrl}/api/projection/activities?limit=10`).catch(() => ({ data: [] as ActivityLog[] })),
           axios.get<DeviceStatus[]>(`${baseUrl}/api/projection/devices`).catch(() => ({ data: [] as DeviceStatus[] })),
           axios.get<{ items: ProductionRecord[], totalCount: number }>(
             `${baseUrl}/api/projection/records/today?page=1&pageSize=100`
           ).catch(() => ({ data: { items: [] as ProductionRecord[], totalCount: 0 } })),
-          axios.get<Alarm[]>(`${baseUrl}/api/projection/alarms`).catch(() => ({ data: [] as Alarm[] }))
         ])
 
         if (!mounted) return
@@ -225,7 +238,6 @@ export function useDashboard(stationId: string) {
         if (actRes?.data) setActivities(actRes.data)
         if (devRes?.data) setDevices(devRes.data)
         if (todayRecsRes?.data?.items) setTodayRecords(todayRecsRes.data.items)
-        if (alarmsRes?.data) setAlarms(alarmsRes.data)
       } catch (err) {
         console.error('[useDashboard] Error fetching initial projection data:', err)
       }
@@ -281,5 +293,5 @@ export function useDashboard(stationId: string) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stationId, baseUrl])
 
-  return { isConnected, production, activities, devices, todayRecords, alarms, setAlarms }
+  return { isConnected, production, activities, devices, todayRecords }
 }

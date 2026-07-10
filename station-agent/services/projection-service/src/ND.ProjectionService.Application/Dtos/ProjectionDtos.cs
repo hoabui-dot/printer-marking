@@ -48,11 +48,29 @@ public record PagedResult<T>(
 }
 public record AlarmDto(
     string Id,
+    string AlarmType,
+    string AlarmGroupKey,
     string Severity,
     string Source,
     string Message,
     string? DeviceId,
+    string? DeviceName,
+    string? ProductionOrderId,
     bool IsAcknowledged,
+    string CurrentState,
     string? AcknowledgedBy,
     string? AcknowledgedAt,
+    string FirstOccurredAt,
+    string LastOccurredAt,
+    int RepeatCount,
+    string? ResolvedAt,
     string CreatedAt);
+
+public record PagedAlarmResult(
+    IReadOnlyList<AlarmDto> Items,
+    int TotalCount,
+    int Page,
+    int PageSize,
+    int TotalPages,
+    int ActiveCount);
+

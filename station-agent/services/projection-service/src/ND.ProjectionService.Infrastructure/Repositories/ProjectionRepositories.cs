@@ -292,10 +292,7 @@ public sealed class AlarmRepository : IAlarmRepository
 {
     private readonly ProjectionDbContext _context;
 
-    public AlarmRepository(ProjectionDbContext context)
-    {
-        _context = context;
-    }
+    public AlarmRepository(ProjectionDbContext context) => _context = context;
 
     public async Task<Alarm?> GetByIdAsync(string id, CancellationToken ct = default)
         => await _context.Alarms.FindAsync([id], ct);
@@ -317,6 +314,88 @@ public sealed class AlarmRepository : IAlarmRepository
         var entity = await GetByIdAsync(id, ct);
         if (entity is not null) _context.Alarms.Remove(entity);
     }
+
+    /// <summary>
+    /// Dedup lookup — find the latest Active (unacknowledged) alarm for the same group key.
+    /// Returns null if no such alarm exists (caller should create a new one).
+    /// </summary>
+    public async Task<Alarm?> GetActiveByGroupKeyAsync(string groupKey, CancellationToken ct = default)
+        => await _context.Alarms
+            .Where(a => a.AlarmGroupKey == groupKey && a.CurrentState == "Active")
+            .OrderByDescending(a => a.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+    /// <summary>
+    /// Server-side paginated + filtered alarm query for the Alarm Center UI.
+    /// </summary>
+    public async Task<(IReadOnlyList<Alarm> Items, int TotalCount)> GetPagedAsync(
+        int page,
+        int pageSize,
+        string? alarmType = null,
+        string? status = null,
+        string? severity = null,
+        string? deviceId = null,
+        string? search = null,
+        string? dateFrom = null,
+        string? dateTo = null,
+        CancellationToken ct = default)
+    {
+        var query = _context.Alarms.AsQueryable();
+
+        // ── Category filter ─────────────────────────────────────────────────────
+        if (!string.IsNullOrWhiteSpace(alarmType))
+            query = query.Where(a => a.AlarmType == alarmType);
+
+        // ── Status filter ──────────────────────────────────────────────────────
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (status.Equals("Active", StringComparison.OrdinalIgnoreCase))
+                query = query.Where(a => a.CurrentState == "Active");
+            else if (status.Equals("Acknowledged", StringComparison.OrdinalIgnoreCase))
+                query = query.Where(a => a.CurrentState == "Acknowledged");
+            else if (status.Equals("Resolved", StringComparison.OrdinalIgnoreCase))
+                query = query.Where(a => a.CurrentState == "Resolved");
+        }
+
+        // ── Severity filter ────────────────────────────────────────────────────
+        if (!string.IsNullOrWhiteSpace(severity))
+            query = query.Where(a => a.Severity == severity);
+
+        // ── Device filter ──────────────────────────────────────────────────────
+        if (!string.IsNullOrWhiteSpace(deviceId))
+            query = query.Where(a => a.DeviceId == deviceId);
+
+        // ── Date range filter ──────────────────────────────────────────────────
+        if (!string.IsNullOrWhiteSpace(dateFrom))
+            query = query.Where(a => string.Compare(a.CreatedAt, dateFrom) >= 0);
+        if (!string.IsNullOrWhiteSpace(dateTo))
+            query = query.Where(a => string.Compare(a.CreatedAt, dateTo) <= 0);
+
+        // ── Full-text search ───────────────────────────────────────────────────
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.ToLower();
+            query = query.Where(a =>
+                a.Message.ToLower().Contains(s) ||
+                (a.DeviceId != null && a.DeviceId.ToLower().Contains(s)) ||
+                (a.DeviceName != null && a.DeviceName.ToLower().Contains(s)) ||
+                (a.ProductionOrderId != null && a.ProductionOrderId.ToLower().Contains(s)));
+        }
+
+        query = query.OrderByDescending(a => a.LastOccurredAt);
+
+        var totalCount = await query.CountAsync(ct);
+        var items = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return (items, totalCount);
+    }
+
+    /// <summary>Count of Active (unacknowledged) alarms — for dashboard banner.</summary>
+    public async Task<int> GetActiveCountAsync(CancellationToken ct = default)
+        => await _context.Alarms.CountAsync(a => a.CurrentState == "Active", ct);
 }
 
 public sealed class ProductionOrderViewRepository : IProductionOrderViewRepository

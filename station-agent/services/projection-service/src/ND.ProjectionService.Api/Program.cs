@@ -49,13 +49,16 @@ using (var scope = app.Services.CreateScope())
     
     await db.Database.EnsureCreatedAsync();
 
-    // Safely add lifecycle_state to device statuses read model and create alarms table
+    // Idempotent schema migrations
     using (var cmd = db.Database.GetDbConnection().CreateCommand())
     {
         await db.Database.OpenConnectionAsync();
+
+        // v1: lifecycle_state on devices
         cmd.CommandText = "ALTER TABLE projection_device_status ADD COLUMN lifecycle_state TEXT NOT NULL DEFAULT 'Offline';";
         try { await cmd.ExecuteNonQueryAsync(); } catch { }
 
+        // v2: initial alarms table
         cmd.CommandText = @"
             CREATE TABLE IF NOT EXISTS projection_alarms (
                 id TEXT PRIMARY KEY,
@@ -69,6 +72,33 @@ using (var scope = app.Services.CreateScope())
                 created_at TEXT NOT NULL
             );";
         try { await cmd.ExecuteNonQueryAsync(); } catch { }
+
+        // v3: alarm aggregation + categorization columns
+        foreach (var sql in new[]
+        {
+            "ALTER TABLE projection_alarms ADD COLUMN alarm_type TEXT NOT NULL DEFAULT 'ProductionError';",
+            "ALTER TABLE projection_alarms ADD COLUMN alarm_group_key TEXT NOT NULL DEFAULT '';",
+            "ALTER TABLE projection_alarms ADD COLUMN device_name TEXT NULL;",
+            "ALTER TABLE projection_alarms ADD COLUMN production_order_id TEXT NULL;",
+            "ALTER TABLE projection_alarms ADD COLUMN current_state TEXT NOT NULL DEFAULT 'Active';",
+            "ALTER TABLE projection_alarms ADD COLUMN first_occurred_at TEXT NOT NULL DEFAULT '';",
+            "ALTER TABLE projection_alarms ADD COLUMN last_occurred_at TEXT NOT NULL DEFAULT '';",
+            "ALTER TABLE projection_alarms ADD COLUMN repeat_count INTEGER NOT NULL DEFAULT 0;",
+            "ALTER TABLE projection_alarms ADD COLUMN resolved_at TEXT NULL;",
+            // Back-fill group key for existing rows that have a device_id
+            "UPDATE projection_alarms SET alarm_group_key = id WHERE alarm_group_key = '';",
+            // Back-fill first/last occurred from created_at for existing rows
+            "UPDATE projection_alarms SET first_occurred_at = created_at WHERE first_occurred_at = '';",
+            "UPDATE projection_alarms SET last_occurred_at = created_at WHERE last_occurred_at = '';",
+            // Back-fill current_state from is_acknowledged for existing rows
+            "UPDATE projection_alarms SET current_state = 'Acknowledged' WHERE is_acknowledged = 1 AND current_state = 'Active';",
+            // Index on alarm_group_key for fast dedup lookups
+            "CREATE INDEX IF NOT EXISTS idx_alarms_group_key ON projection_alarms(alarm_group_key);",
+        })
+        {
+            cmd.CommandText = sql;
+            try { await cmd.ExecuteNonQueryAsync(); } catch { }
+        }
     }
 
     await ProjectionDbSeeder.SeedAsync(db);
@@ -268,27 +298,57 @@ app.MapGet("/api/projection/orders/{orderNo}/items", async (
     }).OrderBy(r => r.CreatedAt));
 });
 
+// ── Alarm Center: paginated + filtered list ────────────────────────────────
 app.MapGet("/api/projection/alarms", async (
+    int? page,
+    int? pageSize,
+    string? alarmType,
+    string? status,
+    string? severity,
+    string? deviceId,
+    string? search,
+    string? dateFrom,
+    string? dateTo,
     IAlarmRepository repo,
     CancellationToken ct) =>
 {
-    var alarms = await repo.GetAllAsync(ct);
-    var dtos = alarms.Select(a => new AlarmDto(
-        a.Id,
-        a.Severity,
-        a.Source,
-        a.Message,
-        a.DeviceId,
-        a.IsAcknowledged,
-        a.AcknowledgedBy,
-        a.AcknowledgedAt,
+    var p  = page     ?? 1;
+    var ps = pageSize ?? 20;
+
+    var (items, totalCount) = await repo.GetPagedAsync(
+        p, ps, alarmType, status, severity, deviceId, search, dateFrom, dateTo, ct);
+
+    var activeCount = await repo.GetActiveCountAsync(ct);
+
+    var dtos = items.Select(a => new AlarmDto(
+        a.Id, a.AlarmType, a.AlarmGroupKey,
+        a.Severity, a.Source, a.Message,
+        a.DeviceId, a.DeviceName, a.ProductionOrderId,
+        a.IsAcknowledged, a.CurrentState,
+        a.AcknowledgedBy, a.AcknowledgedAt,
+        a.FirstOccurredAt, a.LastOccurredAt, a.RepeatCount, a.ResolvedAt,
         a.CreatedAt
-    )).OrderByDescending(a => a.CreatedAt).ToList();
-    return Results.Ok(dtos);
+    )).ToList();
+
+    return Results.Ok(new PagedAlarmResult(
+        dtos, totalCount, p, ps,
+        (int)Math.Ceiling((double)totalCount / ps),
+        activeCount));
 });
 
+// ── Alarm Center: active count for dashboard banner ────────────────────────
+app.MapGet("/api/projection/alarms/count", async (
+    IAlarmRepository repo,
+    CancellationToken ct) =>
+{
+    var active = await repo.GetActiveCountAsync(ct);
+    return Results.Ok(new { active });
+});
+
+// ── Alarm Center: acknowledge ──────────────────────────────────────────────
 app.MapPost("/api/projection/alarms/{id}/acknowledge", async (
     string id,
+    string? user,
     IAlarmRepository repo,
     IUnitOfWork uow,
     CancellationToken ct) =>
@@ -296,7 +356,7 @@ app.MapPost("/api/projection/alarms/{id}/acknowledge", async (
     var alarm = await repo.GetByIdAsync(id, ct);
     if (alarm == null) return Results.NotFound();
 
-    alarm.Acknowledge("Operator");
+    alarm.Acknowledge(user ?? "Operator");
     await repo.UpdateAsync(alarm, ct);
     await uow.SaveChangesAsync(ct);
 

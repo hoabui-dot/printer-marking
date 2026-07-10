@@ -41,6 +41,31 @@ public interface IProductionRecordRepository : IRepository<ProductionRecord>
 
 public interface IAlarmRepository : IRepository<Alarm>
 {
+    /// <summary>
+    /// Returns the latest unacknowledged (Active) alarm for the given group key.
+    /// Used for deduplication — if this returns non-null, do NOT insert a new alarm.
+    /// </summary>
+    Task<Alarm?> GetActiveByGroupKeyAsync(string groupKey, CancellationToken ct = default);
+
+    /// <summary>
+    /// Server-side paginated + filtered query for the Alarm Center UI.
+    /// </summary>
+    Task<(IReadOnlyList<Alarm> Items, int TotalCount)> GetPagedAsync(
+        int page,
+        int pageSize,
+        string? alarmType = null,
+        string? status = null,
+        string? severity = null,
+        string? deviceId = null,
+        string? search = null,
+        string? dateFrom = null,
+        string? dateTo = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Count of active (unacknowledged, non-resolved) alarms only — for dashboard banner.
+    /// </summary>
+    Task<int> GetActiveCountAsync(CancellationToken ct = default);
 }
 
 public interface IProductionOrderViewRepository : IRepository<ProductionOrderView>

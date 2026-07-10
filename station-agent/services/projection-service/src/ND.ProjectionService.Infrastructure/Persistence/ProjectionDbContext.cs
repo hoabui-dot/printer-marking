@@ -89,15 +89,27 @@ public sealed class ProjectionDbContext : DbContext, IUnitOfWork
             e.ToTable("projection_alarms");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.AlarmType).HasColumnName("alarm_type").IsRequired().HasDefaultValue("ProductionError");
+            e.Property(x => x.AlarmGroupKey).HasColumnName("alarm_group_key").IsRequired();
             e.Property(x => x.Severity).HasColumnName("severity").IsRequired();
             e.Property(x => x.Source).HasColumnName("source").IsRequired();
             e.Property(x => x.Message).HasColumnName("message").IsRequired();
             e.Property(x => x.DeviceId).HasColumnName("device_id");
+            e.Property(x => x.DeviceName).HasColumnName("device_name");
+            e.Property(x => x.ProductionOrderId).HasColumnName("production_order_id");
+            e.Property(x => x.CurrentState).HasColumnName("current_state").IsRequired().HasDefaultValue("Active");
+            e.Property(x => x.FirstOccurredAt).HasColumnName("first_occurred_at").IsRequired();
+            e.Property(x => x.LastOccurredAt).HasColumnName("last_occurred_at").IsRequired();
+            e.Property(x => x.RepeatCount).HasColumnName("repeat_count").HasDefaultValue(0);
+            e.Property(x => x.ResolvedAt).HasColumnName("resolved_at");
             e.Property(x => x.IsAcknowledged).HasColumnName("is_acknowledged").IsRequired();
             e.Property(x => x.AcknowledgedBy).HasColumnName("acknowledged_by");
             e.Property(x => x.AcknowledgedAt).HasColumnName("acknowledged_at");
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+            // Index on alarm_group_key for fast dedup lookups
+            e.HasIndex(x => x.AlarmGroupKey);
         });
+
 
         modelBuilder.Entity<ProductionOrderView>(e =>
         {

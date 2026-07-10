@@ -357,29 +357,54 @@ public sealed class ProjectionEventConsumer : BackgroundService
                         productionRecordToPush = record;
                     }
 
-                    // Create Alarm for Job Failure
+                    // ── Create/Deduplicate Alarm for Job Failure ─────────────────────────
                     try
                     {
                         var alarmRepo = scope.ServiceProvider.GetRequiredService<IAlarmRepository>();
-                        var alarm = Alarm.Create(
-                            "Error",
-                            "Workflow",
-                            $"Công việc {evt.JobNo} thất bại: {evt.ErrorMessage ?? "Lỗi không xác định"}",
-                            null
-                        );
-                        await alarmRepo.AddAsync(alarm, cancellationToken);
-                        
-                        // Push alarm to UI
-                        var alarmDto = new AlarmDto(
-                            alarm.Id, alarm.Severity, alarm.Source, alarm.Message, alarm.DeviceId,
-                            alarm.IsAcknowledged, alarm.AcknowledgedBy, alarm.AcknowledgedAt, alarm.CreatedAt
-                        );
-                        await _hubContext.Clients.Group(_stationId).SendAsync("OnAlarmRaised", alarmDto, cancellationToken);
+
+                        // Dedup: use jobId as the group key — one active alarm per job
+                        var existingAlarm = await alarmRepo.GetActiveByGroupKeyAsync(evt.JobId, cancellationToken);
+                        if (existingAlarm != null)
+                        {
+                            // Same job has failed multiple times — bump repeat count, no new broadcast
+                            existingAlarm.UpdateRepeat();
+                            await alarmRepo.UpdateAsync(existingAlarm, cancellationToken);
+                            _logger.LogDebug(
+                                "Alarm dedup: updated existing job failure alarm for {JobId}, RepeatCount={Rc}",
+                                evt.JobId, existingAlarm.RepeatCount);
+                        }
+                        else
+                        {
+                            // First failure — create new alarm and broadcast
+                            var alarm = Alarm.Create(
+                                severity: "Error",
+                                source: "Workflow",
+                                message: $"Công việc {evt.JobNo} thất bại: {evt.ErrorMessage ?? "Lỗi không xác định"}",
+                                deviceId: null,
+                                deviceName: null,
+                                alarmType: "ProductionError",
+                                alarmGroupKey: evt.JobId,
+                                productionOrderId: evt.JobNo
+                            );
+                            await alarmRepo.AddAsync(alarm, cancellationToken);
+
+                            var alarmDto = new AlarmDto(
+                                alarm.Id, alarm.AlarmType, alarm.AlarmGroupKey,
+                                alarm.Severity, alarm.Source, alarm.Message,
+                                alarm.DeviceId, alarm.DeviceName, alarm.ProductionOrderId,
+                                alarm.IsAcknowledged, alarm.CurrentState,
+                                alarm.AcknowledgedBy, alarm.AcknowledgedAt,
+                                alarm.FirstOccurredAt, alarm.LastOccurredAt,
+                                alarm.RepeatCount, alarm.ResolvedAt, alarm.CreatedAt
+                            );
+                            await _hubContext.Clients.Group(_stationId).SendAsync("OnAlarmRaised", alarmDto, cancellationToken);
+                        }
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Failed to raise job failure alarm");
+                        _logger.LogError(ex, "Failed to raise job failure alarm for {JobId}", evt.JobId);
                     }
+
                 }
             }
 
