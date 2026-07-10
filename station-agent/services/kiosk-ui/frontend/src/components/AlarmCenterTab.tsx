@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import axios from 'axios'
-import { AlertTriangle, CheckCircle, RefreshCw, Search, X, ChevronLeft, ChevronRight, Clock, Wifi, Cpu, Activity, Filter } from 'lucide-react'
+import { AlertTriangle, CheckCircle, RefreshCw, Search, X, ChevronLeft, ChevronRight, Wifi, Cpu, Activity, Filter } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'

@@ -67,12 +67,31 @@ export default function DashboardPage() {
   const navigate = useNavigate()
   const { user: currentUser, logout } = useAuth()
   const [signalRAlarm, setSignalRAlarm] = useState<Alarm | null>(null)
-  const { isConnected, production, devices, todayRecords, activities } = useDashboard(stationId, setSignalRAlarm)
-  const lastExecution = useLastProductionExecution() // kept for future KPI bar — store is synced by useDashboard
-  void lastExecution // suppress unused warning until KPI bar is implemented
+  const [alarmBannerCount, setAlarmBannerCount] = useState(0)
+  const { isConnected, production, devices, todayRecords, activities } = useDashboard(stationId, (alarm) => {
+    setSignalRAlarm(alarm)
+    // Bump banner count when a new active alarm arrives via SignalR
+    if (alarm.currentState === 'Active') setAlarmBannerCount(prev => prev + 1)
+  })
+  const lastExecution = useLastProductionExecution()
+  void lastExecution
   const gatewayDevice = devices.find((d: any) => d.deviceId === 'gateway-01')
   const isGatewayOnline = gatewayDevice?.isOnline ?? false
   const { historyData, loading: loadingHistory, error: historyError, fetchHistory } = useProductionRecords()
+
+  // Fetch active alarm count for the persistent banner
+  const baseProjectionUrl = import.meta.env.VITE_PROJECTION_URL ||
+    `${window.location.protocol}//${window.location.host}`
+  useEffect(() => {
+    const fetchCount = () =>
+      fetch(`${baseProjectionUrl}/api/projection/alarms/count`)
+        .then(r => r.json())
+        .then(d => setAlarmBannerCount(d.active ?? 0))
+        .catch(() => {})
+    fetchCount()
+    const timer = setInterval(fetchCount, 30_000)
+    return () => clearInterval(timer)
+  }, [baseProjectionUrl])
 
   const [tab, setTab] = useState<KioskTab>('dashboard')
   const [connectivitySubTab, setConnectivitySubTab] = useState<'devices' | 'printers' | 'plc' | 'camera'>('devices')
@@ -855,13 +874,13 @@ export default function DashboardPage() {
       </header>
 
       {/* ── PERSISTENT ALARM ALERT BAR ──────────────────── */}
-      {alarms.filter(a => !a.isAcknowledged).length > 0 && (
+      {alarmBannerCount > 0 && (
         <div
           onClick={() => setTab('alarms')}
           className="w-full bg-red-500/10 hover:bg-red-500/15 border-b border-red-500/30 text-red-400 py-3.5 px-6 lg:px-8 text-center text-base font-extrabold flex items-center justify-center gap-2 cursor-pointer transition-colors duration-150 animate-pulse select-none"
         >
           <AlertTriangle className="h-5 w-5 animate-bounce shrink-0" />
-          <span>HỆ THỐNG PHÁT HIỆN CÓ KHÓA BÁO ĐỘNG CHƯA XÁC NHẬN ({alarms.filter(a => !a.isAcknowledged).length} CẢNH BÁO) — NHẤN ĐỂ VÀO TRUNG TÂM XỬ LÝ</span>
+          <span>HỆ THỐNG PHÁT HIỆN CÓ KHÓA BÁO ĐỘNG CHƯA XÁC NHẬN ({alarmBannerCount} CẢNH BÁO) — NHẤN ĐỂ VÀO TRUNG TÂM XỬ LÝ</span>
         </div>
       )}
 
