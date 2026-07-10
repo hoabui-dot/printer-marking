@@ -12,6 +12,9 @@ public sealed class LabelTemplate : Entity
     public string Name { get; private set; } = default!;
     public string? Description { get; private set; }
 
+    /// <summary>Vietnamese business note for production engineers (Ghi chú sản xuất).</summary>
+    public string? Note { get; private set; }
+
     /// <summary>Short machine-readable code, e.g. "LBL-WIP-60x40".</summary>
     public string? TemplateCode { get; private set; }
 
@@ -61,6 +64,7 @@ public sealed class LabelTemplate : Entity
         string templateJson,
         string status = "published",
         string? createdBy = null,
+        string? note = null,
         string? templateCode = null,
         string? category = null,
         string? orientation = "PORTRAIT",
@@ -73,6 +77,7 @@ public sealed class LabelTemplate : Entity
         {
             Name = name,
             Description = description,
+            Note = note,
             TemplateCode = templateCode,
             Category = category,
             Orientation = orientation ?? "PORTRAIT",
@@ -106,6 +111,7 @@ public sealed class LabelTemplate : Entity
         double labelHeight,
         string templateJson,
         string? updatedBy = null,
+        string? note = null,
         string? templateCode = null,
         string? category = null,
         string? orientation = null,
@@ -116,6 +122,7 @@ public sealed class LabelTemplate : Entity
     {
         Name = name;
         Description = description;
+        if (note is not null) Note = note;
         if (templateCode is not null) TemplateCode = templateCode;
         if (category is not null) Category = category;
         if (orientation is not null) Orientation = orientation;
@@ -131,6 +138,8 @@ public sealed class LabelTemplate : Entity
         UpdatedBy = updatedBy;
         UpdatedAt = DateTime.UtcNow.ToString("o");
     }
+
+    public void SetNote(string? note) => Note = note;
 
     public void Publish(string? updatedBy = null)
     {

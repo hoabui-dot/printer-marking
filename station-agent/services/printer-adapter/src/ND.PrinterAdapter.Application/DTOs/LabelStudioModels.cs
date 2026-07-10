@@ -5,6 +5,7 @@ namespace ND.PrinterAdapter.Application.DTOs;
 public record CreateTemplateRequest(
     string Name,
     string? Description,
+    string? Note,
     int Dpi,
     double LabelWidth,
     double LabelHeight,
@@ -20,6 +21,7 @@ public record CreateTemplateRequest(
 public record UpdateTemplateRequest(
     string Name,
     string? Description,
+    string? Note,
     int Dpi,
     double LabelWidth,
     double LabelHeight,
