@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Scalar.AspNetCore;
 using ND.Infrastructure.Observability;
 using ND.Infrastructure.Messaging;
 using ND.PrinterAdapter.Application.Interfaces;
@@ -67,21 +68,7 @@ builder.Services.AddSingleton<VirtualPrinterSimulator>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<VirtualPrinterSimulator>());
 
 builder.Services.AddEndpointsApiExplorer();
-
-// ── Swashbuckle / Swagger ───────────────────────────────────────────────────
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new()
-    {
-        Title       = "Printer Adapter API",
-        Version     = "v1",
-        Description =
-            "REST API for the Print Marking Station \u2014 Printer Adapter service.\n\n" +
-            "Manages printers, label templates, ZPL rendering, print jobs, and print history.\n\n" +
-            "**OpenAPI JSON**: `/swagger/v1/swagger.json`",
-    });
-    c.DocInclusionPredicate((_, _) => true);
-});
+builder.Services.AddOpenApi();   // Microsoft.AspNetCore.OpenApi — generates /openapi/v1.json
 
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
@@ -156,20 +143,14 @@ using (var scope = app.Services.CreateScope())
     await SeedDefaultTemplatesAsync(db);
 }
 
-// ── Swagger UI ────────────────────────────────────────────────────────────
-app.UseSwagger();                // JSON spec  →  /swagger/v1/swagger.json
-app.UseSwaggerUI(c =>
+// ── OpenAPI + Scalar UI ───────────────────────────────────────────────────────────
+app.MapOpenApi();              // JSON spec  →  /openapi/v1.json
+app.MapScalarApiReference(opt =>
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Printer Adapter API v1");
-    c.RoutePrefix      = "swagger";        // UI at http://localhost:<port>/swagger
-    c.DocumentTitle    = "Printer Adapter API";
-    c.DisplayRequestDuration();
-    c.EnableDeepLinking();
-    c.EnableFilter();
-    c.DefaultModelsExpandDepth(-1);       // collapse schemas by default
-    c.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.List);
-});
-app.MapOpenApi();                // also keep /openapi/v1.json
+    opt.Title           = "Printer Adapter API";
+    opt.Theme           = ScalarTheme.DeepSpace;
+    opt.DefaultHttpClient = new(ScalarTarget.Shell, ScalarClient.Curl);
+});                            // UI          →  /scalar/v1
 
 // ── Infrastructure endpoints ────────────────────────────────────────────────
 
