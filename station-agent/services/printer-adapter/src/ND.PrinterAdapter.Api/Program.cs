@@ -83,7 +83,6 @@ builder.Services.AddSwaggerGen(c =>
     c.DocInclusionPredicate((_, _) => true);
 });
 
-builder.Services.AddOpenApi();   // keeps /openapi/v1.json available as well
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 
