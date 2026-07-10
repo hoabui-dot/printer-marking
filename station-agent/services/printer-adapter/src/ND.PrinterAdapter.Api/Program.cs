@@ -116,6 +116,7 @@ using (var scope = app.Services.CreateScope())
         "ALTER TABLE label_templates ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE label_templates ADD COLUMN created_by TEXT",
         "ALTER TABLE label_templates ADD COLUMN updated_by TEXT",
+        "ALTER TABLE label_templates ADD COLUMN note TEXT",
         @"CREATE TABLE IF NOT EXISTS printer_template_assignments (
             id TEXT PRIMARY KEY,
             printer_code TEXT NOT NULL UNIQUE,
