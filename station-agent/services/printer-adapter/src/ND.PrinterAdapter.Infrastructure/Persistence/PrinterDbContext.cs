@@ -81,6 +81,7 @@ public sealed class PrinterDbContext : DbContext, IUnitOfWork
             e.Property(x => x.Id).HasColumnName("id");
             e.Property(x => x.Name).HasColumnName("name").IsRequired();
             e.Property(x => x.Description).HasColumnName("description");
+            e.Property(x => x.Note).HasColumnName("note");
             e.Property(x => x.TemplateCode).HasColumnName("template_code");
             e.HasIndex(x => x.TemplateCode).IsUnique().HasFilter("template_code IS NOT NULL");
             e.Property(x => x.Category).HasColumnName("category");

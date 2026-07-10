@@ -24,6 +24,7 @@ interface LabelTemplate {
   id: string
   name: string
   description?: string
+  note?: string
   templateCode?: string
   category?: string
   orientation?: string
@@ -122,6 +123,7 @@ function TemplateEditorDialog({
   const isEdit = !!template
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [note, setNote] = useState('')
   const [dpi, setDpi] = useState('203')
   const [width, setWidth] = useState('50')
   const [height, setHeight] = useState('30')
@@ -139,6 +141,7 @@ function TemplateEditorDialog({
       if (template) {
         setName(template.name)
         setDescription(template.description ?? '')
+        setNote(template.note ?? '')
         setDpi(String(template.dpi))
         setWidth(String(template.labelWidth))
         setHeight(String(template.labelHeight))
@@ -146,7 +149,7 @@ function TemplateEditorDialog({
         setJsonText(raw)
         tryParseJson(raw)
       } else {
-        setName(''); setDescription(''); setDpi('203'); setWidth('50'); setHeight('30')
+        setName(''); setDescription(''); setNote(''); setDpi('203'); setWidth('50'); setHeight('30')
         setJsonText(BLANK_TEMPLATE_JSON)
         tryParseJson(BLANK_TEMPLATE_JSON)
       }
@@ -171,6 +174,7 @@ function TemplateEditorDialog({
     try {
       const payload = {
         name, description: description || undefined,
+        note: note || undefined,
         dpi: parseInt(dpi), labelWidth: parseFloat(width), labelHeight: parseFloat(height),
         templateJson: jsonText,
       }
@@ -218,9 +222,20 @@ function TemplateEditorDialog({
                   placeholder="50x30 QR Label" className="bg-zinc-800 border-zinc-700 text-zinc-100 h-8 text-sm" />
               </div>
               <div className="col-span-2">
-                <label className="text-xs text-zinc-400 mb-1 block">Description</label>
+                <label className="text-xs text-zinc-400 mb-1 block">Mô tả (Description)</label>
                 <Input id="tpl-desc" value={description} onChange={e => setDescription(e.target.value)}
-                  placeholder="Optional description..." className="bg-zinc-800 border-zinc-700 text-zinc-100 h-8 text-sm" />
+                  placeholder="Mô tả ngắn về mẫu tem..." className="bg-zinc-800 border-zinc-700 text-zinc-100 h-8 text-sm" />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs text-zinc-400 mb-1 block">Ghi chú sản xuất (Note)</label>
+                <textarea
+                  id="tpl-note"
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                  rows={3}
+                  placeholder="Ghi chú cho kỹ sư sản xuất: mục đích sử dụng, công đoạn áp dụng, yêu cầu máy in..."
+                  className="w-full rounded-md bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
               </div>
               <div>
                 <label className="text-xs text-zinc-400 mb-1 block">DPI</label>
@@ -365,6 +380,17 @@ function TemplatePreviewDialog({ open, template, onClose }: { open: boolean; tem
             )}
           </div>
         )}
+        {/* Note — Ghi chú sản xuất */}
+        {template?.note && (
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+            <div className="text-[11px] font-semibold text-amber-400 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+              <span>📋</span> Ghi chú sản xuất
+            </div>
+            <pre className="text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed font-sans">
+              {template.note}
+            </pre>
+          </div>
+        )}
         <div className="flex items-center justify-center py-4 bg-zinc-950 border border-zinc-800 rounded-lg">
           {template && (
             <LabelPreview
@@ -374,8 +400,11 @@ function TemplatePreviewDialog({ open, template, onClose }: { open: boolean; tem
             />
           )}
         </div>
+        {template?.description && (
+          <p className="text-xs text-zinc-500 italic px-1">{template.description}</p>
+        )}
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose} className="text-zinc-400 h-8 text-sm">Close</Button>
+          <Button variant="ghost" onClick={onClose} className="text-zinc-400 h-8 text-sm">Đóng</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

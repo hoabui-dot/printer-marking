@@ -33,8 +33,9 @@ DB_PATHS = [
 TEMPLATES = [
     {
         "template_code": "LBL-PRODUCT-50x30",
-        "name": "Industrial Product QR Label",
-        "description": "Won Seal Tech Co., Ltd. — 50×30mm standard product label with QR code and serial number.",
+        "name": "Tem sản phẩm công nghiệp (QR)",
+        "description": "Won Seal Tech Co., Ltd. — Tem 50×30mm tiêu chuẩn gắn mã QR và số serial.",
+        "note": "Tem chính dùng cho sản phẩm xuất xưởng. Dán trực tiếp lên sản phẩm hoặc bao bì. Mã QR chứa thông tin serial, mã sản phẩm và lô sản xuất. Phù hợp với máy in Zebra GK420t hoặc ZT230. Ưu tiên kích thước 50×30mm.",
         "category": "PRODUCT",
         "dpi": 203,
         "label_width": 50.0,
@@ -67,8 +68,9 @@ TEMPLATES = [
     },
     {
         "template_code": "LBL-SHELF-50x30",
-        "name": "Shelf / Rack Location Label",
-        "description": "Warehouse location identification. 50×30mm with QR and Code128.",
+        "name": "Tem vị trí kho / kệ / ô chứa",
+        "description": "Nhận diện vị trí lưu trữ trong kho, kệ hoặc ô chứa. 50×30mm với QR và Code128.",
+        "note": "Dùng để nhận diện vị trí lưu trữ trong kho, kệ hoặc ô chứa.\nThường được dán cố định tại vị trí, không thay đổi thường xuyên.\nCó thể sử dụng mã Code 128 hoặc QR Code.\nƯu tiên kích thước nhỏ (50 × 30 mm).",
         "category": "SHELF",
         "dpi": 203,
         "label_width": 50.0,
@@ -93,8 +95,9 @@ TEMPLATES = [
     },
     {
         "template_code": "LBL-INSP-100x60",
-        "name": "Inspection / Supervisor Label",
-        "description": "QC inspection records, supervisor sign-off. 100×60mm, Code128.",
+        "name": "Tem bó sát / kiểm tra chất lượng",
+        "description": "Dùng cho công đoạn kiểm tra chất lượng hoặc quản lý bó sản phẩm. 100×60mm, Code128.",
+        "note": "Dùng cho công đoạn kiểm tra chất lượng hoặc quản lý bó sản phẩm.\nCó thể chứa thông tin lô, trọng lượng, người kiểm tra và thời gian kiểm tra.\nPhù hợp với tem 100 × 60 mm.",
         "category": "INSPECTION",
         "dpi": 203,
         "label_width": 100.0,
@@ -130,8 +133,9 @@ TEMPLATES = [
     },
     {
         "template_code": "LBL-ROLL-100x80",
-        "name": "Roll / Material Reel Label",
-        "description": "Rubber rolls and raw material reels. 100×80mm with large Code128.",
+        "name": "Tem cuộn cao su / tấm cao su",
+        "description": "Áp dụng cho cuộn cao su hoặc tấm cao su nguyên liệu. 100×80mm với Code128 lớn.",
+        "note": "Áp dụng cho cuộn cao su hoặc tấm cao su nguyên liệu.\nTem thường được dán bằng PET hoặc thẻ treo.\nHiển thị mã nguyên liệu, Batch, loại cao su và khối lượng.\nPhục vụ truy xuất nguyên liệu đầu vào.",
         "category": "MATERIAL",
         "dpi": 203,
         "label_width": 100.0,
@@ -165,8 +169,9 @@ TEMPLATES = [
     },
     {
         "template_code": "LBL-PALLET-100x150",
-        "name": "Pallet Label",
-        "description": "Shipping, warehouse and forklift scanning pallet label. 100×150mm with large QR and Code128.",
+        "name": "Tem pallet hàng",
+        "description": "Tem pallet thành phẩm hoặc xuất kho. 100×150mm với QR và Code128 kích thước lớn.",
+        "note": "Dùng cho pallet thành phẩm hoặc pallet xuất kho.\nMã phải có khả năng quét ở khoảng cách xa bằng PDA hoặc thiết bị cầm tay.\nCó thể sử dụng QR Code hoặc Code 128 kích thước lớn.",
         "category": "PALLET",
         "dpi": 203,
         "label_width": 100.0,
@@ -210,8 +215,9 @@ TEMPLATES = [
     },
     {
         "template_code": "LBL-SHEET-P-80x50",
-        "name": "Parent Rubber Sheet Label",
-        "description": "Parent sheet identification for rubber sheet tracking. 80×50mm with QR.",
+        "name": "Tem tấm cao su lớn",
+        "description": "Quản lý tấm cao su nguyên bản trước khi cắt. 80×50mm với QR.",
+        "note": "Dùng để quản lý tấm cao su nguyên bản trước khi cắt.\nQR Code đại diện cho Parent Sheet ID.\nLà mã gốc dùng để sinh các tem con trong quá trình cắt.",
         "category": "SHEET",
         "dpi": 203,
         "label_width": 80.0,
@@ -245,8 +251,9 @@ TEMPLATES = [
     },
     {
         "template_code": "LBL-SHEET-C-50x30",
-        "name": "Child Rubber Sheet Label",
-        "description": "Individual child sheet tracking cut from parent. 50×30mm compact QR.",
+        "name": "Tem tấm cao su sau khi cắt",
+        "description": "Theo dõi tấm cao su con được cắt từ tấm lớn. 50×30mm QR nhỏ gọn.",
+        "note": "Được tạo sau khi cắt từ Parent Sheet.\nMỗi tấm con có Serial riêng.\nGiữ liên kết với Parent Sheet để phục vụ truy xuất nguồn gốc.\nƯu tiên QR Code kích thước nhỏ.",
         "category": "SHEET",
         "dpi": 203,
         "label_width": 50.0,
@@ -272,8 +279,9 @@ TEMPLATES = [
     },
     {
         "template_code": "LBL-WIP-60x40",
-        "name": "Semi-Finished Product (WIP) Label",
-        "description": "MES and operation tracking for work-in-progress items. 60×40mm with QR.",
+        "name": "Tem bán thành phẩm (WIP)",
+        "description": "Theo dõi bán thành phẩm trong từng công đoạn sản xuất MES. 60×40mm với QR.",
+        "note": "Dùng để theo dõi bán thành phẩm trong từng công đoạn sản xuất.\nMang theo Work Order, Operation và trạng thái sản xuất.\nLà tem chính phục vụ MES trong quá trình sản xuất.",
         "category": "WIP",
         "dpi": 203,
         "label_width": 60.0,
@@ -307,8 +315,9 @@ TEMPLATES = [
     },
     {
         "template_code": "LBL-ISSUE-100x60",
-        "name": "Material Issue Label",
-        "description": "Warehouse to MES material issuance tracking. 100×60mm with QR and Code128.",
+        "name": "Tem cấp liệu / phiếu xuất kho",
+        "description": "Sử dụng trong quá trình cấp vật tư từ WMS sang MES. 100×60mm với QR và Code128.",
+        "note": "Sử dụng trong quá trình cấp vật tư từ WMS sang MES.\nCó thể chứa cả Barcode và QR Code.\nHiển thị vật tư, số lượng, Batch và kho xuất.",
         "category": "ISSUE",
         "dpi": 203,
         "label_width": 100.0,
@@ -413,6 +422,7 @@ def migrate_schema(cursor):
         ("supported_barcode_types", "TEXT"),
         ("supported_printer_models","TEXT"),
         ("compatible_station_types","TEXT"),
+        ("note",                    "TEXT"),
     ]
     for col, col_type in all_columns:
         try:
@@ -464,7 +474,7 @@ def inject_templates(cursor, templates):
 
             cursor.execute("""
             UPDATE label_templates SET
-                name = ?, description = ?, category = ?, orientation = ?, revision = ?,
+                name = ?, description = ?, note = ?, category = ?, orientation = ?, revision = ?,
                 supported_barcode_types = ?, supported_printer_models = ?, compatible_station_types = ?,
                 dpi = ?, label_width = ?, label_height = ?,
                 template_json = ?, version = ?, is_default = ?,
@@ -472,7 +482,7 @@ def inject_templates(cursor, templates):
                 updated_by = 'system', updated_at = ?
             WHERE template_code = ?;
             """, (
-                t["name"], t["description"], t["category"], t["orientation"], t["revision"],
+                t["name"], t["description"], t.get("note"), t["category"], t["orientation"], t["revision"],
                 t["supported_barcode_types"], t["supported_printer_models"], t["compatible_station_types"],
                 t["dpi"], t["label_width"], t["label_height"],
                 json_str, new_version, is_default, now,
@@ -490,14 +500,14 @@ def inject_templates(cursor, templates):
 
             cursor.execute("""
             INSERT INTO label_templates (
-                id, name, description, template_code, category,
+                id, name, description, note, template_code, category,
                 dpi, label_width, label_height, orientation, revision,
                 supported_barcode_types, supported_printer_models, compatible_station_types,
                 template_json, version, is_active, status, is_default,
                 created_by, updated_by, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 'published', ?, 'system', 'system', ?, ?);
             """, (
-                new_id, t["name"], t["description"], code, t["category"],
+                new_id, t["name"], t["description"], t.get("note"), code, t["category"],
                 t["dpi"], t["label_width"], t["label_height"], t["orientation"], t["revision"],
                 t["supported_barcode_types"], t["supported_printer_models"], t["compatible_station_types"],
                 json_str, is_default,

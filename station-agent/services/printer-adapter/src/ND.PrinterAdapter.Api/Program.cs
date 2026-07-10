@@ -415,7 +415,7 @@ app.MapGet("/api/label-templates", async (
     var templates = await repo.ListAsync(search, dpi, status, includeArchived, ct);
     return Results.Ok(templates.Select(t => new
     {
-        t.Id, t.Name, t.Description,
+        t.Id, t.Name, t.Description, t.Note,
         t.TemplateCode, t.Category, t.Orientation, t.Revision,
         t.SupportedBarcodeTypes, t.SupportedPrinterModels, t.CompatibleStationTypes,
         t.Dpi, t.LabelWidth, t.LabelHeight,
@@ -450,7 +450,7 @@ app.MapGet("/api/label-templates/active", async (
         var parsed = System.Text.Json.JsonDocument.Parse(template.TemplateJson).RootElement;
         return Results.Ok(new
         {
-            template.Id, template.Name, template.Description,
+            template.Id, template.Name, template.Description, template.Note,
             template.TemplateCode, template.Category, template.Orientation, template.Revision,
             template.SupportedBarcodeTypes, template.SupportedPrinterModels, template.CompatibleStationTypes,
             template.Dpi, template.LabelWidth, template.LabelHeight,
@@ -479,7 +479,7 @@ app.MapGet("/api/label-templates/default", async (ILabelTemplateRepository repo,
     if (template is null) return Results.NotFound(new { error = "No default template set." });
     return Results.Ok(new
     {
-        template.Id, template.Name, template.Description,
+        template.Id, template.Name, template.Description, template.Note,
         template.TemplateCode, template.Category, template.Orientation, template.Revision,
         template.SupportedBarcodeTypes, template.SupportedPrinterModels, template.CompatibleStationTypes,
         template.Dpi, template.LabelWidth, template.LabelHeight,
@@ -743,7 +743,7 @@ app.MapGet("/api/label-templates/{id}", async (string id, ILabelTemplateReposito
     if (template is null) return Results.NotFound();
     return Results.Ok(new
     {
-        template.Id, template.Name, template.Description,
+        template.Id, template.Name, template.Description, template.Note,
         template.TemplateCode, template.Category, template.Orientation, template.Revision,
         template.SupportedBarcodeTypes, template.SupportedPrinterModels, template.CompatibleStationTypes,
         template.Dpi, template.LabelWidth, template.LabelHeight,
@@ -775,7 +775,7 @@ app.MapPost("/api/label-templates", async (
 
     var template = LabelTemplate.Create(
         req.Name, req.Description, req.Dpi, req.LabelWidth, req.LabelHeight, req.TemplateJson,
-        templateCode: req.TemplateCode, category: req.Category, orientation: req.Orientation,
+        note: req.Note, templateCode: req.TemplateCode, category: req.Category, orientation: req.Orientation,
         revision: req.Revision, supportedBarcodeTypes: req.SupportedBarcodeTypes,
         supportedPrinterModels: req.SupportedPrinterModels, compatibleStationTypes: req.CompatibleStationTypes);
     await repo.AddAsync(template, ct);
@@ -783,7 +783,7 @@ app.MapPost("/api/label-templates", async (
 
     var response = new
     {
-        template.Id, template.Name, template.Description,
+        template.Id, template.Name, template.Description, template.Note,
         template.TemplateCode, template.Category, template.Orientation, template.Revision,
         template.SupportedBarcodeTypes, template.SupportedPrinterModels, template.CompatibleStationTypes,
         template.Dpi, template.LabelWidth, template.LabelHeight,
@@ -825,7 +825,7 @@ app.MapPut("/api/label-templates/{id}", async (
 
     template.Update(
         req.Name, req.Description, req.Dpi, req.LabelWidth, req.LabelHeight, req.TemplateJson,
-        templateCode: req.TemplateCode, category: req.Category, orientation: req.Orientation,
+        note: req.Note, templateCode: req.TemplateCode, category: req.Category, orientation: req.Orientation,
         revision: req.Revision, supportedBarcodeTypes: req.SupportedBarcodeTypes,
         supportedPrinterModels: req.SupportedPrinterModels, compatibleStationTypes: req.CompatibleStationTypes);
     await repo.UpdateAsync(template, ct);
@@ -833,7 +833,7 @@ app.MapPut("/api/label-templates/{id}", async (
 
     return Results.Ok(new
     {
-        template.Id, template.Name, template.Description,
+        template.Id, template.Name, template.Description, template.Note,
         template.TemplateCode, template.Category, template.Orientation, template.Revision,
         template.SupportedBarcodeTypes, template.SupportedPrinterModels, template.CompatibleStationTypes,
         template.Dpi, template.LabelWidth, template.LabelHeight,
