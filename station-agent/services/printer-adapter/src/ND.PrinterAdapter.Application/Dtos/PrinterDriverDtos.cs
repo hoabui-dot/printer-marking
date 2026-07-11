@@ -1,14 +1,23 @@
 namespace ND.PrinterAdapter.Application.Dtos;
 
-/// <summary>Printer health/status as seen by the driver.</summary>
+/// <summary>
+/// Normalized printer health/status as produced by the driver layer.
+/// Maps 1:1 to NormalizedPrinterState.State for CUPS printers.
+/// Projection Service consumes only these values — never raw CUPS output.
+/// </summary>
 public enum PrinterDriverStatus
 {
-    Idle,
+    Unknown,
+    Connecting,
+    Online,
+    Busy,
     Printing,
-    Stopped,
+    Waiting,
+    Warning,
+    Stopped,      // Legacy: paused queue (maps to Error in UI)
     Offline,
-    Disconnected,
-    Unknown
+    Disconnected, // Legacy: TCP unreachable (simulation)
+    Error
 }
 
 /// <summary>Result of a print operation.</summary>
