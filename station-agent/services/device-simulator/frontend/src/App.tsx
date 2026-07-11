@@ -12,6 +12,7 @@ import EnvPanel from './components/EnvPanel'
 import GatewayConsole from './components/GatewayConsole'
 import TestConsolePanel from './components/TestConsolePanel'
 import ZebraLabelStudio from './components/ZebraLabelStudio'
+import SimulationPrinterPanel from './components/SimulationPrinterPanel'
 import { useState, useEffect, useRef } from 'react'
 import type { ConfigValue } from './types'
 
@@ -149,13 +150,17 @@ export default function App() {
           </div>
 
           {tab === 'devices' && status && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-              {status.printer && (
-                <PrinterCard state={status.printer} jobs={printerJobs} configValues={configValues} onSaveConfig={saveConfig} />
-              )}
-              <LaserCard state={status.laser} commands={laserCmds} configValues={configValues} onSaveConfig={saveConfig} />
-              <VisionCard state={status.vision} results={visionResults} configValues={configValues} onSaveConfig={saveConfig} />
-              <PlcCard state={status.plc} configValues={configValues} onSaveConfig={saveConfig} />
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                {status.printer && (
+                  <PrinterCard state={status.printer} jobs={printerJobs} configValues={configValues} onSaveConfig={saveConfig} />
+                )}
+                <LaserCard state={status.laser} commands={laserCmds} configValues={configValues} onSaveConfig={saveConfig} />
+                <VisionCard state={status.vision} results={visionResults} configValues={configValues} onSaveConfig={saveConfig} />
+                <PlcCard state={status.plc} configValues={configValues} onSaveConfig={saveConfig} />
+              </div>
+              {/* Simulation printers — connects to printer-adapter VirtualPrinterSimulator */}
+              <SimulationPrinterPanel />
             </div>
           )}
 

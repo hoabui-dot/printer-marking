@@ -42,6 +42,7 @@ public static class ServiceCollectionExtensions
         // Hosted Services
         services.AddHostedService<ProjectionEventConsumer>();
         services.AddHostedService<DeviceStatusPoller>();
+        services.AddHostedService<StartupAlarmScanService>();
 
         return services;
     }

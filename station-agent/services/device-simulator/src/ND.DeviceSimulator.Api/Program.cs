@@ -1186,7 +1186,34 @@ try
         await ProxyToPrinterAdapterAsync(context, targetUrl, client);
     });
 
+    // ── Simulation Printer Control Proxy ─────────────────────────────────────
+    // Forwards connect/disconnect/mode calls to printer-adapter's VirtualPrinterSimulator
+    app.MapGet("/api/printers/simulation-status", async (HttpContext context, HttpClient client) =>
+    {
+        var targetUrl = $"{printerAdapterUrl}/api/simulation/printers";
+        await ProxyToPrinterAdapterAsync(context, targetUrl, client);
+    });
+
+    app.MapPost("/api/printers/simulation-status/{code}/connect", async (string code, HttpContext context, HttpClient client) =>
+    {
+        var targetUrl = $"{printerAdapterUrl}/api/simulation/printers/{code}/connect";
+        await ProxyToPrinterAdapterAsync(context, targetUrl, client);
+    });
+
+    app.MapPost("/api/printers/simulation-status/{code}/disconnect", async (string code, HttpContext context, HttpClient client) =>
+    {
+        var targetUrl = $"{printerAdapterUrl}/api/simulation/printers/{code}/disconnect";
+        await ProxyToPrinterAdapterAsync(context, targetUrl, client);
+    });
+
+    app.MapPost("/api/printers/simulation-status/{code}/mode", async (string code, HttpContext context, HttpClient client) =>
+    {
+        var targetUrl = $"{printerAdapterUrl}/api/simulation/printers/{code}/mode";
+        await ProxyToPrinterAdapterAsync(context, targetUrl, client);
+    });
+
     app.MapFallbackToFile("index.html");
+
 
     await app.RunAsync();
 }
