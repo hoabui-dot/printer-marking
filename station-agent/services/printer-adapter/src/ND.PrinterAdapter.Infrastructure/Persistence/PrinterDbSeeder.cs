@@ -39,16 +39,29 @@ public static class PrinterDbSeeder
         else
         {
             var cupsCode = "Zebra-GK420t-CUPS";
-            if (!await db.Printers.AnyAsync(p => p.PrinterCode == cupsCode))
+            var cupsHost = Environment.GetEnvironmentVariable("CUPS_HEALTH_HOST") ?? "host.docker.internal";
+
+            var existingCups = await db.Printers.FirstOrDefaultAsync(p => p.PrinterCode == cupsCode);
+            if (existingCups == null)
             {
+                // Insert if missing
                 var cupsQueue = Environment.GetEnvironmentVariable("CUPS_QUEUE") ?? "Zebra_Technologies_ZTC_GK420t";
-                var cupsHost = Environment.GetEnvironmentVariable("CUPS_HEALTH_HOST") ?? "host.docker.internal";
                 var pCups = Printer.Create(cupsCode, "Zebra GK420t (Physical)", cupsHost, 631, "ZPL", "ZEBRA",
                     driverType: "cups", cupsQueueName: cupsQueue);
                 await db.Printers.AddAsync(pCups);
                 await db.SaveChangesAsync();
             }
+            else if (existingCups.IpAddress == "localhost" || existingCups.IpAddress == "127.0.0.1")
+            {
+                // Migrate existing record: localhost cannot reach macOS host CUPS from inside Docker.
+                // host.docker.internal is Docker Desktop's special DNS that routes to the macOS host.
+                // ExecuteUpdateAsync bypasses the private setter restriction on IpAddress.
+                await db.Printers
+                    .Where(p => p.PrinterCode == cupsCode)
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.IpAddress, cupsHost));
+            }
         }
+
 
         // ── Industrial Label Templates ────────────────────────────────────────
         // Idempotent: check by TemplateCode before inserting.

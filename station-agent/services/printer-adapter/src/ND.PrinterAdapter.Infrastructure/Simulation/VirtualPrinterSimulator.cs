@@ -70,11 +70,36 @@ public sealed class VirtualPrinterSimulator : BackgroundService
             if (printerCode == null || ep.PrinterCode.Equals(printerCode, StringComparison.OrdinalIgnoreCase))
             {
                 ep.ForceOffline = !online;
-                if (!online) { ep.Listener?.Stop(); ep.Listener = null; }
+
+                if (!online)
+                {
+                    // Stop listener immediately on disconnect
+                    ep.Listener?.Stop(); ep.Listener = null;
+                }
+                else
+                {
+                    // Start listener NOW before publishing heartbeat.
+                    // HeartbeatHostedService may ping within ms of the heartbeat being received by
+                    // projection-service — if the port is not yet bound the ping fails and the status
+                    // immediately flips back to offline (the race condition the user reported).
+                    if (ep.Listener == null)
+                    {
+                        try
+                        {
+                            ep.Listener = new TcpListener(IPAddress.Any, ep.Port);
+                            ep.Listener.Start();
+                            _logger.LogInformation("Printer simulator [{Code}] TCP listener started on :{Port} (immediate)", ep.PrinterCode, ep.Port);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Printer simulator [{Code}] failed to start listener immediately", ep.PrinterCode);
+                        }
+                    }
+                }
+
                 _logger.LogInformation("Printer simulator [{Code}] forced {State}", ep.PrinterCode, online ? "ONLINE" : "OFFLINE");
 
-                // Immediately publish heartbeat so kiosk UI reflects the change in <1s
-                // (same behaviour as physical device — no waiting for 3s HeartbeatHostedService cycle)
+                // Publish heartbeat after listener is ready
                 try
                 {
                     var routingKey = $"device.heartbeat.{ep.PrinterCode.ToLowerInvariant()}";
