@@ -1,12 +1,15 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ND.Infrastructure.Messaging;
 using ND.PrinterAdapter.Infrastructure.Persistence;
+using ND.UnifiedContracts.Events;
 
 namespace ND.PrinterAdapter.Infrastructure.Simulation;
 
@@ -31,20 +34,27 @@ internal sealed class SimulatedPrinterEndpoint
 /// Self-hosted TCP server simulating Zebra ZPL printers inside printer-adapter.
 /// Reads all "simulation" DriverType printers from the database on startup,
 /// opens a TcpListener per printer on its configured port, handles ZPL payloads.
+/// Publishes an immediate RabbitMQ heartbeat on connect/disconnect so the kiosk
+/// UI reflects status changes in &lt;1s (same as physical devices).
 /// </summary>
 public sealed class VirtualPrinterSimulator : BackgroundService
 {
     private static readonly Random Rng = new();
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IConfiguration _config;
+    private readonly IRabbitMqPublisher _publisher;
     private readonly ILogger<VirtualPrinterSimulator> _logger;
     private List<SimulatedPrinterEndpoint> _endpoints = new();
 
+    private const string Exchange = "station.events";
+
     public VirtualPrinterSimulator(IServiceScopeFactory scopeFactory, IConfiguration config,
+        IRabbitMqPublisher publisher,
         ILogger<VirtualPrinterSimulator> logger)
     {
         _scopeFactory = scopeFactory;
         _config = config;
+        _publisher = publisher;
         _logger = logger;
     }
 
@@ -62,8 +72,27 @@ public sealed class VirtualPrinterSimulator : BackgroundService
                 ep.ForceOffline = !online;
                 if (!online) { ep.Listener?.Stop(); ep.Listener = null; }
                 _logger.LogInformation("Printer simulator [{Code}] forced {State}", ep.PrinterCode, online ? "ONLINE" : "OFFLINE");
+
+                // Immediately publish heartbeat so kiosk UI reflects the change in <1s
+                // (same behaviour as physical device — no waiting for 3s HeartbeatHostedService cycle)
+                try
+                {
+                    var routingKey = $"device.heartbeat.{ep.PrinterCode.ToLowerInvariant()}";
+                    var hb = new DeviceStatusHeartbeat(
+                        ep.PrinterCode,
+                        "Printer",
+                        online,
+                        online ? "Idle" : "Offline",
+                        DateTime.UtcNow.ToString("o")
+                    );
+                    await _publisher.PublishAsync(Exchange, routingKey, JsonSerializer.Serialize(hb), ct);
+                    _logger.LogInformation("Printer simulator [{Code}] published immediate heartbeat -> {State}", ep.PrinterCode, online ? "ONLINE" : "OFFLINE");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Printer simulator [{Code}] failed to publish immediate heartbeat", ep.PrinterCode);
+                }
             }
-        await Task.CompletedTask;
     }
 
     public IReadOnlyList<object> GetStatus() =>
