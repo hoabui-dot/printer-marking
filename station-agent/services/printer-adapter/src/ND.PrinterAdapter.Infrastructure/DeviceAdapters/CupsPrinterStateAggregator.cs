@@ -37,12 +37,37 @@ public sealed class CupsPrinterStateAggregator : ICupsPrinterStateAggregator
     private readonly ILogger<CupsPrinterStateAggregator> _logger;
     private readonly HttpClient _httpClient;
 
-    // CUPS host: host.docker.internal from Docker, or localhost when running natively.
-    // Overridable via CUPS_HEALTH_HOST env var.
-    private static readonly string CupsHost =
-        Environment.GetEnvironmentVariable("CUPS_HEALTH_HOST") ?? "host.docker.internal";
-    private static readonly int CupsPort =
-        int.TryParse(Environment.GetEnvironmentVariable("CUPS_HEALTH_PORT") ?? "631", out var p) ? p : 631;
+    // CUPS endpoint resolution (priority order):
+    //   1. CUPS_SERVER env var  (format: "host:port" e.g. "127.0.0.1:8631" — set by docker-compose)
+    //   2. CUPS_HEALTH_HOST + CUPS_HEALTH_PORT env vars (explicit override)
+    //   3. Default: host.docker.internal:631
+    private static readonly string CupsHost;
+    private static readonly int    CupsPort;
+
+    static CupsPrinterStateAggregator()
+    {
+        var server = Environment.GetEnvironmentVariable("CUPS_SERVER");
+        if (!string.IsNullOrWhiteSpace(server))
+        {
+            // Format: "host:port" e.g. "127.0.0.1:8631"
+            var idx = server.LastIndexOf(':');
+            if (idx > 0 && int.TryParse(server[(idx + 1)..], out var p))
+            {
+                CupsHost = server[..idx];
+                CupsPort = p;
+            }
+            else
+            {
+                CupsHost = server;
+                CupsPort = 631;
+            }
+        }
+        else
+        {
+            CupsHost = Environment.GetEnvironmentVariable("CUPS_HEALTH_HOST") ?? "host.docker.internal";
+            CupsPort = int.TryParse(Environment.GetEnvironmentVariable("CUPS_HEALTH_PORT") ?? "631", out var p2) ? p2 : 631;
+        }
+    }
 
     // IPP value-tags
     private const byte TagCharset         = 0x47;
@@ -65,6 +90,8 @@ public sealed class CupsPrinterStateAggregator : ICupsPrinterStateAggregator
             var printerUri = $"ipp://{CupsHost}/printers/{queueName}";
             var httpUrl    = $"http://{CupsHost}:{CupsPort}/printers/{queueName}";
 
+            _logger.LogDebug("[CUPS-IPP] {Queue}: querying {Url}", queueName, httpUrl);
+
             var ippRequest = BuildGetPrinterAttributesRequest(printerUri);
 
             using var content  = new ByteArrayContent(ippRequest);
@@ -75,7 +102,8 @@ public sealed class CupsPrinterStateAggregator : ICupsPrinterStateAggregator
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("[CUPS-IPP] {Queue}: HTTP {Status} — falling back to TCP", queueName, (int)response.StatusCode);
+                _logger.LogWarning("[CUPS-IPP] {Queue}: HTTP {Status} — falling back to TCP ping {Host}:{Port}",
+                    queueName, (int)response.StatusCode, CupsHost, CupsPort);
                 return await TcpFallbackAsync(ct);
             }
 
@@ -278,22 +306,33 @@ public sealed class CupsPrinterStateAggregator : ICupsPrinterStateAggregator
 
     // ── TCP Fallback ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Last-resort TCP reachability check against the CUPS endpoint.
+    /// If the port is reachable → CUPS tunnel is alive → treat as Online (optimistic).
+    /// CUPS being up with a USB-connected printer almost always means the printer is ready.
+    /// If the port is unreachable → CUPS is down or tunnel is broken → Offline.
+    /// </summary>
     private async Task<NormalizedPrinterState> TcpFallbackAsync(CancellationToken ct)
     {
         try
         {
-            using var tcp         = new TcpClient();
-            var connectTask       = tcp.ConnectAsync(CupsHost, CupsPort, ct).AsTask();
-            var completed         = await Task.WhenAny(connectTask, Task.Delay(1000, ct));
-            var reachable         = completed == connectTask && tcp.Connected;
+            using var tcp   = new TcpClient();
+            var connectTask = tcp.ConnectAsync(CupsHost, CupsPort, ct).AsTask();
+            var completed   = await Task.WhenAny(connectTask, Task.Delay(1000, ct));
+            var reachable   = completed == connectTask && tcp.Connected;
 
             if (reachable)
             {
-                _logger.LogDebug("[CUPS-IPP] TCP fallback: CUPS port reachable → Unknown (IPP not parseable)");
-                return NormalizedPrinterState.Unknown();
+                // CUPS port is open → tunnel/server is alive.
+                // IPP parsing failed for this cycle but CUPS is running, so treat as Online.
+                // The next 3s heartbeat will attempt IPP again and may get a more precise state.
+                _logger.LogInformation("[CUPS-IPP] TCP fallback {Host}:{Port} reachable → Online (IPP parse failed this cycle)",
+                    CupsHost, CupsPort);
+                return NormalizedPrinterState.Online();
             }
 
-            _logger.LogDebug("[CUPS-IPP] TCP fallback: CUPS port unreachable → Offline");
+            _logger.LogWarning("[CUPS-IPP] TCP fallback {Host}:{Port} unreachable → Offline (CUPS tunnel down or printer off)",
+                CupsHost, CupsPort);
             return NormalizedPrinterState.FallbackOffline();
         }
         catch

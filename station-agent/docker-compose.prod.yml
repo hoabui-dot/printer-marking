@@ -142,6 +142,9 @@ services:
       - RabbitMq__DefaultExchange=station.events
       - CUPS_SERVER=127.0.0.1:8631
       - CUPS_USER=root
+      # CUPS IPP health-check endpoint: macOS CUPS tunnel via socat/ssh forwarded to host port 8631
+      - CUPS_HEALTH_HOST=host.docker.internal
+      - CUPS_HEALTH_PORT=8631
     volumes:
       - ./sqlite-databases:/data
       - printer-logs:/logs
