@@ -88,7 +88,7 @@ public sealed class HeartbeatHostedService : BackgroundService
                     try
                     {
                         using var tcp = new TcpClient();
-                        var connectTask = tcp.ConnectAsync(printer.IpAddress, printer.Port, ct).AsTask();
+                        var connectTask = tcp.ConnectAsync(printer.IpAddress ?? "localhost", printer.Port, ct).AsTask();
                         var delayTask = Task.Delay(800, ct);
                         var completed = await Task.WhenAny(connectTask, delayTask);
                         isOnline = completed == connectTask && tcp.Connected;

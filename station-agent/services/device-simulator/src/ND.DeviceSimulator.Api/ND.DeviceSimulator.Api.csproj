@@ -11,5 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../ND.DeviceSimulator.Infrastructure/ND.DeviceSimulator.Infrastructure.csproj" />
+    <ProjectReference Include="../../../../shared/ND.Infrastructure/ND.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
