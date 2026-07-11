@@ -1476,11 +1476,75 @@ export default function DashboardPage() {
 
                 const lifecycleBadge = (d: any) => {
                   const s = (d.lifecycleState ?? '').toLowerCase()
-                  if (s === 'printing') return { label: 'In ấn', cls: 'bg-blue-500/10 text-blue-400' }
-                  if (s === 'idle')     return { label: 'Chờ',   cls: 'bg-emerald-500/10 text-emerald-400' }
-                  if (s === 'offline')  return { label: 'Offline',cls: 'bg-red-500/10 text-red-400' }
-                  if (s === 'busy')     return { label: 'Bận',   cls: 'bg-amber-500/10 text-amber-500' }
+                  if (s === 'printing')   return { label: 'In ấn',     cls: 'bg-indigo-500/10 text-indigo-400' }
+                  if (s === 'busy')       return { label: 'Bận',       cls: 'bg-blue-500/10 text-blue-400' }
+                  if (s === 'waiting')    return { label: 'Chờ hàng',  cls: 'bg-amber-500/10 text-amber-400' }
+                  if (s === 'warning')    return { label: 'Cảnh báo',  cls: 'bg-yellow-500/10 text-yellow-400' }
+                  if (s === 'error')      return { label: 'Lỗi',       cls: 'bg-red-500/10 text-red-400' }
+                  if (s === 'connecting') return { label: 'Đang kết nối', cls: 'bg-slate-500/10 text-slate-400' }
+                  if (s === 'online')     return { label: 'Chờ',       cls: 'bg-emerald-500/10 text-emerald-400' }
+                  if (s === 'idle')       return { label: 'Chờ',       cls: 'bg-emerald-500/10 text-emerald-400' }
+                  if (s === 'offline')    return { label: 'Offline',   cls: 'bg-red-500/10 text-red-400' }
+                  if (s === 'unknown')    return { label: '?',         cls: 'bg-gray-500/10 text-gray-400' }
                   return null
+                }
+
+                // Helper: map lifecycleState to card accent color classes
+                const deviceCardAccent = (d: any) => {
+                  if (!d.isOnline) return 'border-red-500/15 bg-red-500/[0.02] opacity-75'
+                  const s = (d.lifecycleState ?? '').toLowerCase()
+                  if (s === 'printing' || s === 'busy')  return 'border-indigo-500/20 bg-indigo-500/[0.03] hover:border-indigo-500/40'
+                  if (s === 'waiting')  return 'border-amber-500/20 bg-amber-500/[0.03] hover:border-amber-500/40'
+                  if (s === 'warning')  return 'border-yellow-500/20 bg-yellow-500/[0.03] hover:border-yellow-500/40'
+                  if (s === 'error')    return 'border-red-500/20 bg-red-500/[0.03] hover:border-red-500/40'
+                  if (s === 'connecting') return 'border-slate-500/20 bg-slate-500/[0.02] hover:border-slate-500/30'
+                  return 'border-emerald-500/20 bg-emerald-500/[0.03] hover:border-emerald-500/40'
+                }
+
+                // Helper: map lifecycleState to top-bar gradient
+                const deviceCardBar = (d: any) => {
+                  if (!d.isOnline) return 'from-red-500/40 to-red-400/10'
+                  const s = (d.lifecycleState ?? '').toLowerCase()
+                  if (s === 'printing' || s === 'busy')  return 'from-indigo-500/50 to-indigo-400/20'
+                  if (s === 'waiting')  return 'from-amber-500/50 to-amber-400/20'
+                  if (s === 'warning')  return 'from-yellow-500/50 to-yellow-400/20'
+                  if (s === 'error')    return 'from-red-500/50 to-red-400/20'
+                  return 'from-emerald-500/50 to-emerald-400/20'
+                }
+
+                // Helper: status dot color + animation
+                const statusDot = (d: any) => {
+                  const s = (d.lifecycleState ?? '').toLowerCase()
+                  if (!d.isOnline)      return 'bg-red-400'
+                  if (s === 'printing' || s === 'busy') return 'bg-indigo-400 animate-pulse'
+                  if (s === 'waiting')  return 'bg-amber-400 animate-pulse'
+                  if (s === 'warning')  return 'bg-yellow-400 animate-pulse'
+                  if (s === 'error')    return 'bg-red-400'
+                  if (s === 'connecting') return 'bg-slate-400 animate-pulse'
+                  return 'bg-emerald-400 animate-pulse'
+                }
+
+                const statusLabel = (d: any) => {
+                  const s = (d.lifecycleState ?? '').toLowerCase()
+                  if (!d.isOnline)      return 'Offline'
+                  if (s === 'printing') return 'Printing'
+                  if (s === 'busy')     return 'Busy'
+                  if (s === 'waiting')  return 'Waiting'
+                  if (s === 'warning')  return 'Warning'
+                  if (s === 'error')    return 'Error'
+                  if (s === 'connecting') return 'Connecting'
+                  return 'Online'
+                }
+
+                const statusLabelCls = (d: any) => {
+                  const s = (d.lifecycleState ?? '').toLowerCase()
+                  if (!d.isOnline)      return 'bg-red-500/10 text-red-400'
+                  if (s === 'printing' || s === 'busy') return 'bg-indigo-500/10 text-indigo-400'
+                  if (s === 'waiting')  return 'bg-amber-500/10 text-amber-400'
+                  if (s === 'warning')  return 'bg-yellow-500/10 text-yellow-400'
+                  if (s === 'error')    return 'bg-red-500/10 text-red-400'
+                  if (s === 'connecting') return 'bg-slate-500/10 text-slate-400'
+                  return 'bg-emerald-500/10 text-emerald-400'
                 }
 
                 // Separate: real production devices vs simulation printers
@@ -1573,15 +1637,11 @@ export default function DashboardPage() {
                               return (
                                 <div
                                   key={device.deviceId}
-                                  className={`rounded-xl p-4 flex flex-col justify-between gap-3 border transition-all duration-300 relative overflow-hidden ${
-                                    device.isOnline
-                                      ? 'border-emerald-500/20 bg-emerald-500/[0.03] hover:border-emerald-500/40'
-                                      : 'border-red-500/15 bg-red-500/[0.02] hover:border-red-500/30 opacity-75'
-                                  }`}
+                                  className={`rounded-xl p-4 flex flex-col justify-between gap-3 border transition-all duration-300 relative overflow-hidden ${deviceCardAccent(device)}`}
                                 >
-                                  {device.isOnline && (
-                                    <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-emerald-500/50 to-emerald-400/20" />
-                                  )}
+                                  {/* State accent bar */}
+                                  <div className={`absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r ${deviceCardBar(device)}`} />
+
                                   <div className="flex items-start justify-between gap-2">
                                     <div className={`p-2.5 rounded-lg border shrink-0 ${
                                       device.isOnline
@@ -1591,15 +1651,13 @@ export default function DashboardPage() {
                                       {getIcon(device)}
                                     </div>
                                     <div className="flex flex-col items-end gap-1">
-                                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                        device.isOnline
-                                          ? 'bg-emerald-500/10 text-emerald-400'
-                                          : 'bg-red-500/10 text-red-400'
-                                      }`}>
-                                        <span className={`h-1.5 w-1.5 rounded-full ${device.isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
-                                        {device.isOnline ? 'Online' : 'Offline'}
+                                      {/* Primary online/state badge */}
+                                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${statusLabelCls(device)}`}>
+                                        <span className={`h-1.5 w-1.5 rounded-full ${statusDot(device)}`} />
+                                        {statusLabel(device)}
                                       </span>
-                                      {badge && (
+                                      {/* Secondary lifecycle detail badge */}
+                                      {badge && badge.label !== statusLabel(device) && (
                                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${badge.cls}`}>
                                           {badge.label}
                                         </span>

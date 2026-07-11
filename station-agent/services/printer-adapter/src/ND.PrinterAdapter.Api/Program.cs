@@ -37,6 +37,18 @@ builder.Services.AddSingleton<RedisHeartbeatCache>();
 
 builder.Services.AddSingleton<ISystemClock, SystemClock>();
 builder.Services.AddSingleton<IPrinterAdapter, ZplTcpPrinterAdapter>();
+
+// CUPS IPP state aggregator — queries CUPS IPP API at host.docker.internal:631
+// to determine real hardware state (Online/Busy/Printing/Waiting/Warning/Offline/Error).
+// Must be singleton so the HttpClient pool is shared across all health-check calls.
+builder.Services.AddHttpClient<CupsPrinterStateAggregator>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(5);
+    client.DefaultRequestHeaders.Add("Accept", "application/ipp");
+});
+builder.Services.AddSingleton<ICupsPrinterStateAggregator>(sp =>
+    sp.GetRequiredService<CupsPrinterStateAggregator>());
+
 builder.Services.AddSingleton<IPrinterDriverFactory, PrinterDriverFactory>();
 
 // Label rendering strategy
@@ -340,8 +352,11 @@ app.MapGet("/api/printers/{code}/health", async (string code, PrinterDbContext d
 
     var driver = driverFactory.Resolve(printer);
     var status = await driver.GetStatusAsync(ct);
-    var isReady = status is ND.PrinterAdapter.Application.Dtos.PrinterDriverStatus.Idle
-                       or ND.PrinterAdapter.Application.Dtos.PrinterDriverStatus.Printing;
+    var isReady = status is ND.PrinterAdapter.Application.Dtos.PrinterDriverStatus.Online
+                       or ND.PrinterAdapter.Application.Dtos.PrinterDriverStatus.Busy
+                       or ND.PrinterAdapter.Application.Dtos.PrinterDriverStatus.Printing
+                       or ND.PrinterAdapter.Application.Dtos.PrinterDriverStatus.Waiting
+                       or ND.PrinterAdapter.Application.Dtos.PrinterDriverStatus.Warning;
 
     return Results.Ok(new
     {

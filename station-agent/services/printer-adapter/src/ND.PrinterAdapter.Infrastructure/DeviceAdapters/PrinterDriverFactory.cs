@@ -12,15 +12,20 @@ namespace ND.PrinterAdapter.Infrastructure.DeviceAdapters;
 public sealed class PrinterDriverFactory : IPrinterDriverFactory
 {
     private readonly IPrinterAdapter _tcpAdapter;
+    private readonly ICupsPrinterStateAggregator _aggregator;
     private readonly ILoggerFactory _loggerFactory;
 
     // Global override from env var (null means use per-printer DriverType)
     private static readonly string? GlobalDriverOverride =
         Environment.GetEnvironmentVariable("PRINT_DRIVER")?.Trim().ToLowerInvariant();
 
-    public PrinterDriverFactory(IPrinterAdapter tcpAdapter, ILoggerFactory loggerFactory)
+    public PrinterDriverFactory(
+        IPrinterAdapter tcpAdapter,
+        ICupsPrinterStateAggregator aggregator,
+        ILoggerFactory loggerFactory)
     {
-        _tcpAdapter = tcpAdapter;
+        _tcpAdapter  = tcpAdapter;
+        _aggregator  = aggregator;
         _loggerFactory = loggerFactory;
     }
 
@@ -55,7 +60,10 @@ public sealed class PrinterDriverFactory : IPrinterDriverFactory
     }
 
     private IPrinterDriver BuildCupsDriver(string queueName)
-        => new CupsPrinterDriver(queueName, _loggerFactory.CreateLogger<CupsPrinterDriver>());
+        => new CupsPrinterDriver(
+            queueName,
+            _aggregator,
+            _loggerFactory.CreateLogger<CupsPrinterDriver>());
 
     private IPrinterDriver BuildSimulationDriver(string ipAddress, int port)
         => new SimulationPrinterDriver(

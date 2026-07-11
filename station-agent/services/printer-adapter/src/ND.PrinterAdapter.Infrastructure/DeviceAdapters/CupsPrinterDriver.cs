@@ -9,18 +9,32 @@ namespace ND.PrinterAdapter.Infrastructure.DeviceAdapters;
 
 /// <summary>
 /// Sends raw ZPL to a Zebra printer connected via USB on macOS through the native CUPS subsystem.
-/// Uses <c>lpr -P {queue} -o raw</c> — never rasterizes, always sends raw ZPL.
-/// Supports discovery via <c>lpstat -p -d</c> and health checks via <c>lpstat -p {queue}</c>.
+/// Uses <c>lpr -P {queue} -o raw</c> for printing — never rasterizes, always sends raw ZPL.
+///
+/// Health checking is delegated to <see cref="ICupsPrinterStateAggregator"/> which uses the
+/// CUPS IPP API (RFC 8011) over HTTP to determine the real hardware state.
+/// This replaces the previous approach of pinging localhost:631 which only verified the CUPS
+/// daemon was running, NOT the actual hardware.
+///
+/// Retry policy: 3 attempts with 200ms between each before returning Offline.
 /// </summary>
 public sealed class CupsPrinterDriver : IPrinterDriver
 {
     private readonly string _queueName;
+    private readonly ICupsPrinterStateAggregator _aggregator;
     private readonly ILogger<CupsPrinterDriver> _logger;
 
-    public CupsPrinterDriver(string queueName, ILogger<CupsPrinterDriver> logger)
+    private const int MaxRetries   = 3;
+    private const int RetryDelayMs = 200;
+
+    public CupsPrinterDriver(
+        string queueName,
+        ICupsPrinterStateAggregator aggregator,
+        ILogger<CupsPrinterDriver> logger)
     {
-        _queueName = queueName;
-        _logger = logger;
+        _queueName  = queueName;
+        _aggregator = aggregator;
+        _logger     = logger;
     }
 
     // ── Print ─────────────────────────────────────────────────────────────────
@@ -55,13 +69,13 @@ public sealed class CupsPrinterDriver : IPrinterDriver
             // Pipe ZPL directly to lpr stdin — no temp files
             var psi = new ProcessStartInfo
             {
-                FileName = "lpr",
-                Arguments = $"-P {_queueName} -o raw",
-                RedirectStandardInput = true,
+                FileName               = "lpr",
+                Arguments              = $"-P {_queueName} -o raw",
+                RedirectStandardInput  = true,
                 RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
+                RedirectStandardError  = true,
+                UseShellExecute        = false,
+                CreateNoWindow         = true
             };
 
             _logger.LogInformation("[CUPS] Printer Queue Selected → {Queue}", _queueName);
@@ -111,38 +125,40 @@ public sealed class CupsPrinterDriver : IPrinterDriver
     // ── Status ────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Health check via TCP ping to the CUPS HTTP port.
-    /// Uses host.docker.internal (configurable via CUPS_HEALTH_HOST) so that this works
-    /// whether printer-adapter runs natively or inside Docker on macOS.
-    /// Note: lpstat is not available inside Docker Linux containers on macOS.
+    /// Returns the normalized printer status by querying the CUPS IPP API via
+    /// <see cref="ICupsPrinterStateAggregator"/>. Retries 3 times with 200ms gaps
+    /// before falling back to Offline.
     /// </summary>
     public async Task<PrinterDriverStatus> GetStatusAsync(CancellationToken ct = default)
     {
-        try
+        for (int attempt = 0; attempt < MaxRetries; attempt++)
         {
-            var host = Environment.GetEnvironmentVariable("CUPS_HEALTH_HOST") ?? "host.docker.internal";
-            var port = int.TryParse(Environment.GetEnvironmentVariable("CUPS_HEALTH_PORT") ?? "631", out var p) ? p : 631;
-
-            using var tcp = new System.Net.Sockets.TcpClient();
-            var connectTask = tcp.ConnectAsync(host, port, ct).AsTask();
-            var delayTask   = Task.Delay(1000, ct);
-            var completed   = await Task.WhenAny(connectTask, delayTask);
-
-            if (completed == connectTask && tcp.Connected)
-                return PrinterDriverStatus.Idle;
-
-            return PrinterDriverStatus.Offline;
+            try
+            {
+                var state = await _aggregator.GetStateAsync(_queueName, ct);
+                var status = MapToDriverStatus(state.State);
+                _logger.LogDebug("[CUPS] {Queue} GetStatusAsync → {State} (reason={Reason}, jobs={Jobs})",
+                    _queueName, status, state.StateReason ?? "none", state.QueueLength);
+                return status;
+            }
+            catch (Exception ex) when (attempt < MaxRetries - 1)
+            {
+                _logger.LogDebug(ex, "[CUPS] {Queue} GetStatusAsync attempt {A}/{Max} failed — retrying in {D}ms",
+                    _queueName, attempt + 1, MaxRetries, RetryDelayMs);
+                await Task.Delay(RetryDelayMs, ct);
+            }
         }
-        catch
-        {
-            return PrinterDriverStatus.Disconnected;
-        }
+
+        _logger.LogWarning("[CUPS] {Queue} GetStatusAsync: all {Max} attempts failed → Offline", _queueName, MaxRetries);
+        return PrinterDriverStatus.Offline;
     }
 
     // ── Discovery ─────────────────────────────────────────────────────────────
 
     public async Task<IReadOnlyList<DiscoveredPrinter>> DiscoverAsync(CancellationToken ct = default)
     {
+        // Discovery via lpstat is only available when running on the host (not in Docker).
+        // When running in Docker, return empty — printers are seeded via PrinterDbSeeder.
         var result = new List<DiscoveredPrinter>();
         try
         {
@@ -150,9 +166,7 @@ public sealed class CupsPrinterDriver : IPrinterDriver
             if (string.IsNullOrWhiteSpace(output))
                 return result;
 
-            // Parse: "printer Zebra_Technologies_ZTC_GK420t is idle."
             var printerRegex = new Regex(@"^printer\s+(\S+)\s+is\s+(\S+)", RegexOptions.Multiline | RegexOptions.IgnoreCase);
-            // Parse: "system default destination: Zebra_Technologies_ZTC_GK420t"
             var defaultRegex = new Regex(@"^system default destination:\s+(\S+)", RegexOptions.Multiline | RegexOptions.IgnoreCase);
 
             var defaultMatch = defaultRegex.Match(output);
@@ -160,22 +174,22 @@ public sealed class CupsPrinterDriver : IPrinterDriver
 
             foreach (Match m in printerRegex.Matches(output))
             {
-                var name = m.Groups[1].Value;
+                var name      = m.Groups[1].Value;
                 var statusWord = m.Groups[2].Value.TrimEnd('.');
                 result.Add(new DiscoveredPrinter
                 {
-                    Id = name,
-                    Name = name.Replace("_", " "),
-                    QueueName = name,
-                    Driver = "cups",
-                    Status = statusWord,
-                    IsDefault = string.Equals(name, defaultQueue, StringComparison.OrdinalIgnoreCase)
+                    Id         = name,
+                    Name       = name.Replace("_", " "),
+                    QueueName  = name,
+                    Driver     = "cups",
+                    Status     = statusWord,
+                    IsDefault  = string.Equals(name, defaultQueue, StringComparison.OrdinalIgnoreCase)
                 });
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[CUPS] Discover failed");
+            _logger.LogWarning(ex, "[CUPS] Discover failed (expected when running in Docker)");
         }
 
         return result;
@@ -186,31 +200,57 @@ public sealed class CupsPrinterDriver : IPrinterDriver
     public async Task<bool> HealthCheckAsync(CancellationToken ct = default)
     {
         var status = await GetStatusAsync(ct);
-        return status is PrinterDriverStatus.Idle or PrinterDriverStatus.Printing;
+        return status is PrinterDriverStatus.Online
+                      or PrinterDriverStatus.Busy
+                      or PrinterDriverStatus.Printing
+                      or PrinterDriverStatus.Waiting
+                      or PrinterDriverStatus.Warning;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /// <summary>Maps normalized state string to PrinterDriverStatus enum.</summary>
+    private static PrinterDriverStatus MapToDriverStatus(string state) => state switch
+    {
+        "Online"     => PrinterDriverStatus.Online,
+        "Busy"       => PrinterDriverStatus.Busy,
+        "Printing"   => PrinterDriverStatus.Printing,
+        "Waiting"    => PrinterDriverStatus.Waiting,
+        "Warning"    => PrinterDriverStatus.Warning,
+        "Connecting" => PrinterDriverStatus.Connecting,
+        "Offline"    => PrinterDriverStatus.Offline,
+        "Error"      => PrinterDriverStatus.Error,
+        _            => PrinterDriverStatus.Unknown
+    };
+
     private async Task<bool> QueueExistsAsync(CancellationToken ct)
     {
-        var output = await RunCommandAsync("lpstat", "-p", ct);
-        return output.Contains(_queueName, StringComparison.OrdinalIgnoreCase);
+        try
+        {
+            var output = await RunCommandAsync("lpstat", "-p", ct);
+            return output.Contains(_queueName, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // lpstat not available in Docker — assume queue exists and let lpr fail gracefully
+            return true;
+        }
     }
 
     private static async Task<string> RunCommandAsync(string command, string args, CancellationToken ct)
     {
         var psi = new ProcessStartInfo
         {
-            FileName = command,
-            Arguments = args,
+            FileName               = command,
+            Arguments              = args,
             RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
+            RedirectStandardError  = true,
+            UseShellExecute        = false,
+            CreateNoWindow         = true
         };
 
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start {command}");
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var cts  = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(TimeSpan.FromSeconds(10));
         await proc.WaitForExitAsync(cts.Token);
         return await proc.StandardOutput.ReadToEndAsync(ct);

@@ -46,7 +46,7 @@ public sealed class SimulationPrinterDriver : IPrinterDriver
     public async Task<PrinterDriverStatus> GetStatusAsync(CancellationToken ct = default)
     {
         var reachable = await _tcpAdapter.CheckHealthAsync(_ipAddress, _port, ct);
-        return reachable ? PrinterDriverStatus.Idle : PrinterDriverStatus.Offline;
+        return reachable ? PrinterDriverStatus.Online : PrinterDriverStatus.Offline;
     }
 
     public Task<IReadOnlyList<DiscoveredPrinter>> DiscoverAsync(CancellationToken ct = default)
