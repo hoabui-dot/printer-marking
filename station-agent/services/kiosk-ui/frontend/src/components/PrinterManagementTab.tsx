@@ -6,7 +6,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   Printer, PlusCircle, XCircle, RefreshCw, CheckCircle2, WifiOff,
-  Layers, Tag, Zap
+  Layers, Tag, Zap, FlaskConical, ChevronDown, ChevronRight
 } from 'lucide-react'
 
 interface ReadyPrinter {
@@ -130,6 +130,8 @@ function PrinterCard({
 
 export function PrinterManagementTab() {
   const [printers, setPrinters] = useState<ReadyPrinter[]>([])
+  const [simulationPrinters, setSimulationPrinters] = useState<ReadyPrinter[]>([])
+  const [showSimulation, setShowSimulation] = useState(false)
   const [templates, setTemplates] = useState<LabelTemplate[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -148,10 +150,12 @@ export function PrinterManagementTab() {
     setLoading(true)
     setError(null)
     try {
-      const [readyRes, activeRes] = await Promise.all([
-        templateApi.getPrintersReady(),
+      const [readyRes, activeRes, simRes] = await Promise.all([
+        templateApi.getPrintersReady(),        // production printers only
         templateApi.getPrintersActive(),
+        templateApi.getPrintersSimulation(),   // includes simulation for separate section
       ])
+      // Merge ready + active for production printers
       const activeMap = new Map<string, ReadyPrinter>()
       for (const p of (activeRes.data ?? [])) activeMap.set(p.printerCode, p)
       const merged: ReadyPrinter[] = (readyRes.data ?? []).map((p: ReadyPrinter) =>
@@ -161,6 +165,13 @@ export function PrinterManagementTab() {
         if (!merged.find(r => r.printerCode === code)) merged.push(p)
       }
       setPrinters(merged)
+
+      // Simulation printers = all (with simulation) minus production printers
+      const allCodes = new Set(merged.map(p => p.printerCode))
+      const simOnly = (simRes.data ?? []).filter((p: ReadyPrinter) =>
+        p.driverType === 'simulation' && !allCodes.has(p.printerCode)
+      )
+      setSimulationPrinters(simOnly)
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: string } }; message?: string }
       setError(err?.response?.data?.error ?? err?.message ?? 'Không thể tải danh sách máy in')
@@ -305,6 +316,74 @@ export function PrinterManagementTab() {
           </div>
         )}
       </section>
+
+      {/* ── Simulation devices (collapsed by default) ── */}
+      {simulationPrinters.length > 0 && (
+        <section className="space-y-3">
+          <button
+            onClick={() => setShowSimulation(s => !s)}
+            className="flex items-center gap-2.5 w-full text-left group cursor-pointer"
+          >
+            <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
+              <FlaskConical size={14} />
+            </div>
+            <h3 className="text-sm font-bold text-muted-fg group-hover:text-foreground transition-colors">
+              Thiết bị mô phỏng
+            </h3>
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-500/10 text-amber-500">
+              {simulationPrinters.length}
+            </span>
+            <span className="ml-auto text-muted-fg group-hover:text-foreground transition-colors">
+              {showSimulation ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </span>
+          </button>
+
+          {!showSimulation && (
+            <p className="text-xs text-muted-fg ml-9 leading-relaxed">
+              {simulationPrinters.length} thiết bị mô phỏng đang chạy từ device-simulator — click để xem.
+              Các thiết bị này không dùng cho sản xuất thực tế.
+            </p>
+          )}
+
+          {showSimulation && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 animate-in fade-in duration-200">
+              {simulationPrinters.map(p => (
+                <div
+                  key={p.printerCode}
+                  className="rounded-xl p-5 flex flex-col gap-3 border border-amber-500/15 bg-amber-500/[0.03] opacity-80"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-amber-500/10 text-amber-500">
+                        <FlaskConical size={16} />
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm text-foreground">{p.displayName}</div>
+                        <div className="text-[11px] text-muted-fg font-mono tracking-tight mt-0.5">{p.printerCode}</div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500">
+                      Simulation
+                    </span>
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    <span className="text-[11px] px-2.5 py-0.5 rounded-md font-mono bg-muted border border-border text-muted-fg">
+                      {p.ipAddress}:{p.port}
+                    </span>
+                    <span className="text-[11px] px-2.5 py-0.5 rounded-md bg-muted border border-border text-muted-fg">
+                      {p.protocol} · {p.driverType}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-fg leading-relaxed">
+                    Thiết bị mô phỏng — dùng trong môi trường phát triển / kiểm thử.
+                    Không thể kích hoạt cho sản xuất.
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ── Activate modal ── */}
       <Dialog open={activating !== null} onOpenChange={open => { if (!open) setActivating(null) }}>

@@ -540,13 +540,16 @@ app.MapPut("/api/projection/config/{key}", async (
 // printer-adapter is the single source of truth for all printer devices.
 
 app.MapGet("/api/projection/printers/ready", async (
+    bool? includeSimulation,
     IHttpClientFactory httpClientFactory, IConfiguration configuration, CancellationToken ct) =>
 {
     var adapterUrl = configuration["PRINTER_ADAPTER_URL"] ?? "http://printer-adapter:5003";
     using var client = httpClientFactory.CreateClient();
     try
     {
-        var res = await client.GetAsync($"{adapterUrl}/api/printers/ready", ct);
+        // Forward includeSimulation query param so printer-adapter can filter simulation printers
+        var qs = includeSimulation == true ? "?includeSimulation=true" : "";
+        var res = await client.GetAsync($"{adapterUrl}/api/printers/ready{qs}", ct);
         var body = await res.Content.ReadAsStringAsync(ct);
         return Results.Content(body, "application/json", statusCode: (int)res.StatusCode);
     }

@@ -65,9 +65,22 @@ public sealed class HeartbeatHostedService : BackgroundService
 
                 if (printer.DriverType == "cups")
                 {
-                    // For CUPS printers, use existing status from DB (updated by PrinterHealthService)
-                    isOnline = printer.Status == "ONLINE" || printer.Status == "Idle" || printer.Status == "IDLE";
-                    lifecycleState = isOnline ? "Idle" : "Offline";
+                    // For CUPS printers: fast TCP ping to localhost:631 (CUPS HTTP port).
+                    // If TCP fails the printer is powered off / USB disconnected — don't trust DB status.
+                    try
+                    {
+                        using var tcp = new TcpClient();
+                        var connectTask = tcp.ConnectAsync(printer.IpAddress ?? "localhost", printer.Port > 0 ? printer.Port : 631, ct).AsTask();
+                        var delayTask = Task.Delay(1000, ct);
+                        var completed = await Task.WhenAny(connectTask, delayTask);
+                        isOnline = completed == connectTask && tcp.Connected;
+                        lifecycleState = isOnline ? "Idle" : "Offline";
+                    }
+                    catch
+                    {
+                        isOnline = false;
+                        lifecycleState = "Offline";
+                    }
                 }
                 else
                 {

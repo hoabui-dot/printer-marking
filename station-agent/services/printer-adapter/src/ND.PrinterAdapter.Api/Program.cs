@@ -169,15 +169,28 @@ app.MapGet("/api/printers", async (PrinterDbContext db, CancellationToken ct) =>
     .Produces(200);
 
 // GET /api/printers/ready — printers that are online and available for work registration
-app.MapGet("/api/printers/ready", async (PrinterDbContext db, CancellationToken ct) =>
-    Results.Ok(await db.Printers
-        .Where(p => p.Status == "ONLINE" || p.Status == "IDLE" || p.Status == "Idle")
-        .Select(p => new
-        {
-            p.Id, p.PrinterCode, p.DisplayName, p.IpAddress, p.Port,
-            p.Protocol, p.Vendor, p.Status, p.DriverType, p.CupsQueueName,
-            p.LastHeartbeatAt, p.IsActiveForWork, p.ActiveTemplateId, p.ActiveTemplateName
-        }).ToListAsync(ct)))
+app.MapGet("/api/printers/ready", async (
+    bool? includeSimulation,
+    PrinterDbContext db,
+    CancellationToken ct) =>
+{
+    var query = db.Printers
+        .Where(p => p.Status == "ONLINE" || p.Status == "IDLE" || p.Status == "Idle");
+
+    // By default exclude simulation printers — they are managed by the device-simulator service.
+    // Pass ?includeSimulation=true to include them (e.g. for development/testing).
+    if (includeSimulation != true)
+        query = query.Where(p => p.DriverType != "simulation");
+
+    var printers = await query.Select(p => new
+    {
+        p.Id, p.PrinterCode, p.DisplayName, p.IpAddress, p.Port,
+        p.Protocol, p.Vendor, p.Status, p.DriverType, p.CupsQueueName,
+        p.LastHeartbeatAt, p.IsActiveForWork, p.ActiveTemplateId, p.ActiveTemplateName
+    }).ToListAsync(ct);
+
+    return Results.Ok(printers);
+})
     .WithName("GetReadyPrinters")
     .WithSummary("List ready printers")
     .WithDescription("Returns only printers whose status is ONLINE or IDLE. These are candidates to be activated for production work via the activate endpoint.")

@@ -10,6 +10,7 @@ using ND.DeviceSimulator.Infrastructure.Workers;
 using Microsoft.Data.Sqlite;
 using System.Text.Json;
 using ND.DeviceSimulator.Domain.Entities;
+using ND.Infrastructure.Messaging;
 
 // ── Bootstrap Serilog ─────────────────────────────────────────────────────────
 Log.Logger = new LoggerConfiguration().WriteTo.Console().CreateBootstrapLogger();
@@ -75,6 +76,10 @@ try
 
     builder.Services.AddSingleton<SimulatorStateService>();
     builder.Services.AddSingleton<ISimulatorStateService>(sp => sp.GetRequiredService<SimulatorStateService>());
+
+    // ── RabbitMQ (for gateway heartbeat publishing to projection service) ─────
+    builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection(RabbitMqOptions.SectionName));
+    builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 
     // ── Virtual device services ───────────────────────────────────────────────
     builder.Services.AddSingleton<VirtualVisionService>();

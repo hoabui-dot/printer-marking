@@ -283,6 +283,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     ports:
       - "5008:8080"
     environment:
@@ -293,6 +295,13 @@ services:
       - SIMULATOR_MQTT_PORT=${MQTT_BROKER_PORT:-1883}
       - PROJECTION_SERVICE_URL=http://projection-service:5009
       - MES_BACKEND_URL=http://192.168.1.87:8080/api/v1
+      # RabbitMQ — used to publish gateway-01 heartbeats to projection-service
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Port=5672
+      - RabbitMq__Username=${RABBITMQ_USER:-guest}
+      - RabbitMq__Password=${RABBITMQ_PASS:-guest}
+      - RabbitMq__VirtualHost=/
+      - RabbitMq__DefaultExchange=station.events
     volumes:
       - ./sqlite-databases:/data
       - device-simulator-logs:/app/logs
