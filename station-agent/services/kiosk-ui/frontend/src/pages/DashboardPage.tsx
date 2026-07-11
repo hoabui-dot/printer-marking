@@ -51,7 +51,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 
-import { FileText } from 'lucide-react'
+import { FileText, FlaskConical, ChevronDown, ChevronRight } from 'lucide-react'
 
 type KioskTab = 'dashboard' | 'history' | 'traceability' | 'orders' | 'queue' | 'alarms' | 'config' | 'diagnostics' | 'connectivity' | 'rbac' | 'templates' | 'printers'
 
@@ -60,6 +60,60 @@ const getTodayStr = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// ── Simulation device collapsible section ──────────────────────────────────
+function SimulationDeviceSection({ devices: simDevices, relativeTime }: {
+  devices: any[]
+  relativeTime: (iso: string) => string
+}) {
+  const [open, setOpen] = useState(false)
+  if (simDevices.length === 0) return null
+  return (
+    <section className="space-y-3">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2.5 w-full text-left group cursor-pointer"
+      >
+        <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
+          <FlaskConical size={14} />
+        </div>
+        <span className="text-sm font-bold text-muted-fg group-hover:text-foreground transition-colors">
+          Thiết bị mô phỏng
+        </span>
+        <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-500/10 text-amber-500">
+          {simDevices.length}
+        </span>
+        <span className="ml-auto text-muted-fg group-hover:text-foreground transition-colors">
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </span>
+      </button>
+      {!open && (
+        <p className="text-xs text-muted-fg ml-9 leading-relaxed">
+          {simDevices.length} máy in mô phỏng từ device-simulator — click để xem. Không dùng cho sản xuất thực tế.
+        </p>
+      )}
+      {open && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in duration-200">
+          {simDevices.map((d: any) => (
+            <div key={d.deviceId}
+              className="rounded-xl p-4 border border-amber-500/15 bg-amber-500/[0.03] opacity-80 flex flex-col gap-2"
+            >
+              <div className="flex items-center justify-between">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
+                  <FlaskConical size={15} />
+                </div>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 uppercase tracking-wider">
+                  Simulation
+                </span>
+              </div>
+              <p className="font-extrabold text-sm text-foreground">{d.deviceId.toUpperCase()}</p>
+              <p className="text-[10px] text-muted-fg/60 font-mono">{relativeTime(d.lastSeenAt)}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
 
 
 export default function DashboardPage() {
@@ -1360,79 +1414,188 @@ export default function DashboardPage() {
                 ))}
               </div>
 
-              {connectivitySubTab === 'devices' && (
-                <div className="space-y-6 animate-in fade-in duration-200">
-                  {/* Gateway status panel */}
-                  <Card className="border-2 border-brand/20 bg-brand/5 overflow-hidden">
-                    <div className="p-6 flex flex-col md:flex-row items-center justify-between gap-6">
-                      <div>
-                        <h3 className="font-extrabold text-base text-foreground flex items-center gap-2">
-                          <Flame className="h-5 w-5 text-brand" />
-                          Cổng truyền thông Factory Gateway
-                        </h3>
-                        <p className="text-sm text-muted-fg mt-1">
-                          Cổng trung chuyển nhận lệnh từ ERP nhà máy. Trạng thái hiện tại:
-                          <strong className={isGatewayOnline ? 'text-emerald-400 ml-1' : 'text-red-400 ml-1'}>
-                            {isGatewayOnline ? 'Kết nối an toàn (Hoạt động)' : 'Mất kết nối trung tâm'}
-                          </strong>.
-                        </p>
+              {connectivitySubTab === 'devices' && (() => {
+                // ── Device display helpers ──────────────────────────────────────────
+                const deviceLabel: Record<string, string> = {
+                  PLC:           'Bộ điều khiển PLC',
+                  PRINTER:       'Máy in nhãn',
+                  LASER:         'Máy khắc Laser',
+                  VISION_CAMERA: 'Camera kiểm tra',
+                  FactoryGateway:'Cổng Factory Gateway',
+                  Printer:       'Máy in nhãn',
+                }
+                const getLabel  = (d: any) => deviceLabel[d.deviceType] ?? d.deviceType
+                const getIcon   = (d: any) => {
+                  switch (d.deviceType) {
+                    case 'PLC':           return <Cpu className="h-5 w-5" />
+                    case 'PRINTER':
+                    case 'Printer':       return <PrinterIcon className="h-5 w-5" />
+                    case 'LASER':         return <Zap className="h-5 w-5" />
+                    case 'VISION_CAMERA': return <Camera className="h-5 w-5" />
+                    default:              return <Cpu className="h-5 w-5" />
+                  }
+                }
+
+                const relativeTime = (iso: string) => {
+                  const diff = Math.round((Date.now() - new Date(iso).getTime()) / 1000)
+                  if (diff < 10)  return 'vừa xong'
+                  if (diff < 60)  return `${diff}s trước`
+                  if (diff < 3600) return `${Math.round(diff / 60)}ph trước`
+                  return new Date(iso).toLocaleTimeString('vi-VN')
+                }
+
+                const lifecycleBadge = (d: any) => {
+                  const s = (d.lifecycleState ?? '').toLowerCase()
+                  if (s === 'printing') return { label: 'In ấn', cls: 'bg-blue-500/10 text-blue-400' }
+                  if (s === 'idle')     return { label: 'Chờ',   cls: 'bg-emerald-500/10 text-emerald-400' }
+                  if (s === 'offline')  return { label: 'Offline',cls: 'bg-red-500/10 text-red-400' }
+                  if (s === 'busy')     return { label: 'Bận',   cls: 'bg-amber-500/10 text-amber-500' }
+                  return null
+                }
+
+                // Separate: real production devices vs simulation printers
+                const nonGateway   = devices.filter((d: any) => d.deviceType !== 'GATEWAY' && d.deviceType !== 'FactoryGateway')
+                // Simulation printers are PRINTER / Printer type with IDs like Printer-01, Printer-02, printer-01, Printer-03
+                const simIds       = new Set(['printer-01','Printer-01','Printer-02','Printer-03'])
+                const isSimDevice  = (d: any) =>
+                  (d.deviceType === 'PRINTER' || d.deviceType === 'Printer') &&
+                  (simIds.has(d.deviceId) || /^Printer-\d+$/i.test(d.deviceId))
+                const realDevices  = nonGateway.filter((d: any) => !isSimDevice(d))
+                const simDevices   = nonGateway.filter((d: any) => isSimDevice(d))
+                const onlineCount  = realDevices.filter((d: any) => d.isOnline).length
+                const offlineCount = realDevices.filter((d: any) => !d.isOnline).length
+
+                return (
+                  <div className="space-y-5 animate-in fade-in duration-200">
+
+                    {/* ── Gateway banner ── */}
+                    <div className={`rounded-xl border-2 p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all ${
+                      isGatewayOnline
+                        ? 'border-emerald-500/30 bg-emerald-500/[0.04]'
+                        : 'border-red-500/30 bg-red-500/[0.04]'
+                    }`}>
+                      <div className="flex items-center gap-4">
+                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
+                          isGatewayOnline ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                        }`}>
+                          <Flame className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <div className="font-extrabold text-sm text-foreground flex items-center gap-2">
+                            Cổng truyền thông Factory Gateway
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              isGatewayOnline ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                            }`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${isGatewayOnline ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+                              {isGatewayOnline ? 'Online' : 'Offline'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-fg mt-0.5">
+                            {isGatewayOnline
+                              ? 'Kết nối MQTT an toàn — nhận lệnh từ ERP nhà máy'
+                              : 'Mất kết nối — không nhận được tín hiệu từ nhà máy'}
+                          </p>
+                          {gatewayDevice?.lastSeenAt && (
+                            <p className="text-[11px] text-muted-fg/70 mt-0.5 font-mono">
+                              Lần cuối: {relativeTime(gatewayDevice.lastSeenAt)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-3 text-center shrink-0">
+                        <div className="px-4 py-2 rounded-lg bg-surface-2 border border-border text-xs">
+                          <div className="font-extrabold text-emerald-400 text-lg">{onlineCount}</div>
+                          <div className="text-muted-fg">Online</div>
+                        </div>
+                        <div className="px-4 py-2 rounded-lg bg-surface-2 border border-border text-xs">
+                          <div className="font-extrabold text-red-400 text-lg">{offlineCount}</div>
+                          <div className="text-muted-fg">Offline</div>
+                        </div>
+                        <div className="px-4 py-2 rounded-lg bg-surface-2 border border-border text-xs">
+                          <div className="font-extrabold text-foreground text-lg">{realDevices.length}</div>
+                          <div className="text-muted-fg">Tổng cộng</div>
+                        </div>
                       </div>
                     </div>
-                  </Card>
 
-                  {/* Device Grid */}
-                  <Card className="border border-border bg-card">
-                    <CardHeader className="border-b border-border py-4 px-6">
-                      <CardTitle className="text-base font-bold uppercase tracking-wider flex items-center gap-2">
-                        <Cpu className="h-4 w-4 text-brand" />
-                        Mạng lưới thiết bị đầu cuối
-                      </CardTitle>
-                      <CardDescription className="text-sm">Theo dõi thời gian thực của các phần cứng tại chỗ</CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-6">
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        {devices.filter((d: any) => d.deviceType !== 'GATEWAY').map((device: any) => {
-                          const DeviceIcon =
-                            device.deviceType === 'PLC' ? Cpu :
-                              device.deviceType === 'PRINTER' ? PrinterIcon :
-                                device.deviceType === 'LASER' ? Zap :
-                                  device.deviceType === 'VISION_CAMERA' ? Camera :
-                                    Cpu;
-
-                          return (
-                            <div key={device.deviceId} className="border border-border bg-surface-1 rounded-xl p-4 flex flex-col justify-between h-36 hover:border-brand/20 transition-all duration-300">
-                              <div className="flex items-center justify-between">
-                                <div className={`p-2.5 rounded-lg border ${device.isOnline ? 'border-emerald-500/10 bg-emerald-500/5 text-emerald-400' : 'border-red-500/10 bg-red-500/5 text-red-400'
-                                  }`}>
-                                  <DeviceIcon className="h-5 w-5" />
-                                </div>
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${device.isOnline ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                                  }`}>
-                                  <span className={`h-1.5 w-1.5 rounded-full ${device.isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`}></span>
-                                  {device.isOnline ? 'Online' : 'Offline'}
-                                </span>
-                              </div>
-
-                              <div className="mt-4">
-                                <p className="font-extrabold text-base text-foreground">{device.deviceId.toUpperCase()}</p>
-                                <div className="flex justify-between items-center mt-1 text-xs text-muted-fg font-medium">
-                                  <span>Phân loại: {device.deviceType}</span>
-                                  <span>{new Date(device.lastSeenAt).toLocaleTimeString('vi-VN')}</span>
-                                </div>
-                              </div>
+                    {/* ── Device grid ── */}
+                    <Card className="border border-border bg-card">
+                      <CardHeader className="border-b border-border py-4 px-6">
+                        <CardTitle className="text-base font-bold uppercase tracking-wider flex items-center gap-2">
+                          <Cpu className="h-4 w-4 text-brand" />
+                          Mạng lưới thiết bị đầu cuối
+                        </CardTitle>
+                        <CardDescription className="text-sm">Theo dõi thời gian thực — cập nhật qua SignalR mỗi 3 giây</CardDescription>
+                      </CardHeader>
+                      <CardContent className="p-6">
+                        {realDevices.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center py-14 text-muted-fg gap-3">
+                            <Cpu className="h-10 w-10 text-muted-fg/20" />
+                            <div className="text-center">
+                              <p className="font-medium text-foreground text-sm">Chưa phát hiện thiết bị nào</p>
+                              <p className="text-xs mt-1">Đảm bảo các adapter (printer-adapter, plc-adapter, laser-adapter) đang chạy và gửi heartbeat.</p>
                             </div>
-                          );
-                        })}
-                        {devices.filter((d: any) => d.deviceType !== 'GATEWAY').length === 0 && (
-                          <div className="col-span-4 text-center py-10 text-muted-fg text-base">
-                            Đang kết nối để quét danh sách thiết bị...
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                            {realDevices.map((device: any) => {
+                              const badge = lifecycleBadge(device)
+                              return (
+                                <div
+                                  key={device.deviceId}
+                                  className={`rounded-xl p-4 flex flex-col justify-between gap-3 border transition-all duration-300 relative overflow-hidden ${
+                                    device.isOnline
+                                      ? 'border-emerald-500/20 bg-emerald-500/[0.03] hover:border-emerald-500/40'
+                                      : 'border-red-500/15 bg-red-500/[0.02] hover:border-red-500/30 opacity-75'
+                                  }`}
+                                >
+                                  {device.isOnline && (
+                                    <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-emerald-500/50 to-emerald-400/20" />
+                                  )}
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className={`p-2.5 rounded-lg border shrink-0 ${
+                                      device.isOnline
+                                        ? 'border-emerald-500/10 bg-emerald-500/5 text-emerald-400'
+                                        : 'border-red-500/10 bg-red-500/5 text-red-400'
+                                    }`}>
+                                      {getIcon(device)}
+                                    </div>
+                                    <div className="flex flex-col items-end gap-1">
+                                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                        device.isOnline
+                                          ? 'bg-emerald-500/10 text-emerald-400'
+                                          : 'bg-red-500/10 text-red-400'
+                                      }`}>
+                                        <span className={`h-1.5 w-1.5 rounded-full ${device.isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+                                        {device.isOnline ? 'Online' : 'Offline'}
+                                      </span>
+                                      {badge && (
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${badge.cls}`}>
+                                          {badge.label}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <p className="font-extrabold text-sm text-foreground leading-tight">{device.deviceId.toUpperCase()}</p>
+                                    <p className="text-[11px] text-muted-fg mt-0.5">{getLabel(device)}</p>
+                                    <p className="text-[10px] text-muted-fg/60 mt-1.5 font-mono">
+                                      {device.isOnline ? '↻ ' : '✕ '}{relativeTime(device.lastSeenAt)}
+                                    </p>
+                                  </div>
+                                </div>
+                              )
+                            })}
                           </div>
                         )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
+                      </CardContent>
+                    </Card>
+
+                    <SimulationDeviceSection devices={simDevices} relativeTime={relativeTime} />
+                  </div>
+                )
+              })()}
+
 
               {connectivitySubTab === 'printers' && (
                 <div className="animate-in fade-in duration-200">
