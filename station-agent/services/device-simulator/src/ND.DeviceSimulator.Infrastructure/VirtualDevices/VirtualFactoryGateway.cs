@@ -173,6 +173,10 @@ public sealed class VirtualFactoryGateway : BackgroundService
         {
             await Task.Delay(TimeSpan.FromSeconds(3), ct);
 
+            // Guard: if manually disconnected during the 3s delay, do NOT publish an online
+            // heartbeat — this was the race condition causing kiosk UI to snap back to Online.
+            if (_forceDisconnected) break;
+
             // Publish gateway-01 heartbeat to RabbitMQ every 3s.
             // DeviceStatusPoller marks device offline after 10s silence — so 3s interval keeps it alive.
             await PublishRabbitHeartbeatAsync(isOnline: true, ct);
@@ -186,6 +190,7 @@ public sealed class VirtualFactoryGateway : BackgroundService
             await PublishHeartbeatAsync(ct);
         }
     }
+
 
     /// <summary>
     /// Publishes a DeviceStatusHeartbeat to RabbitMQ station.events exchange.

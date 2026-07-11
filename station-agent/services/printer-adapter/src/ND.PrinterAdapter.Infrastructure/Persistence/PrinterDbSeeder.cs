@@ -27,7 +27,10 @@ public static class PrinterDbSeeder
             await db.Printers.AddAsync(pLegacy);
 
             var cupsQueue = Environment.GetEnvironmentVariable("CUPS_QUEUE") ?? "Zebra_Technologies_ZTC_GK420t";
-            var pCups = Printer.Create("Zebra-GK420t-CUPS", "Zebra GK420t (Physical)", "localhost", 631, "ZPL", "ZEBRA",
+            // host.docker.internal routes to the macOS host from inside Docker Desktop containers.
+            // Using "localhost" would ping the container itself (no CUPS there), always returning offline.
+            var cupsHost = Environment.GetEnvironmentVariable("CUPS_HEALTH_HOST") ?? "host.docker.internal";
+            var pCups = Printer.Create("Zebra-GK420t-CUPS", "Zebra GK420t (Physical)", cupsHost, 631, "ZPL", "ZEBRA",
                 driverType: "cups", cupsQueueName: cupsQueue);
             await db.Printers.AddAsync(pCups);
 
@@ -39,7 +42,8 @@ public static class PrinterDbSeeder
             if (!await db.Printers.AnyAsync(p => p.PrinterCode == cupsCode))
             {
                 var cupsQueue = Environment.GetEnvironmentVariable("CUPS_QUEUE") ?? "Zebra_Technologies_ZTC_GK420t";
-                var pCups = Printer.Create(cupsCode, "Zebra GK420t (Physical)", "localhost", 631, "ZPL", "ZEBRA",
+                var cupsHost = Environment.GetEnvironmentVariable("CUPS_HEALTH_HOST") ?? "host.docker.internal";
+                var pCups = Printer.Create(cupsCode, "Zebra GK420t (Physical)", cupsHost, 631, "ZPL", "ZEBRA",
                     driverType: "cups", cupsQueueName: cupsQueue);
                 await db.Printers.AddAsync(pCups);
                 await db.SaveChangesAsync();

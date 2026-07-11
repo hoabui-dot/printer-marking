@@ -712,6 +712,8 @@ public sealed class ProjectionEventConsumer : BackgroundService
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
             var device = await deviceRepo.GetByIdAsync(heartbeat.DeviceId, cancellationToken);
+            bool wasOffline = device != null && !device.IsOnline;
+
             if (device == null)
             {
                 device = DeviceStatus.Create(heartbeat.DeviceId, heartbeat.DeviceType, heartbeat.IsOnline, heartbeat.Timestamp, heartbeat.LifecycleState);
@@ -724,9 +726,43 @@ public sealed class ProjectionEventConsumer : BackgroundService
 
             await unitOfWork.SaveChangesAsync(cancellationToken);
 
-            // Push SignalR update
+            // Push SignalR device status update
             var dto = new DeviceStatusDto(device.DeviceId, device.DeviceType, device.IsOnline, device.LastSeenAt, device.LifecycleState);
             await _hubContext.Clients.Group(_stationId).SendAsync("OnDeviceStatusUpdate", dto, cancellationToken);
+
+            // Auto-resolve active alarm when device transitions offline → online
+            if (heartbeat.IsOnline && wasOffline)
+            {
+                try
+                {
+                    var alarmRepo = scope.ServiceProvider.GetRequiredService<IAlarmRepository>();
+                    var existingAlarm = await alarmRepo.GetActiveByGroupKeyAsync(heartbeat.DeviceId, cancellationToken);
+                    if (existingAlarm != null && existingAlarm.CurrentState == "Active")
+                    {
+                        existingAlarm.Resolve(resolvedBy: "System");
+                        await unitOfWork.SaveChangesAsync(cancellationToken);
+
+                        var alarmDto = new AlarmDto(
+                            existingAlarm.Id, existingAlarm.AlarmType, existingAlarm.AlarmGroupKey,
+                            existingAlarm.Severity, existingAlarm.Source, existingAlarm.Message,
+                            existingAlarm.DeviceId, existingAlarm.DeviceName, existingAlarm.ProductionOrderId,
+                            existingAlarm.IsAcknowledged, existingAlarm.CurrentState,
+                            existingAlarm.AcknowledgedBy, existingAlarm.AcknowledgedAt,
+                            existingAlarm.FirstOccurredAt, existingAlarm.LastOccurredAt,
+                            existingAlarm.RepeatCount, existingAlarm.ResolvedAt, existingAlarm.CreatedAt
+                        );
+                        await _hubContext.Clients.Group(_stationId).SendAsync("OnAlarmRaised", alarmDto, cancellationToken);
+
+                        _logger.LogInformation(
+                            "Device {DeviceId} recovered — auto-resolved alarm {AlarmId}",
+                            heartbeat.DeviceId, existingAlarm.Id);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to auto-resolve alarm for recovered device {DeviceId}", heartbeat.DeviceId);
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -735,4 +771,3 @@ public sealed class ProjectionEventConsumer : BackgroundService
     }
 
 }
-

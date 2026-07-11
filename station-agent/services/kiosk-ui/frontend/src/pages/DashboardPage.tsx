@@ -67,6 +67,10 @@ function SimulationDeviceSection({ devices: simDevices, relativeTime }: {
 }) {
   const [open, setOpen] = useState(false)
   if (simDevices.length === 0) return null
+
+  const onlineCount = simDevices.filter((d: any) => d.isOnline).length
+  const offlineCount = simDevices.length - onlineCount
+
   return (
     <section className="space-y-3">
       <button
@@ -82,30 +86,56 @@ function SimulationDeviceSection({ devices: simDevices, relativeTime }: {
         <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-500/10 text-amber-500">
           {simDevices.length}
         </span>
+        {offlineCount > 0 && (
+          <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-red-500/10 text-red-400">
+            {offlineCount} offline
+          </span>
+        )}
         <span className="ml-auto text-muted-fg group-hover:text-foreground transition-colors">
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </span>
       </button>
       {!open && (
         <p className="text-xs text-muted-fg ml-9 leading-relaxed">
-          {simDevices.length} máy in mô phỏng từ device-simulator — click để xem. Không dùng cho sản xuất thực tế.
+          {simDevices.length} máy in mô phỏng — {onlineCount} online, {offlineCount} offline. Click để xem chi tiết.
         </p>
       )}
       {open && (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in duration-200">
           {simDevices.map((d: any) => (
             <div key={d.deviceId}
-              className="rounded-xl p-4 border border-amber-500/15 bg-amber-500/[0.03] opacity-80 flex flex-col gap-2"
+              className={`rounded-xl p-4 border flex flex-col gap-2 transition-all duration-300 ${
+                d.isOnline
+                  ? 'border-amber-500/20 bg-amber-500/[0.04]'
+                  : 'border-white/5 bg-white/[0.02] opacity-50'
+              }`}
             >
               <div className="flex items-center justify-between">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                  d.isOnline ? 'bg-amber-500/10 text-amber-500' : 'bg-white/5 text-muted-fg'
+                }`}>
                   <FlaskConical size={15} />
                 </div>
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 uppercase tracking-wider">
-                  Simulation
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {/* Online/Offline dot badge */}
+                  <span className={`flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                    d.isOnline
+                      ? 'text-emerald-400 bg-emerald-400/10'
+                      : 'text-red-400 bg-red-400/10'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      d.isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'
+                    }`} />
+                    {d.isOnline ? 'Online' : 'Offline'}
+                  </span>
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 uppercase tracking-wider">
+                    Simulation
+                  </span>
+                </div>
               </div>
-              <p className="font-extrabold text-sm text-foreground">{d.deviceId.toUpperCase()}</p>
+              <p className={`font-extrabold text-sm ${d.isOnline ? 'text-foreground' : 'text-muted-fg'}`}>
+                {d.deviceId.toUpperCase()}
+              </p>
               <p className="text-[10px] text-muted-fg/60 font-mono">{relativeTime(d.lastSeenAt)}</p>
             </div>
           ))}

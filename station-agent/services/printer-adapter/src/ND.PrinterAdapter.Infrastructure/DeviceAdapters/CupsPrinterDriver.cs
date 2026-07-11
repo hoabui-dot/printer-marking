@@ -110,20 +110,28 @@ public sealed class CupsPrinterDriver : IPrinterDriver
 
     // ── Status ────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Health check via TCP ping to the CUPS HTTP port.
+    /// Uses host.docker.internal (configurable via CUPS_HEALTH_HOST) so that this works
+    /// whether printer-adapter runs natively or inside Docker on macOS.
+    /// Note: lpstat is not available inside Docker Linux containers on macOS.
+    /// </summary>
     public async Task<PrinterDriverStatus> GetStatusAsync(CancellationToken ct = default)
     {
         try
         {
-            var output = await RunCommandAsync("lpstat", $"-p {_queueName}", ct);
-            if (string.IsNullOrWhiteSpace(output))
-                return PrinterDriverStatus.Offline;
+            var host = Environment.GetEnvironmentVariable("CUPS_HEALTH_HOST") ?? "host.docker.internal";
+            var port = int.TryParse(Environment.GetEnvironmentVariable("CUPS_HEALTH_PORT") ?? "631", out var p) ? p : 631;
 
-            var lower = output.ToLowerInvariant();
-            if (lower.Contains("is idle"))         return PrinterDriverStatus.Idle;
-            if (lower.Contains("is printing"))     return PrinterDriverStatus.Printing;
-            if (lower.Contains("disabled"))        return PrinterDriverStatus.Stopped;
-            if (lower.Contains("not accepting"))   return PrinterDriverStatus.Stopped;
-            return PrinterDriverStatus.Unknown;
+            using var tcp = new System.Net.Sockets.TcpClient();
+            var connectTask = tcp.ConnectAsync(host, port, ct).AsTask();
+            var delayTask   = Task.Delay(1000, ct);
+            var completed   = await Task.WhenAny(connectTask, delayTask);
+
+            if (completed == connectTask && tcp.Connected)
+                return PrinterDriverStatus.Idle;
+
+            return PrinterDriverStatus.Offline;
         }
         catch
         {
