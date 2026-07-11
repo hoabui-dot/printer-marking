@@ -42,8 +42,8 @@ const defaultFilters = (): AlarmFilters => ({
   severity: '',
   deviceId: '',
   search: '',
-  dateFrom: TODAY(),
-  dateTo: TODAY(),
+  dateFrom: '',
+  dateTo: '',
 })
 
 const PAGE_SIZE = 20
