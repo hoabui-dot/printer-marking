@@ -664,3 +664,38 @@ Implement
 - Update PRODUCT_DOCUMENT.md
 
 The final implementation must allow the Station Agent to switch between the existing simulated printer and a real Zebra GK420t connected via USB on macOS by changing configuration only, without modifying any business logic.
+
+---
+
+# Refactored CUPS Health Check Architecture
+
+To resolve the issue where the Kiosk UI incorrectly reported status or failed to change to Online when the physical device went online, the health check architecture was completely refactored.
+
+## 1. The Core Architecture
+Instead of relying on a simple TCP ping to port `631` (which only checks if the CUPS service is running, not the physical printer itself), we now query the **IPP (Internet Printing Protocol)** API exposed by CUPS over HTTP:
+```
+CupsPrinterDriver.GetStatusAsync()
+  → CupsPrinterStateAggregator.GetStateAsync()
+    → HTTP POST to http://{host.docker.internal}:{CUPS_PORT}/printers/{QueueName}
+      [Payload: binary IPP Get-Printer-Attributes request]
+```
+
+## 2. Dynamic Port Mapping and Environment Config
+Since the station runs inside Docker, macOS host's CUPS port `631` is forwarded to container port `8631` via `socat`.
+The system now parses the `CUPS_SERVER` environment variable (e.g., `127.0.0.1:8631`) to dynamically extract the correct host and port for checking health, instead of assuming port `631` is directly open.
+
+## 3. Normalized Device States & UI Mapping
+The raw status flags returned by IPP are aggregated and mapped to the standard Kiosk UI display:
+- **Idle** (No active jobs, no error reasons) → `Online` (Emerald pulse dot)
+- **Processing + Printing** → `Printing` (Indigo pulse printer icon)
+- **Processing + Idle (spooling)** → `Busy` (Blue spinning ring)
+- **Stopped + Pending Jobs** → `Waiting` (Amber hourglass dot)
+- **Warning Reasons** (e.g. `toner-low`, `media-low`) → `Warning` (Yellow warning icon)
+- **Offline / Disconnected** → `Offline` (Red X dot)
+- **Stopped / Hard Error** (e.g. `media-empty`, `cover-open`) → `Error` (Red warning dot)
+
+## 4. Anti-Flapping Retry Policy
+When checking printer health, the driver queries the state aggregator with a retry policy:
+- **Max Retries:** 3 attempts
+- **Delay:** 200 milliseconds between attempts
+- **Fallback:** If IPP querying fails completely (e.g., due to temporary network socket exhaustion), the aggregator falls back to a TCP ping of the port. If TCP is reachable, it reports `Online` as an optimistic fallback. Only if both IPP and TCP checks fail does it report the printer as `Offline`.
