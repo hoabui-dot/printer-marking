@@ -20,4 +20,7 @@ public interface IPrinterDriver
 
     /// <summary>Quick reachability check. Returns true if printer is reachable and ready.</summary>
     Task<bool> HealthCheckAsync(CancellationToken ct = default);
+
+    /// <summary>Returns detailed hardware maintenance statistics.</summary>
+    Task<PrinterMaintenanceInfo?> GetMaintenanceInfoAsync(CancellationToken ct = default);
 }

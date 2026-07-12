@@ -11,6 +11,7 @@ public sealed class ProjectionDbContext : DbContext, IUnitOfWork
     public DbSet<ProductionView> ProductionViews => Set<ProductionView>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<DeviceStatus> DeviceStatuses => Set<DeviceStatus>();
+    public DbSet<DeviceStatusHistory> DeviceStatusHistories => Set<DeviceStatusHistory>();
     public DbSet<ProductionRecord> ProductionRecords => Set<ProductionRecord>();
     public DbSet<Alarm> Alarms => Set<Alarm>();
     public DbSet<ProductionOrderView> ProductionOrders => Set<ProductionOrderView>();
@@ -59,6 +60,22 @@ public sealed class ProjectionDbContext : DbContext, IUnitOfWork
             e.Property(x => x.IsOnline).HasColumnName("is_online").IsRequired();
             e.Property(x => x.LastSeenAt).HasColumnName("last_seen_at").IsRequired();
             e.Property(x => x.LifecycleState).HasColumnName("lifecycle_state").HasDefaultValue("Offline");
+            e.Property(x => x.SerialNumber).HasColumnName("serial_number");
+            e.Property(x => x.LifetimePrintCounter).HasColumnName("lifetime_print_counter");
+            e.Property(x => x.ThermalTemp).HasColumnName("thermal_temp");
+            e.Property(x => x.ConnectionDetails).HasColumnName("connection_details");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+        });
+
+        modelBuilder.Entity<DeviceStatusHistory>(e =>
+        {
+            e.ToTable("projection_device_status_history");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.DeviceId).HasColumnName("device_id").IsRequired();
+            e.Property(x => x.LifecycleState).HasColumnName("lifecycle_state").IsRequired();
+            e.Property(x => x.IsOnline).HasColumnName("is_online").IsRequired();
+            e.Property(x => x.Timestamp).HasColumnName("timestamp").IsRequired();
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         });
 

@@ -119,3 +119,26 @@ All Job Engine events share a base structure with common header properties.
   "error_message": "Vision Check failed on camera-01 (OCR mismatch)."
 }
 ```
+
+---
+
+## 3. Device Status Heartbeat Contracts
+
+### Event: `DeviceStatusHeartbeat`
+- **Routing Key**: `device.heartbeat.{device_id}`
+
+#### Schema Example
+```json
+{
+  "DeviceId": "PRINTER01",
+  "DeviceType": "Printer",
+  "IsOnline": true,
+  "LifecycleState": "Paper Out",
+  "Timestamp": "2026-07-12T05:30:15.112Z",
+  "SerialNumber": "SN-SIM-PRINTER01",
+  "LifetimePrintCounter": 1024,
+  "ThermalTemp": 27.5,
+  "ConnectionDetails": "127.0.0.1:9100"
+}
+```
+*Note: Diagnostic properties (`SerialNumber`, `LifetimePrintCounter`, `ThermalTemp`, `ConnectionDetails`) are optional and populated based on availability from driver capability.*

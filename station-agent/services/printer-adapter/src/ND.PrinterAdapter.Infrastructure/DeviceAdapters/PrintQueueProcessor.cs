@@ -84,10 +84,47 @@ public sealed class PrintQueueProcessor : BackgroundService
 
         while (attempt <= MaxRetries && !ct.IsCancellationRequested)
         {
+            var status = await driver.GetStatusAsync(ct);
+
+            // Phase 8: Non-retryable hardware conditions (operator intervention required)
+            if (status == PrinterDriverStatus.PaperOut)
+            {
+                lastResult = PrintResult.Fail("PAPER_OUT", "Media/paper is out. Operator intervention required.", isRecoverable: false, isRetryable: false);
+                break;
+            }
+            if (status == PrinterDriverStatus.RibbonOut)
+            {
+                lastResult = PrintResult.Fail("RIBBON_OUT", "Ribbon is out. Operator intervention required.", isRecoverable: false, isRetryable: false);
+                break;
+            }
+            if (status == PrinterDriverStatus.HeadOpen)
+            {
+                lastResult = PrintResult.Fail("HEAD_OPEN", "Print head is open. Close the head before continuing.", isRecoverable: false, isRetryable: false);
+                break;
+            }
+
+            // Phase 8: Thermal Warning logic — pause/delay printing until status cools down
+            if (status == PrinterDriverStatus.ThermalWarning)
+            {
+                _logger.LogWarning("Printer {Code} is overheating (Thermal Warning). Pausing print thread...", job.PrinterCode);
+                await Task.Delay(2000, ct);
+                continue; // Do not increment attempt count, check status again
+            }
+
             if (attempt > 0)
             {
                 _logger.LogInformation("Retry {Attempt}/{Max} for printer {Code}", attempt, MaxRetries, job.PrinterCode);
-                await Task.Delay(1000 * attempt, ct);
+                
+                // Phase 8: Buffer Full — retry quickly at 500ms
+                if (status == PrinterDriverStatus.BufferFull)
+                {
+                    _logger.LogWarning("Printer {Code} reports Buffer Full. Retrying in 500ms...", job.PrinterCode);
+                    await Task.Delay(500, ct);
+                }
+                else
+                {
+                    await Task.Delay(1000 * attempt, ct);
+                }
             }
 
             try

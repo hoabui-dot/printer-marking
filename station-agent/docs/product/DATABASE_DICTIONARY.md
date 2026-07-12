@@ -652,6 +652,23 @@ Goal: Real-time status model of hardware components (Online/Offline state).
 | `device_type` | TEXT | NOT NULL | Type: `PRINTER`, `LASER`, `VISION`, `PLC` |
 | `is_online` | INTEGER | NOT NULL | Binary state: `1` (Online), `0` (Offline) |
 | `last_seen_at` | TEXT | NOT NULL | Last check timestamp |
+| `lifecycle_state` | TEXT | NOT NULL | Detailed operational/hardware state (e.g. `Online`, `Offline`, `Paper Out`, `Ribbon Out`, `Head Open`, `Buffer Full`, `Thermal Warning`) |
+| `serial_number` | TEXT | NULL | Printer hardware serial number parsed from Device ID |
+| `lifetime_print_counter` | INTEGER | NULL | Total print label count executed on this device |
+| `thermal_temp` | REAL | NULL | Print head temperature in Celsius |
+| `connection_details` | TEXT | NULL | Connection socket (IP:Port or CUPS queue) |
+| `created_at` | TEXT | NOT NULL | Record creation timestamp |
+
+#### Table: `projection_device_status_history`
+Goal: Historical log transitions of hardware device states.
+
+| Column | Type | Constraints | Description / Goal |
+|---|---|---|---|
+| `id` | TEXT | PRIMARY KEY, NOT NULL | Record ID |
+| `device_id` | TEXT | NOT NULL | Unique code of target device |
+| `lifecycle_state` | TEXT | NOT NULL | Normalized lifecycle state at transition |
+| `is_online` | INTEGER | NOT NULL | Connection status at transition |
+| `timestamp` | TEXT | NOT NULL | Event timestamp |
 | `created_at` | TEXT | NOT NULL | Record creation timestamp |
 
 #### Table: `projection_activity_log`

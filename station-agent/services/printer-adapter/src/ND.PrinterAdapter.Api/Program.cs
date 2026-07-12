@@ -377,6 +377,27 @@ app.MapGet("/api/printers/{code}/health", async (string code, PrinterDbContext d
 .Produces(200)
 .ProducesProblem(404);
 
+app.MapGet("/api/printers/{code}/maintenance", async (string code, PrinterDbContext db, IPrinterDriverFactory driverFactory, CancellationToken ct) =>
+{
+    var printer = await db.Printers.FirstOrDefaultAsync(p => p.PrinterCode == code, ct);
+    if (printer is null)
+        return Results.NotFound(new { error = $"Printer '{code}' not found" });
+
+    var driver = driverFactory.Resolve(printer);
+    var maintenanceInfo = await driver.GetMaintenanceInfoAsync(ct);
+    if (maintenanceInfo is null)
+        return Results.BadRequest(new { error = "Failed to retrieve maintenance info from driver." });
+
+    return Results.Ok(maintenanceInfo);
+})
+.WithName("GetPrinterMaintenanceInfo")
+.WithSummary("Get maintenance details of a printer")
+.WithDescription("Queries the driver layer for detailed serial, print counter, cleaning recommendations and temperature of the specified printer.")
+.WithTags("Printers")
+.Produces(200)
+.ProducesProblem(400)
+.ProducesProblem(404);
+
 app.MapPost("/api/printers/{code}/test-connection", async (string code, PrinterDbContext db, IPrinterDriverFactory driverFactory, CancellationToken ct) =>
 {
     var printer = await db.Printers.FirstOrDefaultAsync(p => p.PrinterCode == code, ct);

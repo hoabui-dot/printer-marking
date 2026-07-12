@@ -17,7 +17,10 @@ public record NormalizedPrinterState(
     string? StateReason,
     int QueueLength,
     string? ActiveJobName,
-    string Source
+    string Source,
+    string? SerialNumber = null,
+    long? LifetimePrintCounter = null,
+    double? ThermalTemp = null
 )
 {
     // Convenience factory methods

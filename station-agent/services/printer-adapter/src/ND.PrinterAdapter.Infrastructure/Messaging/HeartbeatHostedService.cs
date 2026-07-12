@@ -43,6 +43,11 @@ public sealed class HeartbeatHostedService : BackgroundService
         PrinterDriverStatus.Waiting,
         PrinterDriverStatus.Warning,
         PrinterDriverStatus.Connecting,
+        PrinterDriverStatus.PaperOut,
+        PrinterDriverStatus.RibbonOut,
+        PrinterDriverStatus.HeadOpen,
+        PrinterDriverStatus.BufferFull,
+        PrinterDriverStatus.ThermalWarning
     };
 
     public HeartbeatHostedService(
@@ -86,35 +91,9 @@ public sealed class HeartbeatHostedService : BackgroundService
         {
             try
             {
-                PrinterDriverStatus status;
-
-                if (printer.DriverType == "cups")
-                {
-                    // ── Physical CUPS printer ────────────────────────────────
-                    // Use the full driver stack: CupsPrinterDriver → CupsPrinterStateAggregator → CUPS IPP API
-                    // This gives us the real hardware state (Online/Busy/Printing/Waiting/Warning/Offline/Error),
-                    // not just "is CUPS running?" which the old localhost:631 TCP ping gave.
-                    var driver = _driverFactory.Resolve(printer);
-                    status = await driver.GetStatusAsync(ct);
-                }
-                else
-                {
-                    // ── Simulation printer ───────────────────────────────────
-                    // TCP ping to the VirtualPrinterSimulator listener on the printer's configured port
-                    try
-                    {
-                        using var tcp   = new System.Net.Sockets.TcpClient();
-                        var connectTask = tcp.ConnectAsync(printer.IpAddress ?? "localhost", printer.Port, ct).AsTask();
-                        var completed   = await Task.WhenAny(connectTask, Task.Delay(800, ct));
-                        status = (completed == connectTask && tcp.Connected)
-                            ? PrinterDriverStatus.Online
-                            : PrinterDriverStatus.Offline;
-                    }
-                    catch
-                    {
-                        status = PrinterDriverStatus.Offline;
-                    }
-                }
+                var driver = _driverFactory.Resolve(printer);
+                var status = await driver.GetStatusAsync(ct);
+                var maintenanceInfo = await driver.GetMaintenanceInfoAsync(ct);
 
                 bool   isOnline      = OnlineStates.Contains(status);
                 string lifecycleState = status switch
@@ -127,8 +106,13 @@ public sealed class HeartbeatHostedService : BackgroundService
                     PrinterDriverStatus.Connecting  => "Connecting",
                     PrinterDriverStatus.Offline     => "Offline",
                     PrinterDriverStatus.Error       => "Error",
-                    PrinterDriverStatus.Stopped     => "Error",       // legacy → Error in UI
-                    PrinterDriverStatus.Disconnected => "Offline",    // legacy → Offline
+                    PrinterDriverStatus.Stopped     => "Error",
+                    PrinterDriverStatus.Disconnected => "Offline",
+                    PrinterDriverStatus.PaperOut    => "Paper Out",
+                    PrinterDriverStatus.RibbonOut   => "Ribbon Out",
+                    PrinterDriverStatus.HeadOpen    => "Head Open",
+                    PrinterDriverStatus.BufferFull  => "Buffer Full",
+                    PrinterDriverStatus.ThermalWarning => "Thermal Warning",
                     _                               => "Unknown",
                 };
 
@@ -143,12 +127,16 @@ public sealed class HeartbeatHostedService : BackgroundService
                     "Printer",
                     isOnline,
                     lifecycleState,
-                    DateTime.UtcNow.ToString("o")
+                    DateTime.UtcNow.ToString("o"),
+                    SerialNumber: maintenanceInfo?.SerialNumber,
+                    LifetimePrintCounter: maintenanceInfo?.LifetimePrintLength,
+                    ThermalTemp: maintenanceInfo?.CurrentTemperature,
+                    ConnectionDetails: $"{printer.IpAddress}:{printer.Port}"
                 );
 
                 await _publisher.PublishAsync(Exchange, routingKey, JsonSerializer.Serialize(hb), ct);
-                _logger.LogDebug("Heartbeat [{Code}] → {LifecycleState} (isOnline={Online})",
-                    printer.PrinterCode, lifecycleState, isOnline);
+                _logger.LogDebug("Heartbeat [{Code}] → {LifecycleState} (isOnline={Online}, Temp={Temp}, SN={SN})",
+                    printer.PrinterCode, lifecycleState, isOnline, maintenanceInfo?.CurrentTemperature, maintenanceInfo?.SerialNumber);
             }
             catch (Exception ex)
             {

@@ -5,5 +5,9 @@ public sealed record DeviceStatusHeartbeat(
     string DeviceType,
     bool IsOnline,
     string LifecycleState,
-    string Timestamp
+    string Timestamp,
+    string? SerialNumber = null,
+    long? LifetimePrintCounter = null,
+    double? ThermalTemp = null,
+    string? ConnectionDetails = null
 );

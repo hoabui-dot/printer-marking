@@ -107,18 +107,39 @@ public sealed class CupsPrinterStateAggregator : ICupsPrinterStateAggregator
                 return await TcpFallbackAsync(ct);
             }
 
-            var (printerState, reasons, queueLength) = ParseIppResponse(responseBytes);
+            var (printerState, reasons, queueLength, deviceId, info, model) = ParseIppResponse(responseBytes);
+            var serialNumber = ParseSerialNumber(deviceId);
 
-            _logger.LogDebug("[CUPS-IPP] {Queue}: state={S} reasons=[{R}] jobs={J}",
-                queueName, printerState, string.Join(",", reasons), queueLength);
+            _logger.LogDebug("[CUPS-IPP] {Queue}: state={S} reasons=[{R}] jobs={J} sn={SN} info={I} model={M}",
+                queueName, printerState, string.Join(",", reasons), queueLength, serialNumber, info, model);
 
-            return Normalize(printerState, reasons, queueLength);
+            return Normalize(printerState, reasons, queueLength, serialNumber);
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "[CUPS-IPP] {Queue}: IPP request failed — falling back to TCP", queueName);
             return await TcpFallbackAsync(ct);
         }
+    }
+
+    private static string? ParseSerialNumber(string? deviceId)
+    {
+        if (string.IsNullOrWhiteSpace(deviceId)) return null;
+        var parts = deviceId.Split(';');
+        foreach (var part in parts)
+        {
+            var pair = part.Split(':');
+            if (pair.Length == 2)
+            {
+                var key = pair[0].Trim().ToUpperInvariant();
+                var val = pair[1].Trim();
+                if (key is "SN" or "SER" or "SERIAL" or "SERIALNUMBER")
+                {
+                    return val;
+                }
+            }
+        }
+        return null;
     }
 
     // ── IPP Request Builder ───────────────────────────────────────────────────
@@ -148,6 +169,9 @@ public sealed class CupsPrinterStateAggregator : ICupsPrinterStateAggregator
         WriteAttribute(w, TagKeyword, "requested-attributes", "printer-state");
         WriteAdditionalValue(w, TagKeyword, "printer-state-reasons");
         WriteAdditionalValue(w, TagKeyword, "queued-job-count");
+        WriteAdditionalValue(w, TagKeyword, "printer-device-id");
+        WriteAdditionalValue(w, TagKeyword, "printer-info");
+        WriteAdditionalValue(w, TagKeyword, "printer-make-and-model");
 
         // end-of-attributes
         w.Write(TagEndOfAttributes);
@@ -186,13 +210,16 @@ public sealed class CupsPrinterStateAggregator : ICupsPrinterStateAggregator
     /// <summary>
     /// Parses an IPP binary response to extract printer-state, printer-state-reasons, queued-job-count.
     /// </summary>
-    private (int printerState, List<string> reasons, int queueLength) ParseIppResponse(byte[] data)
+    private (int printerState, List<string> reasons, int queueLength, string? deviceId, string? info, string? model) ParseIppResponse(byte[] data)
     {
         int printerState = 0;
         var reasons      = new List<string>();
         int queueLength  = 0;
+        string? deviceId = null;
+        string? info     = null;
+        string? model    = null;
 
-        if (data.Length < 8) return (printerState, reasons, queueLength);
+        if (data.Length < 8) return (printerState, reasons, queueLength, deviceId, info, model);
 
         // Skip fixed header: version(2) + status-code(2) + request-id(4) = 8 bytes
         int i = 8;
@@ -242,66 +269,90 @@ public sealed class CupsPrinterStateAggregator : ICupsPrinterStateAggregator
                 case "queued-job-count" when valueLen == 4:
                     queueLength = (data[i] << 24) | (data[i + 1] << 16) | (data[i + 2] << 8) | data[i + 3];
                     break;
+
+                case "printer-device-id" when valueLen > 0:
+                    deviceId = Encoding.UTF8.GetString(data, i, valueLen);
+                    break;
+
+                case "printer-info" when valueLen > 0:
+                    info = Encoding.UTF8.GetString(data, i, valueLen);
+                    break;
+
+                case "printer-make-and-model" when valueLen > 0:
+                    model = Encoding.UTF8.GetString(data, i, valueLen);
+                    break;
             }
 
             i += valueLen;
         }
 
-        return (printerState, reasons, queueLength);
+        return (printerState, reasons, queueLength, deviceId, info, model);
     }
-
-    // ── State Normalization ───────────────────────────────────────────────────
 
     /// <summary>
     /// Maps raw CUPS IPP state values to the normalized <see cref="NormalizedPrinterState"/>.
     /// </summary>
-    private static NormalizedPrinterState Normalize(int printerState, List<string> reasons, int queueLength)
+    private static NormalizedPrinterState Normalize(int printerState, List<string> reasons, int queueLength, string? serialNumber)
     {
         var reasonSet  = new HashSet<string>(reasons, StringComparer.OrdinalIgnoreCase);
         var firstReason = reasons.Count > 0 ? reasons[0] : null;
 
-        // Reason-first overrides (highest priority)
+        // 1. Connection/Connectivity first
         if (reasonSet.Contains("offline-report") || reasonSet.Contains("disconnected"))
-            return new NormalizedPrinterState("Offline",     "offline-report", queueLength, null, "ipp");
+            return new NormalizedPrinterState("Offline", "offline-report", queueLength, null, "ipp", serialNumber);
 
         if (reasonSet.Contains("connecting-to-device"))
-            return new NormalizedPrinterState("Connecting",  "connecting-to-device", queueLength, null, "ipp");
+            return new NormalizedPrinterState("Connecting", "connecting-to-device", queueLength, null, "ipp", serialNumber);
 
+        // 2. Hardware Fault overrides (highest state priority)
+        if (reasonSet.Contains("cover-open"))
+            return new NormalizedPrinterState("Head Open", "cover-open", queueLength, null, "ipp", serialNumber);
+
+        if (reasonSet.Contains("media-empty") || reasonSet.Contains("media-jam"))
+            return new NormalizedPrinterState("Paper Out", "media-empty", queueLength, null, "ipp", serialNumber);
+
+        if (reasonSet.Contains("toner-empty") || reasonSet.Contains("marker-supply-empty"))
+            return new NormalizedPrinterState("Ribbon Out", "toner-empty", queueLength, null, "ipp", serialNumber);
+
+        if (reasonSet.Contains("spool-area-full"))
+            return new NormalizedPrinterState("Buffer Full", "spool-area-full", queueLength, null, "ipp", serialNumber);
+
+        if (reasonSet.Contains("device-overtemperature") || reasonSet.Contains("thermal-warning"))
+            return new NormalizedPrinterState("Thermal Warning", "device-overtemperature", queueLength, null, "ipp", serialNumber);
+
+        // 3. Runtime States based on printerState
         // State 3 = Idle
         if (printerState == 3)
         {
-            if (reasonSet.Contains("media-empty") || reasonSet.Contains("toner-empty") || reasonSet.Contains("cover-open"))
-                return new NormalizedPrinterState("Error",   firstReason, queueLength, null, "ipp");
-
             if (reasonSet.Contains("media-low") || reasonSet.Contains("toner-low") || reasonSet.Contains("marker-supply-low-warning"))
-                return new NormalizedPrinterState("Warning", firstReason, queueLength, null, "ipp");
+                return new NormalizedPrinterState("Warning", firstReason, queueLength, null, "ipp", serialNumber);
 
             if (queueLength > 0)
-                return new NormalizedPrinterState("Waiting", firstReason, queueLength, null, "ipp");
+                return new NormalizedPrinterState("Waiting", firstReason, queueLength, null, "ipp", serialNumber);
 
-            return new NormalizedPrinterState("Online",  firstReason, queueLength, null, "ipp");
+            return new NormalizedPrinterState("Online", firstReason, queueLength, null, "ipp", serialNumber);
         }
 
         // State 4 = Processing
         if (printerState == 4)
         {
             if (reasonSet.Contains("job-printing"))
-                return new NormalizedPrinterState("Printing", firstReason, queueLength, null, "ipp");
+                return new NormalizedPrinterState("Printing", firstReason, queueLength, null, "ipp", serialNumber);
 
-            return new NormalizedPrinterState("Busy", firstReason, queueLength, null, "ipp");
+            return new NormalizedPrinterState("Busy", firstReason, queueLength, null, "ipp", serialNumber);
         }
 
         // State 5 = Stopped
         if (printerState == 5)
         {
             if (queueLength > 0)
-                return new NormalizedPrinterState("Waiting", firstReason, queueLength, null, "ipp");
+                return new NormalizedPrinterState("Waiting", firstReason, queueLength, null, "ipp", serialNumber);
 
-            return new NormalizedPrinterState("Error", firstReason ?? "stopped", queueLength, null, "ipp");
+            return new NormalizedPrinterState("Error", firstReason ?? "stopped", queueLength, null, "ipp", serialNumber);
         }
 
-        // Unknown state (shouldn't happen with a healthy CUPS)
-        return new NormalizedPrinterState("Unknown", firstReason, queueLength, null, "ipp");
+        // Unknown state
+        return new NormalizedPrinterState("Unknown", firstReason, queueLength, null, "ipp", serialNumber);
     }
 
     // ── TCP Fallback ──────────────────────────────────────────────────────────

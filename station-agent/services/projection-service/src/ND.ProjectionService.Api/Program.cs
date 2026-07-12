@@ -94,6 +94,20 @@ using (var scope = app.Services.CreateScope())
             "UPDATE projection_alarms SET current_state = 'Acknowledged' WHERE is_acknowledged = 1 AND current_state = 'Active';",
             // Index on alarm_group_key for fast dedup lookups
             "CREATE INDEX IF NOT EXISTS idx_alarms_group_key ON projection_alarms(alarm_group_key);",
+            // New diagnostic columns in projection_device_status
+            "ALTER TABLE projection_device_status ADD COLUMN serial_number TEXT;",
+            "ALTER TABLE projection_device_status ADD COLUMN lifetime_print_counter INTEGER;",
+            "ALTER TABLE projection_device_status ADD COLUMN thermal_temp REAL;",
+            "ALTER TABLE projection_device_status ADD COLUMN connection_details TEXT;",
+            // Device Status History Table
+            @"CREATE TABLE IF NOT EXISTS projection_device_status_history (
+                id TEXT PRIMARY KEY,
+                device_id TEXT NOT NULL,
+                lifecycle_state TEXT NOT NULL,
+                is_online INTEGER NOT NULL,
+                timestamp TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );"
         })
         {
             cmd.CommandText = sql;
@@ -169,6 +183,27 @@ app.MapGet("/api/projection/devices", async (
         d.LifecycleState));
 
     return Results.Ok(dtos);
+});
+
+app.MapGet("/api/projection/devices/{code}/history", async (
+    string code,
+    ProjectionDbContext db,
+    CancellationToken ct) =>
+{
+    var history = await db.DeviceStatusHistories
+        .Where(h => h.DeviceId == code)
+        .OrderByDescending(h => h.Timestamp)
+        .Take(50)
+        .Select(h => new
+        {
+            deviceId = h.DeviceId,
+            lifecycleState = h.LifecycleState,
+            isOnline = h.IsOnline,
+            timestamp = h.Timestamp
+        })
+        .ToListAsync(ct);
+
+    return Results.Ok(history);
 });
 
 app.MapGet("/api/projection/records/today", async (
@@ -567,7 +602,28 @@ app.MapGet("/api/projection/printers/active", async (
         var body = await res.Content.ReadAsStringAsync(ct);
         return Results.Content(body, "application/json", statusCode: (int)res.StatusCode);
     }
-    catch (Exception ex) { return Results.Problem(ex.Message); }
+    catch
+    {
+        return Results.Problem("Printer adapter unreachable", statusCode: 502);
+    }
+});
+
+app.MapGet("/api/projection/printers/{code}/maintenance", async (
+    string code,
+    IHttpClientFactory httpClientFactory, IConfiguration configuration, CancellationToken ct) =>
+{
+    var adapterUrl = configuration["PRINTER_ADAPTER_URL"] ?? "http://printer-adapter:5003";
+    using var client = httpClientFactory.CreateClient();
+    try
+    {
+        var res = await client.GetAsync($"{adapterUrl}/api/printers/{code}/maintenance", ct);
+        var body = await res.Content.ReadAsStringAsync(ct);
+        return Results.Content(body, "application/json", statusCode: (int)res.StatusCode);
+    }
+    catch
+    {
+        return Results.Problem("Printer adapter unreachable", statusCode: 502);
+    }
 });
 
 app.MapPost("/api/projection/printers/{code}/activate", async (

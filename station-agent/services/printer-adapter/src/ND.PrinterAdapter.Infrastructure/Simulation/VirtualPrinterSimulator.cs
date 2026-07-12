@@ -58,6 +58,19 @@ public sealed class VirtualPrinterSimulator : BackgroundService
         _logger = logger;
     }
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _printCounters = new();
+
+    public string GetSimulatorMode(string printerCode)
+    {
+        var ep = _endpoints.FirstOrDefault(e => e.PrinterCode.Equals(printerCode, StringComparison.OrdinalIgnoreCase));
+        return ep?.SimulatorMode ?? "Success";
+    }
+
+    public long GetPrintCounter(string printerCode)
+    {
+        return _printCounters.TryGetValue(printerCode.ToLowerInvariant(), out var count) ? count : 0;
+    }
+
     public void SetMode(string printerCode, string mode)
     {
         var ep = _endpoints.FirstOrDefault(e => e.PrinterCode.Equals(printerCode, StringComparison.OrdinalIgnoreCase));
@@ -213,6 +226,21 @@ public sealed class VirtualPrinterSimulator : BackgroundService
                     PrinterSimulatorMode.MemoryFull => "NACK: MEMORY_FULL",
                     _ => status == "PRINTED" ? "ACK" : "NACK: UNKNOWN"
                 };
+                if (resp == "ACK")
+                {
+                    var labelCount = 0;
+                    if (zpl != null)
+                    {
+                        int pos = 0;
+                        while ((pos = zpl.IndexOf("^XA", pos, StringComparison.OrdinalIgnoreCase)) != -1)
+                        {
+                            labelCount++;
+                            pos += 3;
+                        }
+                    }
+                    if (labelCount == 0) labelCount = 1;
+                    _printCounters.AddOrUpdate(ep.PrinterCode.ToLowerInvariant(), labelCount, (k, old) => old + labelCount);
+                }
                 await stream.WriteAsync(Encoding.ASCII.GetBytes(resp + "\n"), ct);
             }
             catch (OperationCanceledException) { return; }

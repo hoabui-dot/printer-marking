@@ -17,7 +17,12 @@ public enum PrinterDriverStatus
     Stopped,      // Legacy: paused queue (maps to Error in UI)
     Offline,
     Disconnected, // Legacy: TCP unreachable (simulation)
-    Error
+    Error,
+    PaperOut,
+    RibbonOut,
+    HeadOpen,
+    BufferFull,
+    ThermalWarning
 }
 
 /// <summary>Result of a print operation.</summary>

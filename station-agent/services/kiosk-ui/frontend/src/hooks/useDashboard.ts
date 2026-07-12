@@ -40,6 +40,10 @@ export interface DeviceStatus {
   isOnline: boolean
   lastSeenAt: string
   lifecycleState?: string
+  serialNumber?: string
+  lifetimePrintCounter?: number
+  thermalTemp?: number
+  connectionDetails?: string
 }
 
 export interface ProductionRecord {

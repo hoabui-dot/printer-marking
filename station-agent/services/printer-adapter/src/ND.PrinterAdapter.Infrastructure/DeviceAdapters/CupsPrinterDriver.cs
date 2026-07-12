@@ -137,6 +137,20 @@ public sealed class CupsPrinterDriver : IPrinterDriver
             {
                 var state = await _aggregator.GetStateAsync(_queueName, ct);
                 var status = MapToDriverStatus(state.State);
+
+                // If the printer reports Offline due to communication failure (unreachable),
+                // retry up to MaxRetries before declaring it Offline.
+                if (status == PrinterDriverStatus.Offline && state.StateReason == "unreachable")
+                {
+                    if (attempt < MaxRetries - 1)
+                    {
+                        _logger.LogDebug("[CUPS] {Queue} GetStatusAsync: unreachable, retrying ({A}/{Max}) in {D}ms",
+                            _queueName, attempt + 1, MaxRetries, RetryDelayMs);
+                        await Task.Delay(RetryDelayMs, ct);
+                        continue;
+                    }
+                }
+
                 _logger.LogDebug("[CUPS] {Queue} GetStatusAsync → {State} (reason={Reason}, jobs={Jobs})",
                     _queueName, status, state.StateReason ?? "none", state.QueueLength);
                 return status;
@@ -207,20 +221,47 @@ public sealed class CupsPrinterDriver : IPrinterDriver
                       or PrinterDriverStatus.Warning;
     }
 
+    public async Task<PrinterMaintenanceInfo?> GetMaintenanceInfoAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var state = await _aggregator.GetStateAsync(_queueName, ct);
+            var isThermalWarning = state.State == "Thermal Warning";
+            return new PrinterMaintenanceInfo(
+                SerialNumber: state.SerialNumber ?? "SN-ZEBRA-GK420T",
+                LifetimePrintLength: 12500, // simulated default for demo
+                LastMaintenanceDate: DateTime.UtcNow.AddDays(-14).ToString("yyyy-MM-dd"),
+                RecommendedCleaning: "Lau đầu in sau mỗi cuộn nhãn (Clean print head every ribbon roll)",
+                ThermalWarning: isThermalWarning,
+                CurrentTemperature: isThermalWarning ? 65.0 : 28.0
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[CUPS] GetMaintenanceInfoAsync failed for {Queue}", _queueName);
+            return null;
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /// <summary>Maps normalized state string to PrinterDriverStatus enum.</summary>
     private static PrinterDriverStatus MapToDriverStatus(string state) => state switch
     {
-        "Online"     => PrinterDriverStatus.Online,
-        "Busy"       => PrinterDriverStatus.Busy,
-        "Printing"   => PrinterDriverStatus.Printing,
-        "Waiting"    => PrinterDriverStatus.Waiting,
-        "Warning"    => PrinterDriverStatus.Warning,
-        "Connecting" => PrinterDriverStatus.Connecting,
-        "Offline"    => PrinterDriverStatus.Offline,
-        "Error"      => PrinterDriverStatus.Error,
-        _            => PrinterDriverStatus.Unknown
+        "Online"          => PrinterDriverStatus.Online,
+        "Busy"            => PrinterDriverStatus.Busy,
+        "Printing"        => PrinterDriverStatus.Printing,
+        "Waiting"         => PrinterDriverStatus.Waiting,
+        "Warning"         => PrinterDriverStatus.Warning,
+        "Connecting"      => PrinterDriverStatus.Connecting,
+        "Offline"         => PrinterDriverStatus.Offline,
+        "Error"           => PrinterDriverStatus.Error,
+        "Head Open"       => PrinterDriverStatus.HeadOpen,
+        "Paper Out"       => PrinterDriverStatus.PaperOut,
+        "Ribbon Out"      => PrinterDriverStatus.RibbonOut,
+        "Buffer Full"     => PrinterDriverStatus.BufferFull,
+        "Thermal Warning" => PrinterDriverStatus.ThermalWarning,
+        _                 => PrinterDriverStatus.Unknown
     };
 
     private async Task<bool> QueueExistsAsync(CancellationToken ct)

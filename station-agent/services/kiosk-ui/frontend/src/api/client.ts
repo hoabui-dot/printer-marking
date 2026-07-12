@@ -147,4 +147,6 @@ export const templateApi = {
     client.post(`/projection/printers/${printerCode}/activate`, { templateId, activatedBy }),
   deactivatePrinter: (printerCode: string) =>
     client.post(`/projection/printers/${printerCode}/deactivate`),
+  getPrinterMaintenance: (printerCode: string) =>
+    client.get<any>(`/projection/printers/${printerCode}/maintenance`),
 }

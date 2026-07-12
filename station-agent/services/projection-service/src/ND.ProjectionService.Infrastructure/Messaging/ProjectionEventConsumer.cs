@@ -12,6 +12,8 @@ using ND.ProjectionService.Infrastructure.SignalR;
 using ND.SharedKernel.Abstractions;
 using ND.UnifiedContracts.Constants;
 using ND.UnifiedContracts.Events;
+using ND.ProjectionService.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace ND.ProjectionService.Infrastructure.Messaging;
 
@@ -802,51 +804,99 @@ public sealed class ProjectionEventConsumer : BackgroundService
 
             using var scope = _scopeFactory.CreateScope();
             var deviceRepo = scope.ServiceProvider.GetRequiredService<IDeviceStatusRepository>();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ProjectionDbContext>();
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
             var device = await deviceRepo.GetByIdAsync(heartbeat.DeviceId, cancellationToken);
             bool wasOnline  = device != null && device.IsOnline;
             bool wasOffline = device != null && !device.IsOnline;
+            string? oldLifecycle = device?.LifecycleState;
+
+            bool stateChanged = device == null 
+                || device.IsOnline != heartbeat.IsOnline 
+                || device.LifecycleState != heartbeat.LifecycleState;
 
             if (device == null)
             {
-                device = DeviceStatus.Create(heartbeat.DeviceId, heartbeat.DeviceType, heartbeat.IsOnline, heartbeat.Timestamp, heartbeat.LifecycleState);
+                device = DeviceStatus.Create(
+                    heartbeat.DeviceId, 
+                    heartbeat.DeviceType, 
+                    heartbeat.IsOnline, 
+                    heartbeat.Timestamp, 
+                    heartbeat.LifecycleState,
+                    heartbeat.SerialNumber,
+                    heartbeat.LifetimePrintCounter,
+                    heartbeat.ThermalTemp,
+                    heartbeat.ConnectionDetails);
                 await deviceRepo.AddAsync(device, cancellationToken);
             }
             else
             {
-                device.UpdateStatus(heartbeat.IsOnline, heartbeat.Timestamp, heartbeat.LifecycleState);
+                device.UpdateStatus(
+                    heartbeat.IsOnline, 
+                    heartbeat.Timestamp, 
+                    heartbeat.LifecycleState,
+                    heartbeat.SerialNumber,
+                    heartbeat.LifetimePrintCounter,
+                    heartbeat.ThermalTemp,
+                    heartbeat.ConnectionDetails);
             }
 
+            if (stateChanged)
+            {
+                // Phase 11: Log transition to history
+                var transitionHistory = DeviceStatusHistory.Create(
+                    heartbeat.DeviceId,
+                    heartbeat.LifecycleState,
+                    heartbeat.IsOnline,
+                    heartbeat.Timestamp
+                );
+                await dbContext.DeviceStatusHistories.AddAsync(transitionHistory, cancellationToken);
+            }
+
+            // Always save updates to the database (silent DB updates)
             await unitOfWork.SaveChangesAsync(cancellationToken);
 
-            // Push SignalR device status update
-            var dto = new DeviceStatusDto(device.DeviceId, device.DeviceType, device.IsOnline, device.LastSeenAt, device.LifecycleState);
-            await _hubContext.Clients.Group(_stationId).SendAsync("OnDeviceStatusUpdate", dto, cancellationToken);
+            // Phase 6: SignalR Idempotency - only push status updates to client on actual state changes
+            if (stateChanged)
+            {
+                var dto = new DeviceStatusDto(device.DeviceId, device.DeviceType, device.IsOnline, device.LastSeenAt, device.LifecycleState);
+                await _hubContext.Clients.Group(_stationId).SendAsync("OnDeviceStatusUpdate", dto, cancellationToken);
+            }
 
-            // ── Alarm: device went online → offline ────────────────────────────
-            // Raise a DeviceConnection alarm immediately so the Alarm Center reflects
-            // the hardware failure. Uses the deviceId as group key for deduplication:
-            // repeated offline heartbeats bump RepeatCount instead of creating new rows.
-            if (!heartbeat.IsOnline && wasOnline)
+            // Phase 7: Alarms for fault states (Offline, Paper Out, Ribbon Out, Head Open, Buffer Full, Thermal Warning)
+            bool isFaultState = !heartbeat.IsOnline 
+                || heartbeat.LifecycleState is "Paper Out" 
+                || heartbeat.LifecycleState is "Ribbon Out" 
+                || heartbeat.LifecycleState is "Head Open" 
+                || heartbeat.LifecycleState is "Buffer Full" 
+                || heartbeat.LifecycleState is "Thermal Warning";
+
+            bool wasFaultState = !wasOnline 
+                || oldLifecycle is "Paper Out" 
+                || oldLifecycle is "Ribbon Out" 
+                || oldLifecycle is "Head Open" 
+                || oldLifecycle is "Buffer Full" 
+                || oldLifecycle is "Thermal Warning";
+
+            if (isFaultState && (!wasFaultState || oldLifecycle != heartbeat.LifecycleState))
             {
                 try
                 {
                     var alarmRepo = scope.ServiceProvider.GetRequiredService<IAlarmRepository>();
-                    var existingAlarm = await alarmRepo.GetActiveByGroupKeyAsync(heartbeat.DeviceId, cancellationToken);
+                    var alarmGroupKey = $"{heartbeat.DeviceId}-{heartbeat.LifecycleState.Replace(" ", "")}";
+                    var existingAlarm = await alarmRepo.GetActiveByGroupKeyAsync(alarmGroupKey, cancellationToken);
 
                     if (existingAlarm != null && existingAlarm.CurrentState == "Active")
                     {
-                        // Already an active offline alarm — bump repeat count only (no new broadcast)
                         existingAlarm.UpdateRepeat(heartbeat.Timestamp);
                         await unitOfWork.SaveChangesAsync(cancellationToken);
                         _logger.LogDebug(
-                            "Alarm dedup: updated existing device offline alarm for {DeviceId}, RepeatCount={Rc}",
+                            "Alarm dedup: updated existing device alarm for {DeviceId}, RepeatCount={Rc}",
                             heartbeat.DeviceId, existingAlarm.RepeatCount);
                     }
                     else
                     {
-                        // First offline transition — create new alarm and broadcast via SignalR
                         var lifecycleDetail = heartbeat.LifecycleState is not null and not "Offline"
                             ? $" (trạng thái: {heartbeat.LifecycleState})"
                             : string.Empty;
@@ -854,11 +904,11 @@ public sealed class ProjectionEventConsumer : BackgroundService
                         var alarm = Alarm.Create(
                             severity: "Error",
                             source: "Device",
-                            message: $"Thiết bị {heartbeat.DeviceId} ({heartbeat.DeviceType}) mất kết nối{lifecycleDetail}.",
+                            message: $"Thiết bị {heartbeat.DeviceId} ({heartbeat.DeviceType}) báo lỗi hoặc mất kết nối{lifecycleDetail}.",
                             deviceId: heartbeat.DeviceId,
                             deviceName: heartbeat.DeviceId,
                             alarmType: "DeviceConnection",
-                            alarmGroupKey: heartbeat.DeviceId
+                            alarmGroupKey: alarmGroupKey
                         );
                         await alarmRepo.AddAsync(alarm, cancellationToken);
                         await unitOfWork.SaveChangesAsync(cancellationToken);
@@ -874,27 +924,26 @@ public sealed class ProjectionEventConsumer : BackgroundService
                         );
                         await _hubContext.Clients.Group(_stationId).SendAsync("OnAlarmRaised", alarmDto, cancellationToken);
 
-                        _logger.LogWarning(
-                            "Device {DeviceId} went offline — alarm raised (Id={AlarmId})",
-                            heartbeat.DeviceId, alarm.Id);
+                        _logger.LogWarning("Device {DeviceId} went offline or reports fault {Fault} — alarm raised", heartbeat.DeviceId, heartbeat.LifecycleState);
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to raise device offline alarm for {DeviceId}", heartbeat.DeviceId);
+                    _logger.LogError(ex, "Failed to raise device offline or fault alarm for {DeviceId}", heartbeat.DeviceId);
                 }
             }
 
-            // ── Alarm: device recovered offline → online ───────────────────────
-            // Auto-resolve the previously-raised DeviceConnection alarm so the
-            // Alarm Center removes the red indicator without operator intervention.
-            if (heartbeat.IsOnline && wasOffline)
+            // Phase 7: Recovered/Operational - auto-resolve active alarms
+            if (!isFaultState && wasFaultState)
             {
                 try
                 {
                     var alarmRepo = scope.ServiceProvider.GetRequiredService<IAlarmRepository>();
-                    var existingAlarm = await alarmRepo.GetActiveByGroupKeyAsync(heartbeat.DeviceId, cancellationToken);
-                    if (existingAlarm != null && existingAlarm.CurrentState == "Active")
+                    var activeAlarms = await dbContext.Alarms
+                        .Where(a => a.DeviceId == heartbeat.DeviceId && a.CurrentState == "Active")
+                        .ToListAsync(cancellationToken);
+
+                    foreach (var existingAlarm in activeAlarms)
                     {
                         existingAlarm.Resolve(resolvedBy: "System");
                         await unitOfWork.SaveChangesAsync(cancellationToken);
@@ -910,9 +959,7 @@ public sealed class ProjectionEventConsumer : BackgroundService
                         );
                         await _hubContext.Clients.Group(_stationId).SendAsync("OnAlarmRaised", alarmDto, cancellationToken);
 
-                        _logger.LogInformation(
-                            "Device {DeviceId} recovered — auto-resolved alarm {AlarmId}",
-                            heartbeat.DeviceId, existingAlarm.Id);
+                        _logger.LogInformation("Device {DeviceId} recovered — resolved alarm {AlarmId}", heartbeat.DeviceId, existingAlarm.Id);
                     }
                 }
                 catch (Exception ex)
