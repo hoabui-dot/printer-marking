@@ -72,6 +72,7 @@ builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 
 // Register hosted consumer
 builder.Services.AddHostedService<JobProcessingConsumer>();
+builder.Services.AddHostedService<BatchPrintConsumer>();
 builder.Services.AddHostedService<HeartbeatHostedService>();
 builder.Services.AddHostedService<PrinterHealthService>();
 

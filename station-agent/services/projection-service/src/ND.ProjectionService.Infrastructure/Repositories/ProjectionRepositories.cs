@@ -163,6 +163,12 @@ public sealed class ProductionRecordRepository : IProductionRecordRepository
     public async Task<ProductionRecord?> GetByJobIdAsync(string jobId, CancellationToken ct = default)
         => await _context.ProductionRecords.FirstOrDefaultAsync(r => r.JobId == jobId, ct);
 
+    public async Task<IReadOnlyList<ProductionRecord>> GetByJobNoAsync(string jobNo, CancellationToken ct = default)
+        => await _context.ProductionRecords
+            .Where(r => r.JobNo == jobNo)
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync(ct);
+
     public async Task<(IReadOnlyList<ProductionRecord> Items, int TotalCount)> GetTodayAsync(
         int page, int pageSize, CancellationToken ct = default)
     {

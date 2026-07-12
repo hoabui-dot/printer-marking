@@ -693,13 +693,201 @@ public static class JobEventRoutingKeys
     public const string ProductionOrderCreated = "production.order.created";
     public const string Created = "job.created";
     public const string Processing = "job.processing";
+    public const string Preparing = "job.preparing";
     public const string Completed = "job.completed";
     public const string Failed = "job.failed";
     public const string PrinterPrinted = "printer.printed";
+    public const string PrinterBatchPrinted = "printer.batch.printed";
     public const string LaserMarked = "laser.marked";
     public const string PrinterHealthChanged = "printer.health-changed";
     public const string ManualOverride = "command.manual-override";
     public const string ManualReprint = "command.manual-reprint";
     public const string ManualRemarking = "command.manual-remarking";
     public const string ManualReprocess = "command.manual-reprocess";
+    public const string BatchPrint = "command.printer.print.batch";
+}
+
+// ────────────────── Batch Print Pipeline Events ───────────────────────────────
+
+/// <summary>
+/// Published by Job Engine when a Production Order enters the PREPARING phase.
+/// The printer has NOT yet received any data — the system is rendering ZPL in memory.
+/// RabbitMQ routing key: <c>job.preparing</c>
+/// </summary>
+public sealed record ProductionPreparingEvent
+{
+    [JsonPropertyName("event_type")]
+    public string EventType { get; init; } = "ProductionPreparing";
+
+    [JsonPropertyName("event_id")]
+    public required string EventId { get; init; }
+
+    [JsonPropertyName("production_order_no")]
+    public required string ProductionOrderNo { get; init; }
+
+    [JsonPropertyName("product_code")]
+    public required string ProductCode { get; init; }
+
+    [JsonPropertyName("planned_qty")]
+    public required int PlannedQty { get; init; }
+
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = "PREPARING";
+
+    [JsonPropertyName("timestamp")]
+    public required string Timestamp { get; init; }
+
+    public static ProductionPreparingEvent Create(string productionOrderNo, string productCode, int plannedQty)
+        => new()
+        {
+            EventId = $"evt-preparing-{Guid.NewGuid():N}",
+            ProductionOrderNo = productionOrderNo,
+            ProductCode = productCode,
+            PlannedQty = plannedQty,
+            Timestamp = DateTimeOffset.UtcNow.ToString("o")
+        };
+}
+
+/// <summary>
+/// Represents one label item inside a <see cref="ProductionBatchPrintCommand"/>.
+/// </summary>
+public sealed record BatchLabelItem
+{
+    [JsonPropertyName("job_id")]
+    public required string JobId { get; init; }
+
+    [JsonPropertyName("product_serial")]
+    public string? ProductSerial { get; init; }
+
+    [JsonPropertyName("sequence")]
+    public int Sequence { get; init; }
+}
+
+/// <summary>
+/// Published by Job Engine to instruct Printer Adapter to render + batch-print all labels
+/// for a Production Order in a single printer communication round-trip.
+/// RabbitMQ routing key: <c>command.printer.print.batch</c>
+/// </summary>
+public sealed record ProductionBatchPrintCommand
+{
+    [JsonPropertyName("event_type")]
+    public string EventType { get; init; } = "ProductionBatchPrintCommand";
+
+    [JsonPropertyName("event_id")]
+    public required string EventId { get; init; }
+
+    [JsonPropertyName("production_order_no")]
+    public required string ProductionOrderNo { get; init; }
+
+    [JsonPropertyName("job_type")]
+    public required string JobType { get; init; }
+
+    [JsonPropertyName("product_code")]
+    public required string ProductCode { get; init; }
+
+    /// <summary>Shared payload JSON from the original MQTT event (template variables).</summary>
+    [JsonPropertyName("payload_json")]
+    public string? PayloadJson { get; init; }
+
+    [JsonPropertyName("target_printer")]
+    public string? TargetPrinter { get; init; }
+
+    /// <summary>"simulation" | "production-printer"</summary>
+    [JsonPropertyName("dispatch_target")]
+    public string DispatchTarget { get; init; } = "simulation";
+
+    /// <summary>All label items to render and print. Each item maps to one physical label.</summary>
+    [JsonPropertyName("label_items")]
+    public required IReadOnlyList<BatchLabelItem> LabelItems { get; init; }
+
+    /// <summary>
+    /// Maximum labels per ZPL chunk. Labels are split into sub-batches of this size.
+    /// Defaults to 100; configurable via <c>PrintBatch:ChunkSize</c> appsetting.
+    /// </summary>
+    [JsonPropertyName("batch_size")]
+    public int BatchSize { get; init; } = 100;
+
+    [JsonPropertyName("timestamp")]
+    public required string Timestamp { get; init; }
+
+    public static ProductionBatchPrintCommand Create(
+        string productionOrderNo,
+        string jobType,
+        string productCode,
+        string? payloadJson,
+        string? targetPrinter,
+        string dispatchTarget,
+        IReadOnlyList<BatchLabelItem> labelItems,
+        int batchSize = 100)
+        => new()
+        {
+            EventId = $"evt-batch-print-{Guid.NewGuid():N}",
+            ProductionOrderNo = productionOrderNo,
+            JobType = jobType,
+            ProductCode = productCode,
+            PayloadJson = payloadJson,
+            TargetPrinter = targetPrinter,
+            DispatchTarget = dispatchTarget,
+            LabelItems = labelItems,
+            BatchSize = batchSize,
+            Timestamp = DateTimeOffset.UtcNow.ToString("o")
+        };
+}
+
+/// <summary>
+/// Published by Printer Adapter after a batch print completes (success or failure).
+/// RabbitMQ routing key: <c>printer.batch.printed</c>
+/// </summary>
+public sealed record ProductionBatchPrintedEvent
+{
+    [JsonPropertyName("event_type")]
+    public string EventType { get; init; } = "ProductionBatchPrinted";
+
+    [JsonPropertyName("event_id")]
+    public required string EventId { get; init; }
+
+    [JsonPropertyName("production_order_no")]
+    public required string ProductionOrderNo { get; init; }
+
+    [JsonPropertyName("printer_code")]
+    public required string PrinterCode { get; init; }
+
+    [JsonPropertyName("success")]
+    public required bool Success { get; init; }
+
+    /// <summary>Job IDs that printed successfully.</summary>
+    [JsonPropertyName("succeeded_job_ids")]
+    public required IReadOnlyList<string> SucceededJobIds { get; init; }
+
+    /// <summary>Job IDs that failed (empty on full success).</summary>
+    [JsonPropertyName("failed_job_ids")]
+    public required IReadOnlyList<string> FailedJobIds { get; init; }
+
+    [JsonPropertyName("completed_count")]
+    public int CompletedCount { get; init; }
+
+    [JsonPropertyName("error_message")]
+    public string? ErrorMessage { get; init; }
+
+    [JsonPropertyName("timestamp")]
+    public required string Timestamp { get; init; }
+
+    public static ProductionBatchPrintedEvent Create(
+        string productionOrderNo,
+        string printerCode,
+        IReadOnlyList<string> succeededJobIds,
+        IReadOnlyList<string> failedJobIds,
+        string? errorMessage = null)
+        => new()
+        {
+            EventId = $"evt-batch-printed-{Guid.NewGuid():N}",
+            ProductionOrderNo = productionOrderNo,
+            PrinterCode = printerCode,
+            Success = failedJobIds.Count == 0,
+            SucceededJobIds = succeededJobIds,
+            FailedJobIds = failedJobIds,
+            CompletedCount = succeededJobIds.Count,
+            ErrorMessage = errorMessage,
+            Timestamp = DateTimeOffset.UtcNow.ToString("o")
+        };
 }

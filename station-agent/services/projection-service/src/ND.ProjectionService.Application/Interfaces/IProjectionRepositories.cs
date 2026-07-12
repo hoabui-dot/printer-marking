@@ -23,6 +23,9 @@ public interface IProductionRecordRepository : IRepository<ProductionRecord>
 {
     Task<ProductionRecord?> GetByJobIdAsync(string jobId, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns all records for a given production order (JobNo), newest first.</summary>
+    Task<IReadOnlyList<ProductionRecord>> GetByJobNoAsync(string jobNo, CancellationToken cancellationToken = default);
+
     /// <summary>Returns records created today (UTC), newest first, paginated.</summary>
     Task<(IReadOnlyList<ProductionRecord> Items, int TotalCount)> GetTodayAsync(
         int page, int pageSize, CancellationToken cancellationToken = default);

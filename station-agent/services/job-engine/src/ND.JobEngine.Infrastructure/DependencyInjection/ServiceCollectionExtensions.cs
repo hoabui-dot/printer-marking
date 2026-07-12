@@ -65,6 +65,7 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<ManualOverrideConsumer>();
         services.AddHostedService<VisionVerificationConsumer>();
         services.AddHostedService<PlcRejectConsumer>();
+        services.AddHostedService<PrinterBatchPrintedConsumer>();
         services.AddHostedService<HeartbeatHostedService>();
 
         return services;

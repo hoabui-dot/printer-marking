@@ -79,9 +79,25 @@ public sealed class Job : AuditableEntity
 
     public void StartProcessing()
     {
-        if (CurrentStatus != JobStatus.Queued && CurrentStatus != JobStatus.WaitRework && CurrentStatus != JobStatus.Waiting)
+        if (CurrentStatus != JobStatus.Queued
+            && CurrentStatus != JobStatus.WaitRework
+            && CurrentStatus != JobStatus.Waiting
+            && CurrentStatus != JobStatus.Preparing)
             throw new InvalidJobTransitionException(Id, CurrentStatus, JobStatus.Processing);
         CurrentStatus = JobStatus.Processing;
+        Touch();
+    }
+
+    /// <summary>
+    /// Transitions the job to PREPARING: all ZPL is being rendered in memory.
+    /// The printer has not received any data yet.
+    /// Valid from: QUEUED, WAITING
+    /// </summary>
+    public void SetPreparing()
+    {
+        if (CurrentStatus != JobStatus.Queued && CurrentStatus != JobStatus.Waiting)
+            throw new InvalidJobTransitionException(Id, CurrentStatus, JobStatus.Preparing);
+        CurrentStatus = JobStatus.Preparing;
         Touch();
     }
 
@@ -135,10 +151,13 @@ public sealed class Job : AuditableEntity
     {
         var allowed = targetStatus switch
         {
-            JobStatus.Queued => CurrentStatus == JobStatus.Created || CurrentStatus == JobStatus.Waiting,
-            JobStatus.Completed => CurrentStatus == JobStatus.Processing,
-            JobStatus.Failed => CurrentStatus == JobStatus.Processing || CurrentStatus == JobStatus.Queued || CurrentStatus == JobStatus.Waiting,
-            JobStatus.Waiting => CurrentStatus == JobStatus.Queued || CurrentStatus == JobStatus.Created,
+            JobStatus.Queued    => CurrentStatus == JobStatus.Created || CurrentStatus == JobStatus.Waiting,
+            JobStatus.Completed => CurrentStatus == JobStatus.Processing || CurrentStatus == JobStatus.Preparing,
+            JobStatus.Failed    => CurrentStatus == JobStatus.Processing
+                                || CurrentStatus == JobStatus.Queued
+                                || CurrentStatus == JobStatus.Waiting
+                                || CurrentStatus == JobStatus.Preparing,
+            JobStatus.Waiting   => CurrentStatus == JobStatus.Queued || CurrentStatus == JobStatus.Created,
             _ => false
         };
 

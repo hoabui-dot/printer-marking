@@ -129,6 +129,22 @@ public sealed class ProjectionEventConsumer : BackgroundService
             onMessage: (routingKey, json) => HandleDeviceHeartbeatAsync(routingKey, json, stoppingToken),
             cancellationToken: stoppingToken);
 
+        // 8. Consume batch print preparing events
+        await _consumer.StartConsumingAsync(
+            exchange: Exchange,
+            queue: "projection-service.preparing-events",
+            routingKeyPattern: JobEventRoutingKeys.Preparing,
+            onMessage: (routingKey, json) => HandleJobEventAsync(routingKey, json, stoppingToken),
+            cancellationToken: stoppingToken);
+
+        // 9. Consume batch printed results
+        await _consumer.StartConsumingAsync(
+            exchange: Exchange,
+            queue: "projection-service.batch-printed-events",
+            routingKeyPattern: JobEventRoutingKeys.PrinterBatchPrinted,
+            onMessage: (routingKey, json) => HandleJobEventAsync(routingKey, json, stoppingToken),
+            cancellationToken: stoppingToken);
+
         // Keep service alive
         await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
     }
@@ -219,6 +235,37 @@ public sealed class ProjectionEventConsumer : BackgroundService
                     productionRecordToPush = record;
                 }
             }
+            else if (routingKey.Equals(JobEventRoutingKeys.Preparing, StringComparison.OrdinalIgnoreCase))
+            {
+                // Phase 1: ZPL is being rendered in memory. Printer has not received any data yet.
+                var evt = JsonSerializer.Deserialize<ProductionPreparingEvent>(payloadJson, JsonSerializerOptions);
+                if (evt != null)
+                {
+                    view = await productionRepo.GetByStationIdAsync(_stationId, cancellationToken);
+                    if (view != null)
+                    {
+                        view.UpdateStatus("PREPARING");
+                        await productionRepo.UpdateAsync(view, cancellationToken);
+                    }
+
+                    log = ActivityLog.Create(
+                        "ProductionPreparing",
+                        jobId: evt.ProductionOrderNo,
+                        jobNo: evt.ProductionOrderNo,
+                        productCode: evt.ProductCode,
+                        status: "PREPARING",
+                        message: $"Lệnh {evt.ProductionOrderNo}: đang chuẩn bị {evt.PlannedQty} nhãn in trong bộ nhớ.",
+                        occurredAt: evt.Timestamp);
+
+                    // Update all records for this production order to PREPARING
+                    var orderRecords = await recordRepo.GetByJobNoAsync(evt.ProductionOrderNo, cancellationToken);
+                    foreach (var rec in orderRecords)
+                    {
+                        rec.UpdateStatus("PREPARING");
+                        await recordRepo.UpdateAsync(rec, cancellationToken);
+                    }
+                }
+            }
             else if (routingKey.Equals("job.processing", StringComparison.OrdinalIgnoreCase))
             {
                 var evt = JsonSerializer.Deserialize<JobProcessingEvent>(payloadJson, JsonSerializerOptions);
@@ -254,6 +301,52 @@ public sealed class ProjectionEventConsumer : BackgroundService
                         record.SetStart(evt.Timestamp ?? DateTimeOffset.UtcNow.ToString("o"));
                         await recordRepo.UpdateAsync(record, cancellationToken);
                         productionRecordToPush = record;
+                    }
+                }
+            }
+            else if (routingKey.Equals(JobEventRoutingKeys.PrinterBatchPrinted, StringComparison.OrdinalIgnoreCase))
+            {
+                // Phase 2: batch has been sent to the printer. Update records to PRINTING then let
+                // subsequent job.completed events flip them to COMPLETED individually.
+                var evt = JsonSerializer.Deserialize<ProductionBatchPrintedEvent>(payloadJson, JsonSerializerOptions);
+                if (evt != null)
+                {
+                    _logger.LogInformation(
+                        "Batch printed for PO={OrderNo}: Succeeded={S} Failed={F}",
+                        evt.ProductionOrderNo, evt.SucceededJobIds.Count, evt.FailedJobIds.Count);
+
+                    // Mark succeeded records as PRINTING (job.completed arrives next and flips to COMPLETED)
+                    foreach (var jobId in evt.SucceededJobIds)
+                    {
+                        var rec = await recordRepo.GetByJobIdAsync(jobId, cancellationToken);
+                        if (rec != null)
+                        {
+                            rec.UpdateStatus("PRINTING");
+                            await recordRepo.UpdateAsync(rec, cancellationToken);
+                        }
+                    }
+
+                    // Mark failed records as FAILED
+                    foreach (var jobId in evt.FailedJobIds)
+                    {
+                        var rec = await recordRepo.GetByJobIdAsync(jobId, cancellationToken);
+                        if (rec != null)
+                        {
+                            rec.SetFailed(evt.ErrorMessage, DateTimeOffset.UtcNow.ToString("o"));
+                            await recordRepo.UpdateAsync(rec, cancellationToken);
+                        }
+                    }
+
+                    // Update the production order view completedQty for succeeded items
+                    var orderRepo = scope.ServiceProvider.GetRequiredService<IProductionOrderViewRepository>();
+                    var orderView = await orderRepo.GetByOrderNoAsync(evt.ProductionOrderNo, cancellationToken);
+                    if (orderView != null)
+                    {
+                        // We'll let job.completed events do the increments individually, but if the order
+                        // has all labels printing, update the live UI now
+                        await _hubContext.Clients.Group(_stationId).SendAsync("OnProductionOrderUpdate",
+                            new { orderView.OrderNo, orderView.PlannedQty, orderView.CompletedQty, orderView.RemainingQty, orderView.Status },
+                            cancellationToken);
                     }
                 }
             }

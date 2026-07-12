@@ -999,7 +999,7 @@ export default function DashboardPage() {
 
           {/* ════ TAB: DASHBOARD ════════════════════════════ */}
           {tab === 'dashboard' && (() => {
-            const isCurrentJob = activeJobDetails && (production?.jobStatus === 'PROCESSING' || production?.jobStatus === 'QUEUED' || production?.jobStatus === 'PENDING');
+            const isCurrentJob = activeJobDetails && (production?.jobStatus === 'PROCESSING' || production?.jobStatus === 'QUEUED' || production?.jobStatus === 'PENDING' || production?.jobStatus === 'PREPARING');
 
             const resolved = isCurrentJob ? getResolvedData() : {
               production_order: '—',
@@ -1097,13 +1097,43 @@ export default function DashboardPage() {
                       </div>
                       {/* Progress Bar */}
                       <div className="mt-4 pt-2 border-t border-border/50">
-                        <div className="flex justify-between items-center mb-1 text-xs font-semibold text-muted-fg">
-                          <span>TIẾN ĐỘ HOÀN THÀNH</span>
-                          <span>{pct}%</span>
-                        </div>
-                        <div className="w-full bg-surface-2 rounded-full h-2 overflow-hidden border border-border/50">
-                          <div className="bg-brand-dark h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }}></div>
-                        </div>
+                        {production?.jobStatus === 'PREPARING' ? (
+                          <>
+                            <div className="flex justify-between items-center mb-1 text-xs font-semibold text-muted-fg">
+                              <span className="flex items-center gap-1.5 text-violet-400">
+                                <span className="inline-block h-2 w-2 rounded-full bg-violet-500 animate-pulse" />
+                                ĐANG CHUẨN BỊ NHÃN IN...
+                              </span>
+                              <span className="text-violet-400">{planned} nhãn</span>
+                            </div>
+                            {/* Indeterminate progress bar */}
+                            <div className="w-full bg-surface-2 rounded-full h-2 overflow-hidden border border-border/50">
+                              <div
+                                className="h-full rounded-full bg-violet-500"
+                                style={{
+                                  width: '40%',
+                                  animation: 'preparing-slide 1.4s ease-in-out infinite'
+                                }}
+                              />
+                            </div>
+                            <style>{`
+                              @keyframes preparing-slide {
+                                0% { transform: translateX(-100%); }
+                                100% { transform: translateX(350%); }
+                              }
+                            `}</style>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex justify-between items-center mb-1 text-xs font-semibold text-muted-fg">
+                              <span>TIẾN ĐỘ HOÀN THÀNH</span>
+                              <span>{pct}%</span>
+                            </div>
+                            <div className="w-full bg-surface-2 rounded-full h-2 overflow-hidden border border-border/50">
+                              <div className="bg-brand-dark h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                            </div>
+                          </>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
