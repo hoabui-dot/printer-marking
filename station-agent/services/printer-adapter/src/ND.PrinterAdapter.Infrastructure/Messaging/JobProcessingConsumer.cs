@@ -296,6 +296,13 @@ public sealed class JobProcessingConsumer : BackgroundService
 
         _logger.LogInformation("Queuing ZPL print command for Job {JobNo} using template '{Template}'...", evt.JobNo, template.Name);
 
+        // ── Immediate 'Printing' status heartbeat ─────────────────────────────
+        // The HeartbeatHostedService polls every 3s via TCP ping (simulation) or IPP (CUPS).
+        // Both paths almost always miss the short printing window.
+        // Publish an explicit heartbeat here so Projection Service → SignalR → Kiosk UI
+        // updates the printer card to Printing immediately, without waiting for the next poll.
+        await PublishPrinterHeartbeatAsync(printer.PrinterCode, isOnline: true, lifecycleState: "Printing", cancellationToken);
+
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var tcs = new TaskCompletionSource<bool>();
         var queuedJob = new PrintJob(
@@ -333,6 +340,12 @@ public sealed class JobProcessingConsumer : BackgroundService
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
+        // ── Immediate recovery heartbeat after print completes ─────────────────
+        // Return to Online so the Kiosk UI stops showing Printing once the job is done.
+        // This also prevents the card from staying in Printing state if the next 3s poll
+        // happens to read an intermediate CUPS state.
+        await PublishPrinterHeartbeatAsync(printer.PrinterCode, isOnline: true, lifecycleState: "Online", cancellationToken);
+
         // Publish print event to RabbitMQ
         var printEvent = new PrinterPrintedEvent
         {
@@ -354,6 +367,38 @@ public sealed class JobProcessingConsumer : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to publish PrinterPrintedEvent for Job {JobNo}", evt.JobNo);
+        }
+    }
+
+    /// <summary>
+    /// Publishes an immediate DeviceStatusHeartbeat for a printer so the Projection Service
+    /// and Kiosk UI reflect the new lifecycle state without waiting for the next 3-second poll.
+    /// Fire-and-forget safe: errors are swallowed and logged so they never interrupt the job flow.
+    /// </summary>
+    private async Task PublishPrinterHeartbeatAsync(
+        string printerCode,
+        bool isOnline,
+        string lifecycleState,
+        CancellationToken ct)
+    {
+        try
+        {
+            var routingKey = $"device.heartbeat.{printerCode.ToLowerInvariant()}";
+            var hb = new DeviceStatusHeartbeat(
+                printerCode,
+                "Printer",
+                isOnline,
+                lifecycleState,
+                DateTime.UtcNow.ToString("o")
+            );
+            await _publisher.PublishAsync(Exchange, routingKey, JsonSerializer.Serialize(hb), ct);
+            _logger.LogDebug("[JobConsumer] Published heartbeat [{Code}] → {State} (isOnline={Online})",
+                printerCode, lifecycleState, isOnline);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[JobConsumer] Failed to publish printer heartbeat for {Code} → {State}",
+                printerCode, lifecycleState);
         }
     }
 }
