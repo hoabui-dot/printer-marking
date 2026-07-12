@@ -36,39 +36,118 @@ interface LabelTemplate {
   version: number
 }
 
-function StatusDot({ status }: { status: string }) {
-  const s = (status || '').toUpperCase()
-  const isOnline = s === 'ONLINE' || s === 'IDLE' || s === 'PRINTING'
-  return (
-    <span className={`inline-block w-2.5 h-2.5 rounded-full mr-2 shrink-0 ${
-      isOnline ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
-    }`} />
-  )
+/** Subset of DeviceStatus from useDashboard — passed in as a real-time override */
+export interface DeviceStatusLive {
+  deviceId: string
+  isOnline: boolean
+  lifecycleState?: string
+}
+
+// ─── Lifecycle helpers (match the DashboardPage color table) ─────────────────
+
+/** Resolve effective lifecycle state: prefer live SignalR data, fall back to REST poll status */
+function resolveLifecycle(printer: ReadyPrinter, live?: DeviceStatusLive): { isOnline: boolean; lifecycle: string } {
+  if (live) return { isOnline: live.isOnline, lifecycle: (live.lifecycleState ?? (live.isOnline ? 'Online' : 'Offline')) }
+  const s = (printer.status || '').toUpperCase()
+  const isOnline = s === 'ONLINE' || s === 'IDLE'
+  return { isOnline, lifecycle: isOnline ? 'Online' : 'Offline' }
+}
+
+function lifecycleDot(lifecycle: string, isOnline: boolean): string {
+  if (!isOnline) return 'bg-red-400'
+  const s = lifecycle.toLowerCase()
+  if (s === 'printing' || s === 'busy') return 'bg-indigo-400 animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.6)]'
+  if (s === 'waiting')                  return 'bg-amber-400 animate-pulse shadow-[0_0_8px_rgba(251,191,36,0.5)]'
+  if (s === 'warning')                  return 'bg-yellow-400 animate-pulse shadow-[0_0_8px_rgba(234,179,8,0.5)]'
+  if (s === 'error')                    return 'bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.5)]'
+  if (s === 'connecting')               return 'bg-slate-400 animate-pulse'
+  return 'bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.5)]'
+}
+
+function lifecycleLabel(lifecycle: string, isOnline: boolean): string {
+  if (!isOnline) return 'Offline'
+  const s = lifecycle.toLowerCase()
+  if (s === 'printing')   return 'Printing'
+  if (s === 'busy')       return 'Busy'
+  if (s === 'waiting')    return 'Waiting'
+  if (s === 'warning')    return 'Warning'
+  if (s === 'error')      return 'Error'
+  if (s === 'connecting') return 'Connecting'
+  return 'Online'
+}
+
+function lifecycleLabelCls(lifecycle: string, isOnline: boolean): string {
+  if (!isOnline) return 'text-red-400'
+  const s = lifecycle.toLowerCase()
+  if (s === 'printing' || s === 'busy') return 'text-indigo-400'
+  if (s === 'waiting')                  return 'text-amber-400'
+  if (s === 'warning')                  return 'text-yellow-400'
+  if (s === 'error')                    return 'text-red-400'
+  if (s === 'connecting')               return 'text-slate-400'
+  return 'text-emerald-400'
+}
+
+function cardBorderCls(lifecycle: string, isOnline: boolean, active: boolean): string {
+  if (!isOnline) return 'border-red-500/20 bg-red-500/[0.02] opacity-70'
+  if (!active)   {
+    const s = lifecycle.toLowerCase()
+    if (s === 'printing' || s === 'busy') return 'border-indigo-500/30 bg-indigo-500/[0.04]'
+    if (s === 'waiting')                  return 'border-amber-500/25 bg-amber-500/[0.03]'
+    if (s === 'warning')                  return 'border-yellow-500/25 bg-yellow-500/[0.03]'
+    if (s === 'error')                    return 'border-red-500/25 bg-red-500/[0.03]'
+  }
+  // active production printers keep the emerald active border
+  if (active) {
+    const s = lifecycle.toLowerCase()
+    if (s === 'printing' || s === 'busy') return 'bg-indigo-500/[0.04] border-indigo-500/40'
+    if (s === 'waiting')                  return 'bg-amber-500/[0.03] border-amber-500/35'
+    if (s === 'warning')                  return 'bg-yellow-500/[0.03] border-yellow-500/35'
+    if (s === 'error')                    return 'bg-red-500/[0.03] border-red-500/35'
+    return 'bg-emerald-500/[0.03] dark:bg-emerald-500/[0.06] border-emerald-500/30 dark:border-emerald-500/40'
+  }
+  return 'bg-card border-border hover:border-border-strong'
+}
+
+function cardTopBar(lifecycle: string, isOnline: boolean): string {
+  if (!isOnline) return 'from-red-500/40 to-red-400/10'
+  const s = lifecycle.toLowerCase()
+  if (s === 'printing' || s === 'busy') return 'from-indigo-500/60 to-indigo-400/20'
+  if (s === 'waiting')                  return 'from-amber-500/50 to-amber-400/20'
+  if (s === 'warning')                  return 'from-yellow-500/50 to-yellow-400/20'
+  if (s === 'error')                    return 'from-red-500/50 to-red-400/20'
+  return 'from-emerald-500/50 to-emerald-400/20'
 }
 
 function PrinterCard({
-  printer, onActivate, onDeactivate, onShowDetails,
+  printer, liveStatus, onActivate, onDeactivate, onShowDetails,
 }: {
   printer: ReadyPrinter
+  liveStatus?: DeviceStatusLive
   onActivate: (p: ReadyPrinter) => void
   onDeactivate: (p: ReadyPrinter) => void
   onShowDetails: (p: ReadyPrinter) => void
 }) {
   const active = printer.isActiveForWork
+  const { isOnline, lifecycle } = resolveLifecycle(printer, liveStatus)
+  const dotCls   = lifecycleDot(lifecycle, isOnline)
+  const label    = lifecycleLabel(lifecycle, isOnline)
+  const labelCls = lifecycleLabelCls(lifecycle, isOnline)
+  const border   = cardBorderCls(lifecycle, isOnline, active)
+  const topBar   = cardTopBar(lifecycle, isOnline)
+
   return (
-    <div className={`rounded-xl p-5 flex flex-col gap-3.5 transition-all relative overflow-hidden border ${
-      active
-        ? 'bg-emerald-500/[0.03] dark:bg-emerald-500/[0.06] border-emerald-500/30 dark:border-emerald-500/40 shadow-sm shadow-emerald-500/5'
-        : 'bg-card border-border hover:border-border-strong shadow-sm'
-    }`}>
-      {active && (
-        <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-emerald-500 to-emerald-400" />
-      )}
+    <div className={`rounded-xl p-5 flex flex-col gap-3.5 transition-all relative overflow-hidden border shadow-sm ${border}`}>
+      {/* top accent bar */}
+      <div className={`absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r ${topBar}`} />
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className={`w-9.5 h-9.5 rounded-lg flex items-center justify-center shrink-0 ${
-            active ? 'bg-emerald-500/10 text-emerald-500 dark:text-emerald-400' : 'bg-brand/10 text-brand-light'
+            !isOnline ? 'bg-red-500/10 text-red-400'
+            : lifecycle.toLowerCase() === 'printing' || lifecycle.toLowerCase() === 'busy'
+              ? 'bg-indigo-500/10 text-indigo-400'
+              : active ? 'bg-emerald-500/10 text-emerald-500 dark:text-emerald-400'
+              : 'bg-brand/10 text-brand-light'
           }`}>
             <Printer size={18} />
           </div>
@@ -77,10 +156,11 @@ function PrinterCard({
             <div className="text-[11px] text-muted-fg font-mono tracking-tight mt-0.5">{printer.printerCode}</div>
           </div>
         </div>
+        {/* Live status badge */}
         <div className="flex items-center gap-1.5">
-          <StatusDot status={printer.status} />
-          <span className="text-[10px] text-muted-fg font-extrabold uppercase tracking-wider">
-            {printer.status}
+          <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${dotCls}`} />
+          <span className={`text-[10px] font-extrabold uppercase tracking-wider ${labelCls}`}>
+            {label}
           </span>
         </div>
       </div>
@@ -128,7 +208,10 @@ function PrinterCard({
   )
 }
 
-export function PrinterManagementTab() {
+export function PrinterManagementTab({ deviceStatuses = [] }: { deviceStatuses?: DeviceStatusLive[] }) {
+  /** Build a lookup map from printerCode (case-insensitive) → live status */
+  const liveMap = new Map<string, DeviceStatusLive>()
+  for (const d of deviceStatuses) liveMap.set(d.deviceId.toLowerCase(), d)
   const [printers, setPrinters] = useState<ReadyPrinter[]>([])
   const [simulationPrinters, setSimulationPrinters] = useState<ReadyPrinter[]>([])
   const [showSimulation, setShowSimulation] = useState(false)
@@ -278,7 +361,7 @@ export function PrinterManagementTab() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {activePrinters.map(p => (
-              <PrinterCard key={p.printerCode} printer={p} onActivate={openActivate} onDeactivate={setDeactivatingPrinter} onShowDetails={setDetailedPrinter} />
+              <PrinterCard key={p.printerCode} printer={p} liveStatus={liveMap.get(p.printerCode.toLowerCase())} onActivate={openActivate} onDeactivate={setDeactivatingPrinter} onShowDetails={setDetailedPrinter} />
             ))}
           </div>
         )}
@@ -311,7 +394,7 @@ export function PrinterManagementTab() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {readyPrinters.map(p => (
-              <PrinterCard key={p.printerCode} printer={p} onActivate={openActivate} onDeactivate={setDeactivatingPrinter} onShowDetails={setDetailedPrinter} />
+              <PrinterCard key={p.printerCode} printer={p} liveStatus={liveMap.get(p.printerCode.toLowerCase())} onActivate={openActivate} onDeactivate={setDeactivatingPrinter} onShowDetails={setDetailedPrinter} />
             ))}
           </div>
         )}

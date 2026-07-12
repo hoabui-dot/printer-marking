@@ -11,6 +11,7 @@ import { translatePermission, translateRole, translateJobType } from '@/lib/util
 import { LabelPreview } from '@/components/LabelPreview'
 import { LabelTemplatesTab } from '@/components/LabelTemplatesTab'
 import { PrinterManagementTab } from '@/components/PrinterManagementTab'
+import type { DeviceStatusLive } from '@/components/PrinterManagementTab'
 import { StationActivityLog } from '@/components/StationActivityLog'
 import { ProductionExecutionDetailModal } from '@/components/ProductionExecutionDetailModal'
 import { AlarmCenterTab } from '@/components/AlarmCenterTab'
@@ -1687,7 +1688,7 @@ export default function DashboardPage() {
 
               {connectivitySubTab === 'printers' && (
                 <div className="animate-in fade-in duration-200">
-                  <PrinterManagementTab />
+                  <PrinterManagementTab deviceStatuses={devices as DeviceStatusLive[]} />
                 </div>
               )}
 
