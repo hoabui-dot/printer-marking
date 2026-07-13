@@ -454,7 +454,7 @@ export default function DashboardPage() {
       current_step: '—'
     }
 
-    let parsedTags: Record<string, string> = {}
+    const parsedTags: Record<string, string> = {}
     try {
       const payload = JSON.parse(activeJobDetails.payloadJson)
       if (payload.data && Array.isArray(payload.data)) {

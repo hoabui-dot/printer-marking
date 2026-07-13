@@ -134,6 +134,15 @@ function PrinterCard({
   const [retryCountdown, setRetryCountdown] = useState(10)
   const [retrying, setRetrying] = useState(false)
 
+  const handleRetrySilent = useCallback(async () => {
+    try {
+      await printerApi.testConnection(printer.printerCode)
+      onRefresh?.()
+    } catch {
+      // ignore
+    }
+  }, [printer.printerCode, onRefresh])
+
   // Automatic retry countdown when offline
   useEffect(() => {
     if (isOnline) {
@@ -150,16 +159,7 @@ function PrinterCard({
       })
     }, 1000)
     return () => clearInterval(timer)
-  }, [isOnline])
-
-  const handleRetrySilent = async () => {
-    try {
-      await printerApi.testConnection(printer.printerCode)
-      onRefresh?.()
-    } catch {
-      // ignore
-    }
-  }
+  }, [isOnline, handleRetrySilent])
 
   const handleRetryClick = async () => {
     setRetrying(true)
@@ -356,10 +356,14 @@ export function PrinterManagementTab({ deviceStatuses = [] }: { deviceStatuses?:
         templateApi.getPrintersActive(),
         templateApi.getPrintersSimulation(),   // includes simulation for separate section
       ])
+      const readyArr = Array.isArray(readyRes.data) ? readyRes.data : []
+      const activeArr = Array.isArray(activeRes.data) ? activeRes.data : []
+      const simArr = Array.isArray(simRes.data) ? simRes.data : []
+
       // Merge ready + active for production printers
       const activeMap = new Map<string, ReadyPrinter>()
-      for (const p of (activeRes.data ?? [])) activeMap.set(p.printerCode, p)
-      const merged: ReadyPrinter[] = (readyRes.data ?? []).map((p: ReadyPrinter) =>
+      for (const p of activeArr) activeMap.set(p.printerCode, p)
+      const merged: ReadyPrinter[] = readyArr.map((p: ReadyPrinter) =>
         activeMap.has(p.printerCode) ? activeMap.get(p.printerCode)! : p,
       )
       for (const [code, p] of activeMap.entries()) {
@@ -369,7 +373,7 @@ export function PrinterManagementTab({ deviceStatuses = [] }: { deviceStatuses?:
 
       // Simulation printers = all (with simulation) minus production printers
       const allCodes = new Set(merged.map(p => p.printerCode))
-      const simOnly = (simRes.data ?? []).filter((p: ReadyPrinter) =>
+      const simOnly = simArr.filter((p: ReadyPrinter) =>
         p.driverType === 'simulation' && !allCodes.has(p.printerCode)
       )
       setSimulationPrinters(simOnly)

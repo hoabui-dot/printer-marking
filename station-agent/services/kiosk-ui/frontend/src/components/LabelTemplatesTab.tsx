@@ -136,6 +136,15 @@ function TemplateEditorDialog({
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean; msg: string } | null>(null)
 
+  const tryParseJson = (text: string) => {
+    try {
+      const p = JSON.parse(text)
+      setParsedJson(p); setJsonError(null)
+    } catch (e: any) {
+      setParsedJson(null); setJsonError(e.message)
+    }
+  }
+
   useEffect(() => {
     if (open) {
       if (template) {
@@ -156,15 +165,6 @@ function TemplateEditorDialog({
       setError(null); setTestResult(null); setTesting(false)
     }
   }, [open, template])
-
-  const tryParseJson = (text: string) => {
-    try {
-      const p = JSON.parse(text)
-      setParsedJson(p); setJsonError(null)
-    } catch (e: any) {
-      setParsedJson(null); setJsonError(e.message)
-    }
-  }
 
   const handleJsonChange = (v: string) => { setJsonText(v); tryParseJson(v) }
 
