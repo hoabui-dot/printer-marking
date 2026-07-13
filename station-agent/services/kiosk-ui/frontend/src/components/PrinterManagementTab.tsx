@@ -204,19 +204,14 @@ function PrinterCard({
         </div>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        <span className="text-[11px] px-2.5 py-0.5 rounded-md font-mono bg-brand/5 border border-brand/10 text-brand-light font-medium">
-          {printer.ipAddress}:{printer.port}
-        </span>
-        <span className="text-[11px] px-2.5 py-0.5 rounded-md bg-muted text-muted-fg border border-border font-medium">
-          {printer.protocol} · {printer.driverType}
-        </span>
-      </div>
-
-      {active && printer.activeTemplateName && (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/[0.06] dark:bg-emerald-500/10 border border-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
-          <Tag size={12} className="shrink-0" />
-          <span className="truncate">{printer.activeTemplateName}</span>
+      {!active && (
+        <div className="flex gap-2 flex-wrap">
+          <span className="text-[11px] px-2.5 py-0.5 rounded-md font-mono bg-brand/5 border border-brand/10 text-brand-light font-medium">
+            {printer.ipAddress}:{printer.port}
+          </span>
+          <span className="text-[11px] px-2.5 py-0.5 rounded-md bg-muted text-muted-fg border border-border font-medium">
+            {printer.protocol} · {printer.driverType}
+          </span>
         </div>
       )}
 
@@ -747,79 +742,77 @@ export function PrinterManagementTab({ deviceStatuses = [] }: { deviceStatuses?:
             </DialogDescription>
           </DialogHeader>
 
-          {detailedPrinter && (
-            <div className="flex flex-col gap-5 mt-3 text-xs">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Trạng thái kết nối</span>
-                  <div className="text-sm font-semibold flex items-center gap-2 text-foreground">
-                    <span className={`w-2.5 h-2.5 rounded-full ${
-                      (detailedPrinter.status || '').toUpperCase() === 'ONLINE' || (detailedPrinter.status || '').toUpperCase() === 'IDLE'
-                        ? 'bg-emerald-500 animate-pulse'
-                        : 'bg-red-500'
-                    }`} />
-                    {(detailedPrinter.status || '').toUpperCase() === 'ONLINE' || (detailedPrinter.status || '').toUpperCase() === 'IDLE' ? 'ONLINE (TCP/IP)' : 'OFFLINE'}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Mã máy in (Code)</span>
-                  <div className="text-sm font-bold text-foreground">
-                    {detailedPrinter.printerCode}
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Số Seri (Serial Number)</span>
-                  <div className="text-sm font-bold font-mono text-brand-light">
-                    {maintenanceInfo?.serialNumber || 'Đang đọc...'}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Kết nối vật lý</span>
-                  <div className="text-sm font-medium text-foreground">
-                    {detailedPrinter.ipAddress}:{detailedPrinter.port} ({detailedPrinter.protocol})
-                  </div>
-                </div>
-
-                <div className="col-span-2 grid grid-cols-2 gap-4 pt-3.5 border-t border-border mt-1">
+          {detailedPrinter && (() => {
+            const detailedPrinterLiveStatus = liveMap.get(detailedPrinter.printerCode.toLowerCase());
+            const { isOnline: isDetailedOnline } = resolveLifecycle(detailedPrinter, detailedPrinterLiveStatus);
+            return (
+              <div className="flex flex-col gap-5 mt-3 text-xs">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Đã in trọn đời (Lifetime Count)</span>
-                    <div className="text-base font-extrabold text-foreground font-mono">
-                      {maintenanceInfo?.lifetimePrintLength !== undefined ? `${maintenanceInfo.lifetimePrintLength} nhãn` : 'Đang đọc...'}
+                    <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Trạng thái kết nối</span>
+                    <div className="text-sm font-semibold flex items-center gap-2 text-foreground">
+                      <span className={`w-2.5 h-2.5 rounded-full ${
+                        isDetailedOnline
+                          ? 'bg-emerald-500 animate-pulse'
+                          : 'bg-red-500'
+                      }`} />
+                      {isDetailedOnline ? 'ONLINE (TCP/IP)' : 'OFFLINE'}
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Nhiệt độ đầu in (Thermal Temp)</span>
-                    <div className={`text-base font-extrabold font-mono flex items-center gap-1.5 ${
-                      maintenanceInfo?.thermalWarning ? 'text-red-500' : 'text-emerald-500'
-                    }`}>
-                      {maintenanceInfo?.currentTemperature !== undefined ? `${maintenanceInfo.currentTemperature}°C` : '27.5°C'}
-                      {maintenanceInfo?.thermalWarning && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 animate-pulse">Quá nhiệt</span>}
+                    <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Mã máy in (Code)</span>
+                    <div className="text-sm font-bold text-foreground">
+                      {detailedPrinter.printerCode}
                     </div>
                   </div>
-                </div>
 
-                <div className="col-span-2 space-y-1.5 pt-3.5 border-t border-border">
-                  <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Chu kỳ bảo trì & Vệ sinh khuyến nghị</span>
-                  <div className="p-3 rounded-lg bg-surface-3 border border-border text-foreground leading-relaxed">
-                    <div className="font-semibold text-xs text-foreground flex items-center gap-1.5">
-                      <span>🔧 {maintenanceInfo?.recommendedCleaning || 'Lau đầu in (Clean print head every 2000 labels)'}</span>
-                    </div>
-                    <div className="text-[11px] text-muted-fg mt-1">
-                      Lần bảo trì gần nhất: {maintenanceInfo?.lastMaintenanceDate || '2026-07-07'} (Chưa ghi nhận sự cố phần cứng).
+                  <div className="space-y-1">
+                    <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Số Seri (Serial Number)</span>
+                    <div className="text-sm font-bold font-mono text-brand-light">
+                      {isDetailedOnline 
+                        ? (maintenanceInfo?.serialNumber || 'Đang đọc...') 
+                        : (maintenanceInfo?.serialNumber ? `${maintenanceInfo.serialNumber} (Lưu trữ)` : 'N/A')}
                     </div>
                   </div>
-                </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Kết nối vật lý</span>
+                    <div className="text-sm font-medium text-foreground">
+                      {detailedPrinter.ipAddress}:{detailedPrinter.port} ({detailedPrinter.protocol.toUpperCase()} · {detailedPrinter.driverType})
+                    </div>
+                  </div>
 
-                {detailedPrinter.isActiveForWork && detailedPrinter.activeTemplateName && (
-                  <div className="col-span-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
-                    <Tag size={12} className="shrink-0" />
-                    <span>Mẫu nhãn hoạt động: {detailedPrinter.activeTemplateName}</span>
+                  <div className="col-span-2 grid grid-cols-2 gap-4 pt-3.5 border-t border-border mt-1">
+                    <div className="space-y-1">
+                      <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Đã in trọn đời (Lifetime Count)</span>
+                      <div className="text-base font-extrabold text-foreground font-mono">
+                        {isDetailedOnline 
+                          ? (maintenanceInfo?.lifetimePrintLength !== undefined ? `${maintenanceInfo.lifetimePrintLength} nhãn` : 'Đang đọc...') 
+                          : 'N/A (Ngoại tuyến)'}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] uppercase tracking-wider text-muted-fg font-extrabold">Nhiệt độ đầu in (Thermal Temp)</span>
+                      <div className={`text-base font-extrabold font-mono flex items-center gap-1.5 ${
+                        isDetailedOnline && maintenanceInfo?.thermalWarning ? 'text-red-500' : 'text-emerald-500'
+                      }`}>
+                        {isDetailedOnline 
+                          ? (maintenanceInfo?.currentTemperature !== undefined ? `${maintenanceInfo.currentTemperature}°C` : 'Đang đọc...') 
+                          : 'N/A (Ngoại tuyến)'}
+                        {isDetailedOnline && maintenanceInfo?.thermalWarning && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 animate-pulse">Quá nhiệt</span>}
+                      </div>
+                    </div>
                   </div>
-                )}
+
+                  {detailedPrinter.isActiveForWork && detailedPrinter.activeTemplateName && (
+                    <div className="col-span-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
+                      <Tag size={12} className="shrink-0" />
+                      <span>Mẫu nhãn hoạt động: {detailedPrinter.activeTemplateName}</span>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           <DialogFooter className="mt-3">
             <Button onClick={() => setDetailedPrinter(null)}>
