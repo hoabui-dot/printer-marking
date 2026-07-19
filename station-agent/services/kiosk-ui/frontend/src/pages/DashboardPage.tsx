@@ -25,7 +25,7 @@ import {
   Flame, Cpu, Printer as PrinterIcon, Zap, Camera, Clock,
   Filter, RefreshCw, History, Database,
   Shield, User, UserX, MoreVertical,
-  Search, Settings, Activity, AlertTriangle, LineChart, CheckCircle, Sun, Moon
+  Search, Settings, AlertTriangle, LineChart, CheckCircle, Sun, Moon
 } from 'lucide-react'
 
 // Common Components
@@ -53,13 +53,20 @@ import {
 } from '@/components/ui/select'
 
 import { FileText, FlaskConical, ChevronDown, ChevronRight } from 'lucide-react'
+import {
+  getRetentionLimitStr,
+  getTodayStr,
+  normalizeStartOfDay,
+  normalizeEndOfDay,
+  clampToRetentionWindow,
+  buildLast7DaysRange,
+  buildTodayRange,
+  buildYesterdayRange,
+  buildLast3DaysRange,
+  formatRangeDisplay
+} from '@/lib/dateUtils'
 
-type KioskTab = 'dashboard' | 'history' | 'traceability' | 'orders' | 'queue' | 'alarms' | 'config' | 'diagnostics' | 'connectivity' | 'rbac' | 'templates' | 'printers'
-
-const getTodayStr = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+type KioskTab = 'dashboard' | 'history' | 'traceability' | 'orders' | 'alarms' | 'config' | 'diagnostics' | 'connectivity' | 'rbac' | 'templates' | 'printers'
 
 // ── Simulation device collapsible section ──────────────────────────────────
 function SimulationDeviceSection({ devices: simDevices, relativeTime }: {
@@ -153,7 +160,7 @@ export default function DashboardPage() {
   const { user: currentUser, logout } = useAuth()
   const [signalRAlarm, setSignalRAlarm] = useState<Alarm | null>(null)
   const [alarmBannerCount, setAlarmBannerCount] = useState(0)
-  const { isConnected, production, devices, todayRecords, activities } = useDashboard(stationId, (alarm) => {
+  const { isConnected, production, devices, todayRecords } = useDashboard(stationId, (alarm) => {
     setSignalRAlarm(alarm)
     // Bump banner count when a new active alarm arrives via SignalR
     if (alarm.currentState === 'Active') setAlarmBannerCount(prev => prev + 1)
@@ -398,12 +405,15 @@ export default function DashboardPage() {
   // History states
   const [historyPage, setHistoryPage] = useState(1)
   const historyPageSize = 10
-  const [historyFilters, setHistoryFilters] = useState({
-    status: '',
-    productCode: '',
-    workOrder: '',
-    dateFrom: getTodayStr(),
-    dateTo: getTodayStr()
+  const [historyFilters, setHistoryFilters] = useState(() => {
+    const range = buildLast7DaysRange()
+    return {
+      status: '',
+      productCode: '',
+      workOrder: '',
+      dateFrom: range.dateFrom,
+      dateTo: range.dateTo
+    }
   })
 
   // Detailed Record View State
@@ -876,7 +886,6 @@ export default function DashboardPage() {
     { key: 'orders' as KioskTab, label: 'Lệnh sản xuất', icon: Database, show: canViewJobs },
     { key: 'history' as KioskTab, label: 'Lịch sử sản xuất', icon: History, show: canViewJobs },
     { key: 'traceability' as KioskTab, label: 'Truy xuất nguồn gốc', icon: Search, show: canViewJobs },
-    { key: 'queue' as KioskTab, label: 'Giám sát pipeline', icon: Activity, show: canViewJobs },
     { key: 'alarms' as KioskTab, label: 'Trung tâm cảnh báo', icon: AlertTriangle, show: true },
     { key: 'config' as KioskTab, label: 'Cấu hình thiết bị', icon: Settings, show: isSuperAdmin },
     { key: 'diagnostics' as KioskTab, label: 'Chẩn đoán hệ thống', icon: LineChart, show: true },
@@ -1253,7 +1262,7 @@ export default function DashboardPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                     <div className="space-y-1">
                       <Label htmlFor="filter-wo" className="text-sm">Lệnh sản xuất</Label>
                       <Input
@@ -1296,12 +1305,42 @@ export default function DashboardPage() {
                       </Select>
                     </div>
                     <div className="space-y-1">
+                      <Label className="text-sm">Khoảng thời gian</Label>
+                      <Select
+                        value=""
+                        onValueChange={(v) => {
+                          if (v === 'today') setHistoryFilters(prev => ({ ...prev, ...buildTodayRange() }))
+                          else if (v === 'yesterday') setHistoryFilters(prev => ({ ...prev, ...buildYesterdayRange() }))
+                          else if (v === '3d') setHistoryFilters(prev => ({ ...prev, ...buildLast3DaysRange() }))
+                          else if (v === '7d') setHistoryFilters(prev => ({ ...prev, ...buildLast7DaysRange() }))
+                        }}
+                      >
+                        <SelectTrigger className="h-9 text-sm">
+                          <SelectValue placeholder="Chọn nhanh..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="today">Hôm nay</SelectItem>
+                          <SelectItem value="yesterday">Hôm qua</SelectItem>
+                          <SelectItem value="3d">3 ngày qua</SelectItem>
+                          <SelectItem value="7d">7 ngày qua</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
                       <Label htmlFor="filter-from" className="text-sm">Từ ngày</Label>
                       <Input
                         id="filter-from"
                         type="date"
-                        value={historyFilters.dateFrom}
-                        onChange={(e) => setHistoryFilters(prev => ({ ...prev, dateFrom: e.target.value }))}
+                        min={getRetentionLimitStr()}
+                        max={getTodayStr()}
+                        value={historyFilters.dateFrom ? historyFilters.dateFrom.split('T')[0] : ''}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          if (val) {
+                            const clamped = clampToRetentionWindow(val, getRetentionLimitStr())
+                            setHistoryFilters(prev => ({ ...prev, dateFrom: normalizeStartOfDay(clamped) }))
+                          }
+                        }}
                         className="h-9 text-sm"
                       />
                     </div>
@@ -1310,35 +1349,49 @@ export default function DashboardPage() {
                       <Input
                         id="filter-to"
                         type="date"
-                        value={historyFilters.dateTo}
-                        onChange={(e) => setHistoryFilters(prev => ({ ...prev, dateTo: e.target.value }))}
+                        min={getRetentionLimitStr()}
+                        max={getTodayStr()}
+                        value={historyFilters.dateTo ? historyFilters.dateTo.split('T')[0] : ''}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          if (val) {
+                            const clamped = clampToRetentionWindow(val, getTodayStr())
+                            setHistoryFilters(prev => ({ ...prev, dateTo: normalizeEndOfDay(clamped) }))
+                          }
+                        }}
                         className="h-9 text-sm"
                       />
                     </div>
                   </div>
 
-                  <div className="flex justify-end gap-2 mt-4">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setHistoryFilters({ status: '', productCode: '', workOrder: '', dateFrom: getTodayStr(), dateTo: getTodayStr() })
-                        setHistoryPage(1)
-                      }}
-                      className="h-9 text-sm"
-                    >
-                      Xóa bộ lọc
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        setHistoryPage(1)
-                        fetchHistory(1, historyPageSize, historyFilters)
-                      }}
-                      className="h-9 text-sm"
-                    >
-                      Tìm kiếm
-                    </Button>
+                  <div className="flex flex-wrap justify-between items-center gap-4 mt-4 pt-4 border-t border-border">
+                    <div className="text-xs text-brand-light font-bold px-3 py-1.5 rounded-lg bg-brand/5 border border-brand/10">
+                      📅 Khoảng thời gian: {formatRangeDisplay(historyFilters.dateFrom, historyFilters.dateTo)}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const range = buildLast7DaysRange()
+                          setHistoryFilters({ status: '', productCode: '', workOrder: '', dateFrom: range.dateFrom, dateTo: range.dateTo })
+                          setHistoryPage(1)
+                        }}
+                        className="h-9 text-sm"
+                      >
+                        Xóa bộ lọc
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setHistoryPage(1)
+                          fetchHistory(1, historyPageSize, historyFilters)
+                        }}
+                        className="h-9 text-sm"
+                      >
+                        Tìm kiếm
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -2105,45 +2158,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {tab === 'queue' && (
-            <div className="space-y-6 max-w-7xl mx-auto">
-              <Card className="border border-border bg-card">
-                <CardHeader className="py-4 px-6 border-b border-border bg-brand/5">
-                  <CardTitle className="text-base font-bold tracking-wider text-brand uppercase flex items-center gap-2">
-                    <Activity className="h-4 w-4" />
-                    Giám sát luồng dữ liệu thời gian thực (Real-time Pipeline Monitor)
-                  </CardTitle>
-                  <CardDescription className="text-sm">Trực quan hóa luồng đi của bản tin từ biên thiết bị đến Kiosk UI</CardDescription>
-                </CardHeader>
-                <CardContent className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-6 gap-4 relative">
-                    {[
-                      { title: "1. Biên MQTT", desc: "Edge MQTT Inbound", status: isConnected ? "Active" : "Offline", count: activities.length, color: "from-blue-600 to-cyan-500" },
-                      { title: "2. Outbox Table", desc: "Outbox Pattern DB", status: "Healthy", count: todayRecords.length, color: "from-brand-dark to-blue-500" },
-                      { title: "3. RabbitMQ", desc: "Command Routing", status: isConnected ? "Connected" : "Disconnected", count: activities.filter(a => a.eventType.includes("Job")).length, color: "from-purple-600 to-brand" },
-                      { title: "4. Job Engine", desc: "Workflow Core", status: "Processing", count: todayRecords.filter(r => r.currentStatus === "Running").length, color: "from-pink-600 to-purple-500" },
-                      { title: "5. SignalR Broadcast", desc: "Real-time Hub", status: isConnected ? "Live" : "Offline", count: "SignalR Live", color: "from-rose-600 to-pink-500" },
-                      { title: "6. Kiosk Operator", desc: "Operator UI", status: "Idle", count: currentUser?.username || "Guest", color: "from-emerald-600 to-teal-500" }
-                    ].map((node, idx) => (
-                      <div key={idx} className="relative flex flex-col justify-between bg-surface-1 border border-border p-4 rounded-xl h-36 hover:border-brand/30 transition-all duration-300">
-                        <div>
-                          <div className="font-extrabold text-sm text-foreground">{node.title}</div>
-                          <div className="text-[11px] text-muted-fg font-medium mt-0.5">{node.desc}</div>
-                        </div>
-                        <div className="mt-4 flex justify-between items-center">
-                          <span className="text-xs font-mono font-bold bg-surface-2 px-2 py-1 rounded text-brand-light">{node.count}</span>
-                          <span className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${node.status === "Active" || node.status === "Connected" || node.status === "Healthy" || node.status === "Live" ? "bg-emerald-500/10 text-emerald-400" : "bg-orange-500/10 text-orange-400"}`}>
-                            <span className={`h-1 w-1 rounded-full ${node.status === "Active" || node.status === "Connected" || node.status === "Healthy" || node.status === "Live" ? "bg-emerald-400 animate-pulse" : "bg-orange-400"}`}></span>
-                            {node.status}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
+
 
           {tab === 'alarms' && (
             <AlarmCenterTab stationId={stationId} signalRAlarm={signalRAlarm} />

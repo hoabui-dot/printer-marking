@@ -57,18 +57,18 @@ interface PrinterAssignment {
 // ── Status Badge ──────────────────────────────────────────────────────────────
 
 function TemplateBadge({ status, isDefault }: { status: string; isDefault: boolean }) {
-  const color = status === 'published' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-    : status === 'draft' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-    : 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30'
+  const color = status === 'published' ? 'bg-success/10 text-success border-success/20'
+    : status === 'draft' ? 'bg-muted text-muted-foreground border-border'
+    : 'bg-destructive/10 text-destructive border-destructive/20'
   const label = status === 'published' ? 'Published' : status === 'draft' ? 'Draft' : 'Archived'
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
-      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${color}`}>
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${color}`}>
         {label}
       </span>
       {isDefault && (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border bg-blue-500/15 text-blue-400 border-blue-500/30">
-          <Star size={9} /> Default
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-info/10 text-info border-info/20">
+          <Star size={11} className="fill-current" /> Default
         </span>
       )}
     </div>
@@ -76,21 +76,21 @@ function TemplateBadge({ status, isDefault }: { status: string; isDefault: boole
 }
 
 const CATEGORY_META: Record<string, { label: string; color: string }> = {
-  PRODUCT:    { label: 'Product',    color: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30' },
-  WIP:        { label: 'WIP',        color: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' },
-  PALLET:     { label: 'Pallet',     color: 'bg-violet-500/15 text-violet-400 border-violet-500/30' },
-  SHELF:      { label: 'Shelf',      color: 'bg-teal-500/15 text-teal-400 border-teal-500/30' },
-  INSPECTION: { label: 'Inspection', color: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
-  MATERIAL:   { label: 'Material',   color: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
-  SHEET:      { label: 'Sheet',      color: 'bg-lime-500/15 text-lime-400 border-lime-500/30' },
-  ISSUE:      { label: 'Issue',      color: 'bg-rose-500/15 text-rose-400 border-rose-500/30' },
+  PRODUCT:    { label: 'Product',    color: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20' },
+  WIP:        { label: 'WIP',        color: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20' },
+  PALLET:     { label: 'Pallet',     color: 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20' },
+  SHELF:      { label: 'Shelf',      color: 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20' },
+  INSPECTION: { label: 'Inspection', color: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' },
+  MATERIAL:   { label: 'Material',   color: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20' },
+  SHEET:      { label: 'Sheet',      color: 'bg-lime-500/10 text-lime-600 dark:text-lime-400 border-lime-500/20' },
+  ISSUE:      { label: 'Issue',      color: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20' },
 }
 
 function CategoryBadge({ category }: { category?: string }) {
   if (!category) return null
-  const meta = CATEGORY_META[category.toUpperCase()] ?? { label: category, color: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30' }
+  const meta = CATEGORY_META[category.toUpperCase()] ?? { label: category, color: 'bg-muted text-muted-foreground border-border' }
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${meta.color}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${meta.color}`}>
       {meta.label}
     </span>
   )
@@ -202,48 +202,48 @@ function TemplateEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col bg-zinc-900 border-zinc-700 text-zinc-100">
-        <DialogHeader>
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col bg-card border-border text-foreground">
+        <DialogHeader className="pb-2 border-b border-border">
           <DialogTitle className="text-lg font-semibold">
-            {isEdit ? `Edit Template — ${template?.name}` : 'New Label Template'}
+            {isEdit ? `Chỉnh sửa Mẫu — ${template?.name}` : 'Thêm Mẫu nhãn mới'}
           </DialogTitle>
-          <DialogDescription className="text-zinc-400 text-xs">
-            {isEdit ? `Version ${template?.version} · ${template?.status}` : 'Configure label layout and elements'}
+          <DialogDescription className="text-muted-fg text-xs">
+            {isEdit ? `Phiên bản v${template?.version} · Trạng thái: ${template?.status}` : 'Cấu hình thông số và thiết kế layout tem nhãn'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-hidden grid grid-cols-2 gap-4 min-h-0">
+        <div className="flex-1 overflow-hidden grid grid-cols-2 gap-6 py-4 min-h-0">
           {/* Left — Form */}
-          <div className="overflow-y-auto pr-1 space-y-3">
-            <div className="grid grid-cols-2 gap-2">
+          <div className="overflow-y-auto pr-2 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
-                <label className="text-xs text-zinc-400 mb-1 block">Template Name *</label>
+                <label className="text-xs font-semibold text-muted-fg mb-1 block">Tên mẫu tem (Template Name) *</label>
                 <Input id="tpl-name" value={name} onChange={e => setName(e.target.value)}
-                  placeholder="50x30 QR Label" className="bg-zinc-800 border-zinc-700 text-zinc-100 h-8 text-sm" />
+                  placeholder="50x30 QR Label" className="bg-background border-border text-foreground h-9 text-sm focus-visible:ring-brand" />
               </div>
               <div className="col-span-2">
-                <label className="text-xs text-zinc-400 mb-1 block">Mô tả (Description)</label>
+                <label className="text-xs font-semibold text-muted-fg mb-1 block">Mô tả (Description)</label>
                 <Input id="tpl-desc" value={description} onChange={e => setDescription(e.target.value)}
-                  placeholder="Mô tả ngắn về mẫu tem..." className="bg-zinc-800 border-zinc-700 text-zinc-100 h-8 text-sm" />
+                  placeholder="Mô tả ngắn về mẫu tem..." className="bg-background border-border text-foreground h-9 text-sm focus-visible:ring-brand" />
               </div>
               <div className="col-span-2">
-                <label className="text-xs text-zinc-400 mb-1 block">Ghi chú sản xuất (Note)</label>
+                <label className="text-xs font-semibold text-muted-fg mb-1 block">Ghi chú sản xuất (Note)</label>
                 <textarea
                   id="tpl-note"
                   value={note}
                   onChange={e => setNote(e.target.value)}
                   rows={3}
                   placeholder="Ghi chú cho kỹ sư sản xuất: mục đích sử dụng, công đoạn áp dụng, yêu cầu máy in..."
-                  className="w-full rounded-md bg-zinc-800 border border-zinc-700 text-zinc-100 text-sm px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded-lg bg-background border border-border text-foreground text-sm px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-brand"
                 />
               </div>
               <div>
-                <label className="text-xs text-zinc-400 mb-1 block">DPI</label>
+                <label className="text-xs font-semibold text-muted-fg mb-1 block">Độ phân giải (DPI)</label>
                 <Select value={dpi} onValueChange={setDpi}>
-                  <SelectTrigger id="tpl-dpi" className="bg-zinc-800 border-zinc-700 text-zinc-100 h-8 text-sm">
+                  <SelectTrigger id="tpl-dpi" className="bg-background border-border text-foreground h-9 text-sm focus:ring-brand">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-zinc-800 border-zinc-700 text-zinc-100">
+                  <SelectContent className="bg-card border-border text-foreground">
                     <SelectItem value="203">203 DPI</SelectItem>
                     <SelectItem value="300">300 DPI</SelectItem>
                     <SelectItem value="600">600 DPI</SelectItem>
@@ -252,42 +252,42 @@ function TemplateEditorDialog({
               </div>
               <div className="grid grid-cols-2 gap-1">
                 <div>
-                  <label className="text-xs text-zinc-400 mb-1 block">W (mm)</label>
+                  <label className="text-xs font-semibold text-muted-fg mb-1 block">Rộng (W mm)</label>
                   <Input id="tpl-width" value={width} onChange={e => setWidth(e.target.value)} type="number"
-                    className="bg-zinc-800 border-zinc-700 text-zinc-100 h-8 text-sm" />
+                    className="bg-background border-border text-foreground h-9 text-sm focus-visible:ring-brand" />
                 </div>
                 <div>
-                  <label className="text-xs text-zinc-400 mb-1 block">H (mm)</label>
+                  <label className="text-xs font-semibold text-muted-fg mb-1 block">Cao (H mm)</label>
                   <Input id="tpl-height" value={height} onChange={e => setHeight(e.target.value)} type="number"
-                    className="bg-zinc-800 border-zinc-700 text-zinc-100 h-8 text-sm" />
+                    className="bg-background border-border text-foreground h-9 text-sm focus-visible:ring-brand" />
                 </div>
               </div>
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs text-zinc-400">Template JSON (Elements)</label>
-                {jsonError && <span className="text-red-400 text-[10px] flex items-center gap-1"><AlertTriangle size={10} />{jsonError.slice(0, 60)}</span>}
+                <label className="text-xs font-semibold text-muted-fg">Cấu trúc mẫu nhãn (Template JSON)</label>
+                {jsonError && <span className="text-error text-[10px] flex items-center gap-1 font-bold"><AlertTriangle size={10} />{jsonError.slice(0, 60)}</span>}
               </div>
               <textarea
                 id="tpl-json"
                 value={jsonText}
                 onChange={e => handleJsonChange(e.target.value)}
-                className={`w-full h-64 bg-zinc-950 border rounded-md text-xs font-mono p-2 text-zinc-200 resize-none outline-none focus:ring-1 ${jsonError ? 'border-red-500/60 focus:ring-red-500/40' : 'border-zinc-700 focus:ring-blue-500/40'}`}
+                className={`w-full h-64 bg-background border rounded-lg text-xs font-mono p-3 text-foreground resize-none outline-none focus:ring-1 ${jsonError ? 'border-error focus:ring-error/40' : 'border-border focus:ring-brand/40'}`}
                 spellCheck={false}
               />
             </div>
 
             {/* Test print (edit mode only) */}
             {isEdit && (
-              <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg p-3 space-y-2">
-                <div className="text-xs text-zinc-400 font-medium">Test Print</div>
-                <div className="flex gap-2">
+              <div className="bg-surface-2 border border-border rounded-xl p-4 space-y-3">
+                <div className="text-xs font-bold text-foreground">In thử nghiệm (Test Print)</div>
+                <div className="flex gap-3">
                   <Select value={testPrinter} onValueChange={setTestPrinter}>
-                    <SelectTrigger id="tpl-test-printer" className="bg-zinc-800 border-zinc-700 text-zinc-100 h-8 text-sm flex-1">
-                      <SelectValue placeholder="Select printer…" />
+                    <SelectTrigger id="tpl-test-printer" className="bg-background border-border text-foreground h-9 text-sm flex-1 focus:ring-brand">
+                      <SelectValue placeholder="Chọn máy in..." />
                     </SelectTrigger>
-                    <SelectContent className="bg-zinc-800 border-zinc-700 text-zinc-100">
+                    <SelectContent className="bg-card border-border text-foreground">
                       {printers.map(p => (
                         <SelectItem key={p.printerCode ?? p.PrinterCode} value={p.printerCode ?? p.PrinterCode}>
                           {p.displayName ?? p.DisplayName} ({p.printerCode ?? p.PrinterCode})
@@ -296,14 +296,14 @@ function TemplateEditorDialog({
                     </SelectContent>
                   </Select>
                   <Button id="tpl-test-print-btn" size="sm" onClick={handleTestPrint} disabled={testing}
-                    className="bg-blue-600 hover:bg-blue-500 h-8 text-xs">
-                    {testing ? <RefreshCw size={12} className="animate-spin mr-1" /> : <PrinterIcon size={12} className="mr-1" />}
+                    className="bg-info hover:bg-info/90 active:bg-info/85 text-white h-9 px-4 text-xs font-semibold shadow-sm rounded-lg">
+                    {testing ? <RefreshCw size={14} className="animate-spin mr-1.5" /> : <PrinterIcon size={14} className="mr-1.5" />}
                     Test Print
                   </Button>
                 </div>
                 {testResult && (
-                  <div className={`text-xs flex items-center gap-1.5 ${testResult.success ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {testResult.success ? <Check size={12} /> : <AlertTriangle size={12} />}
+                  <div className={`text-xs flex items-center gap-1.5 font-bold ${testResult.success ? 'text-success' : 'text-error'}`}>
+                    {testResult.success ? <Check size={14} /> : <AlertTriangle size={14} />}
                     {testResult.msg}
                   </div>
                 )}
@@ -312,9 +312,9 @@ function TemplateEditorDialog({
           </div>
 
           {/* Right — Live Preview */}
-          <div className="overflow-y-auto space-y-2">
-            <div className="text-xs text-zinc-400 font-medium mb-1">Live Preview</div>
-            <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-3 flex items-center justify-center min-h-40">
+          <div className="overflow-y-auto space-y-3 flex flex-col">
+            <div className="text-xs font-semibold text-muted-fg mb-1">Xem trước trực quan (Live Preview)</div>
+            <div className="bg-background border border-border rounded-xl p-4 flex items-center justify-center min-h-40 flex-1">
               {parsedJson ? (
                 <LabelPreview
                   template={parsedJson as any}
@@ -322,27 +322,27 @@ function TemplateEditorDialog({
                   width={360}
                 />
               ) : (
-                <div className="text-zinc-500 text-xs italic">Fix JSON to see preview</div>
+                <div className="text-muted-fg text-xs italic">Cấu trúc JSON bị lỗi, sửa lỗi để xem trước.</div>
               )}
             </div>
-            <div className="text-[10px] text-zinc-600 text-center">
-              Preview uses sample data. Actual print may differ based on runtime values.
+            <div className="text-[11px] text-muted-fg text-center italic">
+              * Bản xem trước sử dụng dữ liệu mẫu. Kết quả in thực tế phụ thuộc vào máy in vật lý.
             </div>
           </div>
         </div>
 
         {error && (
-          <div className="mt-2 text-red-400 text-xs flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 rounded px-3 py-2">
-            <AlertTriangle size={12} /> {error}
+          <div className="mt-2 text-error text-xs font-semibold flex items-center gap-2 bg-error/10 border border-error/20 rounded-lg px-4 py-2.5">
+            <AlertTriangle size={14} /> {error}
           </div>
         )}
 
-        <DialogFooter className="mt-3 gap-2">
-          <Button variant="ghost" onClick={onClose} className="text-zinc-400 hover:text-zinc-100 h-8 text-sm">Cancel</Button>
+        <DialogFooter className="mt-3 gap-2 border-t border-border pt-3">
+          <Button variant="ghost" onClick={onClose} className="text-muted-fg hover:text-foreground hover:bg-surface-2 h-9 text-sm font-semibold">Hủy</Button>
           <Button id="tpl-save-btn" onClick={handleSave} disabled={saving || !!jsonError}
-            className="bg-indigo-600 hover:bg-indigo-500 h-8 text-sm">
-            {saving ? <RefreshCw size={12} className="animate-spin mr-1" /> : null}
-            {isEdit ? 'Save Changes' : 'Create Template'}
+            className="bg-brand hover:bg-brand-light active:bg-brand-dark text-white h-9 px-4 text-sm font-semibold rounded-lg shadow-sm">
+            {saving ? <RefreshCw size={14} className="animate-spin mr-1.5" /> : null}
+            {isEdit ? 'Lưu thay đổi' : 'Tạo mẫu nhãn'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -355,10 +355,10 @@ function TemplateEditorDialog({
 function TemplatePreviewDialog({ open, template, onClose }: { open: boolean; template: LabelTemplate | null; onClose: () => void }) {
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-2xl bg-zinc-900 border-zinc-700 text-zinc-100">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl bg-card border-border text-foreground">
+        <DialogHeader className="border-b border-border pb-2">
           <DialogTitle className="text-base font-semibold">{template?.name}</DialogTitle>
-          <DialogDescription className="text-zinc-400 text-xs">
+          <DialogDescription className="text-muted-fg text-xs">
             v{template?.version} · {template?.labelWidth}×{template?.labelHeight}mm · {template?.dpi} DPI
             {template?.orientation && ` · ${template.orientation}`}
             {template?.revision && ` · Rev ${template.revision}`}
@@ -366,15 +366,15 @@ function TemplatePreviewDialog({ open, template, onClose }: { open: boolean; tem
         </DialogHeader>
         {/* Metadata row */}
         {(template?.category || template?.templateCode) && (
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap pt-2">
             {template?.category && <CategoryBadge category={template.category} />}
             {template?.templateCode && (
-              <span className="font-mono text-[11px] text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded border border-zinc-700">
-                {template.templateCode}
+              <span className="font-mono text-xs text-foreground bg-surface-2 px-2.5 py-0.5 rounded border border-border">
+                Mã mẫu: {template.templateCode}
               </span>
             )}
             {template?.supportedBarcodeTypes && (
-              <span className="text-[11px] text-zinc-500">
+              <span className="text-xs text-muted-fg font-medium">
                 {(() => { try { return (JSON.parse(template.supportedBarcodeTypes) as string[]).join(' · ') } catch { return template.supportedBarcodeTypes } })()}
               </span>
             )}
@@ -382,16 +382,16 @@ function TemplatePreviewDialog({ open, template, onClose }: { open: boolean; tem
         )}
         {/* Note — Ghi chú sản xuất */}
         {template?.note && (
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
-            <div className="text-[11px] font-semibold text-amber-400 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+          <div className="rounded-xl border border-warning/20 bg-warning/5 px-4 py-3">
+            <div className="text-xs font-bold text-warning uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
               <span>📋</span> Ghi chú sản xuất
             </div>
-            <pre className="text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed font-sans">
+            <pre className="text-xs text-foreground whitespace-pre-wrap leading-relaxed font-sans font-medium">
               {template.note}
             </pre>
           </div>
         )}
-        <div className="flex items-center justify-center py-4 bg-zinc-950 border border-zinc-800 rounded-lg">
+        <div className="flex items-center justify-center py-6 bg-background border border-border rounded-xl">
           {template && (
             <LabelPreview
               template={template.templateJson as any}
@@ -401,10 +401,10 @@ function TemplatePreviewDialog({ open, template, onClose }: { open: boolean; tem
           )}
         </div>
         {template?.description && (
-          <p className="text-xs text-zinc-500 italic px-1">{template.description}</p>
+          <p className="text-xs text-muted-fg italic px-1">{template.description}</p>
         )}
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose} className="text-zinc-400 h-8 text-sm">Đóng</Button>
+        <DialogFooter className="border-t border-border pt-3">
+          <Button variant="ghost" onClick={onClose} className="text-muted-fg hover:text-foreground hover:bg-surface-2 h-9 text-sm font-semibold">Đóng</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -431,71 +431,71 @@ function PrintHistoryDialog({ open, onClose }: { open: boolean; onClose: () => v
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-5xl max-h-[85vh] overflow-hidden flex flex-col bg-zinc-900 border-zinc-700 text-zinc-100">
-        <DialogHeader>
+      <DialogContent className="max-w-5xl max-h-[85vh] overflow-hidden flex flex-col bg-card border-border text-foreground">
+        <DialogHeader className="border-b border-border pb-2">
           <DialogTitle className="text-base font-semibold flex items-center gap-2">
-            <History size={16} className="text-blue-400" /> Print History
+            <History size={16} className="text-info" /> Lịch sử in/khắc tem nhãn (Print History)
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="flex-1 overflow-y-auto min-h-0 py-4">
           {loading ? (
-            <div className="flex items-center justify-center py-12 text-zinc-500 text-sm">
-              <RefreshCw size={16} className="animate-spin mr-2" /> Loading…
+            <div className="flex items-center justify-center py-16 text-muted-fg text-sm">
+              <RefreshCw size={18} className="animate-spin mr-2 text-brand" /> Đang tải lịch sử in…
             </div>
           ) : records.length === 0 ? (
-            <div className="text-center py-12 text-zinc-500 text-sm">No print history yet.</div>
+            <div className="text-center py-16 text-muted-fg text-sm">Chưa có lịch sử in.</div>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
                 {records.map(r => (
                   <div key={r.id}
                     onClick={() => setSelected(r)}
-                    className={`p-2.5 rounded-lg border cursor-pointer transition-colors text-xs ${selected?.id === r.id ? 'border-blue-500/50 bg-blue-500/10' : 'border-zinc-700/60 bg-zinc-800/40 hover:border-zinc-600'}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-medium text-zinc-200 truncate max-w-[60%]">{r.templateName}</span>
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${r.status === 'SUCCESS' ? 'bg-emerald-500/20 text-emerald-400' : r.status === 'FAILED' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                    className={`p-3 rounded-xl border cursor-pointer transition-all duration-200 text-xs ${selected?.id === r.id ? 'border-brand/40 bg-brand/5 shadow-sm' : 'border-border bg-surface-2 hover:border-border-strong hover:bg-surface-3/50'}`}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-semibold text-foreground truncate max-w-[60%]">{r.templateName}</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.status === 'SUCCESS' ? 'bg-success/10 text-success border border-success/20' : r.status === 'FAILED' ? 'bg-error/10 text-error border border-error/20' : 'bg-warning/10 text-warning border border-warning/20'}`}>
                         {r.status}
                       </span>
                     </div>
-                    <div className="text-zinc-500 flex gap-3">
-                      <span>v{r.templateVersion}</span>
-                      <span>{r.printerCode}</span>
-                      <span>{r.durationMs}ms</span>
+                    <div className="text-muted-fg flex gap-3 font-medium">
+                      <span>Phiên bản: v{r.templateVersion}</span>
+                      <span>Mã máy in: {r.printerCode}</span>
+                      <span>Thời gian in: {r.durationMs}ms</span>
                     </div>
-                    <div className="text-zinc-600 mt-0.5">{new Date(r.createdAt).toLocaleString()}</div>
+                    <div className="text-subtle-fg mt-1 font-mono text-[10px]">{new Date(r.createdAt).toLocaleString('vi-VN')}</div>
                   </div>
                 ))}
               </div>
               <div className="sticky top-0">
                 {selected ? (
-                  <div className="bg-zinc-800/60 border border-zinc-700 rounded-lg p-3 space-y-2">
-                    <div className="text-xs font-semibold text-zinc-200 mb-2">Details — {selected.templateName}</div>
-                    <div className="grid grid-cols-2 gap-1 text-xs text-zinc-400">
-                      <span>Status:</span><span className="text-zinc-200">{selected.status}</span>
-                      <span>Version:</span><span className="text-zinc-200">v{selected.templateVersion}</span>
-                      <span>Printer:</span><span className="text-zinc-200">{selected.printerCode}</span>
-                      <span>Duration:</span><span className="text-zinc-200">{selected.durationMs}ms</span>
-                      <span>Trace ID:</span><span className="text-zinc-300 font-mono text-[10px] truncate">{selected.traceId?.slice(0, 16)}…</span>
+                  <div className="bg-surface-2 border border-border rounded-xl p-4 space-y-3">
+                    <div className="text-sm font-bold text-foreground mb-2">Chi tiết bản ghi in — {selected.templateName}</div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-fg font-medium">
+                      <span>Trạng thái:</span><span className="text-foreground font-semibold">{selected.status}</span>
+                      <span>Phiên bản:</span><span className="text-foreground">{selected.templateVersion}</span>
+                      <span>Mã máy in:</span><span className="text-foreground">{selected.printerCode}</span>
+                      <span>Thời gian xử lý:</span><span className="text-foreground">{selected.durationMs} ms</span>
+                      <span>Trace ID:</span><span className="text-foreground font-mono text-[10px] truncate">{selected.traceId}</span>
                     </div>
                     {selected.renderedZpl && (
                       <div>
-                        <div className="text-xs text-zinc-500 mb-1">Rendered ZPL</div>
-                        <pre className="text-[10px] font-mono bg-zinc-950 text-zinc-300 p-2 rounded max-h-40 overflow-y-auto border border-zinc-700">
-                          {selected.renderedZpl?.slice(0, 800)}
+                        <div className="text-xs font-semibold text-muted-fg mb-1.5">Bản tin ZPL chi tiết</div>
+                        <pre className="text-[11px] font-mono bg-background text-foreground p-3 rounded-lg max-h-48 overflow-y-auto border border-border">
+                          {selected.renderedZpl}
                         </pre>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div className="text-zinc-600 text-xs text-center py-8">Select a record to see details</div>
+                  <div className="text-muted-fg text-xs text-center py-16 italic border border-dashed border-border rounded-xl bg-surface-2">Chọn một bản tin để xem chi tiết thông số in.</div>
                 )}
               </div>
             </div>
           )}
         </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose} className="text-zinc-400 h-8 text-sm">Close</Button>
+        <DialogFooter className="border-t border-border pt-3">
+          <Button variant="ghost" onClick={onClose} className="text-muted-fg hover:text-foreground hover:bg-surface-2 h-9 text-sm font-semibold">Đóng</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -615,158 +615,164 @@ export function LabelTemplatesTab() {
   }
 
   return (
-    <div className="space-y-4 p-1">
+    <div className="space-y-6 p-4 bg-background min-h-screen">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-center justify-between gap-4 flex-wrap pb-4 border-b border-border">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-100 flex items-center gap-2">
-            <FileText size={18} className="text-indigo-400" /> Label Templates
-          </h2>
-          <p className="text-xs text-zinc-500 mt-0.5">{templates.length} template{templates.length !== 1 ? 's' : ''} · manage layouts, assign to printers</p>
+          <h1 className="text-[32px] font-bold text-foreground flex items-center gap-3">
+            <FileText size={32} className="text-brand" /> Mẫu nhãn thiết kế
+          </h1>
+          <p className="text-xs text-muted-fg mt-1">Quản lý và cấu hình mẫu tem nhãn, gán máy in tương thích ({templates.length} mẫu nhãn hoạt động)</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Button id="tpl-history-btn" variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}
-            className="text-zinc-400 hover:text-zinc-100 h-8 text-xs border border-zinc-700 hover:border-zinc-600 gap-1.5">
-            <History size={13} /> Print History
+          <Button id="tpl-history-btn" variant="outline" size="sm" onClick={() => setHistoryOpen(true)}
+            className="text-muted-fg hover:text-foreground h-10 px-4 text-sm font-semibold border-border hover:bg-surface-2 gap-2">
+            <History size={16} /> Lịch sử in
           </Button>
-          <Button id="tpl-assign-btn" variant="ghost" size="sm" onClick={() => setAssignOpen(true)}
-            className="text-zinc-400 hover:text-zinc-100 h-8 text-xs border border-zinc-700 hover:border-zinc-600 gap-1.5">
-            <Settings2 size={13} /> Printer Assignments
+          <Button id="tpl-assign-btn" variant="outline" size="sm" onClick={() => setAssignOpen(true)}
+            className="text-muted-fg hover:text-foreground h-10 px-4 text-sm font-semibold border-border hover:bg-surface-2 gap-2">
+            <Settings2 size={16} /> Phân bổ máy in
           </Button>
           <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
-          <Button id="tpl-import-btn" variant="ghost" size="sm" onClick={() => importRef.current?.click()}
-            className="text-zinc-400 hover:text-zinc-100 h-8 text-xs border border-zinc-700 hover:border-zinc-600 gap-1.5">
-            <Upload size={13} /> Import
+          <Button id="tpl-import-btn" variant="outline" size="sm" onClick={() => importRef.current?.click()}
+            className="text-muted-fg hover:text-foreground h-10 px-4 text-sm font-semibold border-border hover:bg-surface-2 gap-2">
+            <Upload size={16} /> Nhập file
           </Button>
           <Button id="tpl-new-btn" size="sm" onClick={() => { setEditTarget(null); setEditorOpen(true) }}
-            className="bg-indigo-600 hover:bg-indigo-500 h-8 text-xs gap-1.5">
-            <Plus size={13} /> New Template
+            className="bg-brand hover:bg-brand-light active:bg-brand-dark text-white h-10 px-4 text-sm font-semibold gap-2 shadow-sm rounded-lg">
+            <Plus size={16} /> Thêm mẫu mới
           </Button>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-xs">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
+      {/* Filters Toolbar */}
+      <div className="flex items-center gap-3 bg-card p-4 rounded-xl border border-border shadow-sm flex-wrap">
+        <div className="relative flex-1 min-w-[240px] max-w-sm">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-fg" />
           <Input id="tpl-search" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search templates…" className="pl-8 h-8 text-xs bg-zinc-800 border-zinc-700 text-zinc-100" />
+            placeholder="Tìm kiếm mẫu nhãn…" className="pl-10 h-10 text-sm bg-background border-border text-foreground placeholder:text-muted-fg focus-visible:ring-brand" />
         </div>
-        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger id="tpl-category-filter" className="w-36 h-8 text-xs bg-zinc-800 border-zinc-700 text-zinc-100">
-            <SelectValue placeholder="All categories" />
-          </SelectTrigger>
-          <SelectContent className="bg-zinc-800 border-zinc-700 text-zinc-100">
-            <SelectItem value="all">All categories</SelectItem>
-            {Object.entries(CATEGORY_META).map(([key, meta]) => (
-              <SelectItem key={key} value={key}>{meta.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger id="tpl-status-filter" className="w-36 h-8 text-xs bg-zinc-800 border-zinc-700 text-zinc-100">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="bg-zinc-800 border-zinc-700 text-zinc-100">
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="published">Published</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="archived">Archived</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button id="tpl-refresh-btn" variant="ghost" size="sm" onClick={load} disabled={loading}
-          className="text-zinc-400 hover:text-zinc-100 h-8 border border-zinc-700">
-          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] font-semibold text-muted-fg whitespace-nowrap">Phân loại:</span>
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger id="tpl-category-filter" className="w-44 h-10 text-sm bg-background border-border text-foreground focus:ring-brand">
+              <SelectValue placeholder="Tất cả nhóm" />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border text-foreground">
+              <SelectItem value="all">Tất cả nhóm</SelectItem>
+              {Object.entries(CATEGORY_META).map(([key, meta]) => (
+                <SelectItem key={key} value={key}>{meta.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] font-semibold text-muted-fg whitespace-nowrap">Trạng thái:</span>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger id="tpl-status-filter" className="w-44 h-10 text-sm bg-background border-border text-foreground focus:ring-brand">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border text-foreground">
+              <SelectItem value="all">Tất cả trạng thái</SelectItem>
+              <SelectItem value="published">Đã phát hành</SelectItem>
+              <SelectItem value="draft">Bản nháp</SelectItem>
+              <SelectItem value="archived">Đã lưu trữ</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button id="tpl-refresh-btn" variant="outline" size="icon" onClick={load} disabled={loading}
+          className="text-muted-fg hover:text-foreground h-10 w-10 border-border hover:bg-surface-2">
+          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
         </Button>
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-zinc-800 overflow-hidden">
+      <div className="rounded-xl border border-border overflow-hidden bg-card shadow-sm">
         <TableEl>
           <TableHeader>
-            <TableRow className="border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900/50">
-              <TableHead className="text-zinc-400 text-xs font-medium h-9 pl-4">Name</TableHead>
-              <TableHead className="text-zinc-400 text-xs font-medium h-9">Category</TableHead>
-              <TableHead className="text-zinc-400 text-xs font-medium h-9">Size</TableHead>
-              <TableHead className="text-zinc-400 text-xs font-medium h-9">DPI</TableHead>
-              <TableHead className="text-zinc-400 text-xs font-medium h-9">Ver.</TableHead>
-              <TableHead className="text-zinc-400 text-xs font-medium h-9">Status</TableHead>
-              <TableHead className="text-zinc-400 text-xs font-medium h-9">Updated</TableHead>
-              <TableHead className="text-zinc-400 text-xs font-medium h-9 pr-4 text-right">Actions</TableHead>
+            <TableRow className="border-border bg-surface-2 hover:bg-surface-2">
+              <TableHead className="text-foreground text-sm font-semibold h-12 pl-6">Tên mẫu nhãn (Name)</TableHead>
+              <TableHead className="text-foreground text-sm font-semibold h-12">Phân loại (Category)</TableHead>
+              <TableHead className="text-foreground text-sm font-semibold h-12">Kích thước (Size)</TableHead>
+              <TableHead className="text-foreground text-sm font-semibold h-12">Độ phân giải (DPI)</TableHead>
+              <TableHead className="text-foreground text-sm font-semibold h-12">Phiên bản (Ver.)</TableHead>
+              <TableHead className="text-foreground text-sm font-semibold h-12">Trạng thái (Status)</TableHead>
+              <TableHead className="text-foreground text-sm font-semibold h-12">Cập nhật (Updated)</TableHead>
+              <TableHead className="text-foreground text-sm font-semibold h-12 pr-6 text-right">Thao tác (Actions)</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && (
-              <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableCell colSpan={7} className="text-center py-12 text-zinc-500 text-sm">
-                  <RefreshCw size={16} className="animate-spin inline mr-2" />Loading templates…
+              <TableRow className="border-border hover:bg-transparent">
+                <TableCell colSpan={8} className="text-center py-16 text-muted-fg text-[15px]">
+                  <RefreshCw size={18} className="animate-spin inline mr-2 text-brand" />Đang tải danh sách mẫu nhãn…
                 </TableCell>
               </TableRow>
             )}
             {!loading && filtered.length === 0 && (
-              <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableCell colSpan={7} className="text-center py-12 text-zinc-600 text-sm">
-                  No templates found.
+              <TableRow className="border-border hover:bg-transparent">
+                <TableCell colSpan={8} className="text-center py-16 text-muted-fg text-[15px]">
+                  Không tìm thấy mẫu nhãn nào phù hợp.
                 </TableCell>
               </TableRow>
             )}
             {!loading && filtered.map(t => (
-              <TableRow key={t.id} className="border-zinc-800 hover:bg-zinc-800/30 transition-colors">
-                <TableCell className="pl-4 py-2.5">
-                  <div className="font-medium text-zinc-200 text-sm">{t.name}</div>
+              <TableRow key={t.id} className="border-border hover:bg-surface-2/60 transition-colors">
+                <TableCell className="pl-6 py-4">
+                  <div className="font-semibold text-foreground text-[15px]">{t.name}</div>
                   {t.templateCode && (
-                    <div className="font-mono text-[10px] text-zinc-500 mt-0.5">{t.templateCode}</div>
+                    <div className="font-mono text-xs text-muted-fg mt-1">{t.templateCode}</div>
                   )}
-                  {t.description && <div className="text-zinc-500 text-[11px] truncate max-w-xs">{t.description}</div>}
+                  {t.description && <div className="text-muted-fg text-xs mt-0.5 truncate max-w-xs">{t.description}</div>}
                 </TableCell>
-                <TableCell className="py-2.5">
+                <TableCell className="py-4">
                   <CategoryBadge category={t.category} />
                 </TableCell>
-                <TableCell className="py-2.5 text-xs text-zinc-300 font-mono">{t.labelWidth}×{t.labelHeight}mm</TableCell>
-                <TableCell className="py-2.5 text-xs text-zinc-400">{t.dpi}</TableCell>
-                <TableCell className="py-2.5 text-xs text-zinc-400">v{t.version}</TableCell>
-                <TableCell className="py-2.5"><TemplateBadge status={t.status} isDefault={t.isDefault} /></TableCell>
-                <TableCell className="py-2.5 text-xs text-zinc-500">{new Date(t.updatedAt).toLocaleDateString()}</TableCell>
-                <TableCell className="pr-4 py-2.5">
+                <TableCell className="py-4 text-[15px] text-foreground font-mono">{t.labelWidth} × {t.labelHeight} mm</TableCell>
+                <TableCell className="py-4 text-[15px] text-muted-fg font-mono">{t.dpi} DPI</TableCell>
+                <TableCell className="py-4 text-[15px] text-muted-fg font-mono">v{t.version}</TableCell>
+                <TableCell className="py-4"><TemplateBadge status={t.status} isDefault={t.isDefault} /></TableCell>
+                <TableCell className="py-4 text-[15px] text-muted-fg">{new Date(t.updatedAt).toLocaleDateString('vi-VN')}</TableCell>
+                <TableCell className="pr-6 py-4">
                   <div className="flex items-center gap-1 justify-end">
                     <button id={`tpl-preview-${t.id}`} onClick={() => { setPreviewTarget(t); setPreviewOpen(true) }}
-                      title="Preview" className="p-1.5 rounded text-zinc-500 hover:text-blue-400 hover:bg-blue-400/10 transition-colors">
-                      <Eye size={13} />
+                      title="Xem trước" className="p-2 rounded-lg text-muted-fg hover:text-blue-600 hover:bg-blue-500/10 transition-all duration-200">
+                      <Eye size={16} />
                     </button>
                     <button id={`tpl-edit-${t.id}`} onClick={() => { setEditTarget(t); setEditorOpen(true) }}
-                      title="Edit" className="p-1.5 rounded text-zinc-500 hover:text-indigo-400 hover:bg-indigo-400/10 transition-colors">
-                      <Edit2 size={13} />
+                      title="Chỉnh sửa" className="p-2 rounded-lg text-muted-fg hover:text-brand hover:bg-brand/10 transition-all duration-200">
+                      <Edit2 size={16} />
                     </button>
                     <button id={`tpl-dup-${t.id}`} onClick={() => handleDuplicate(t.id)}
-                      title="Duplicate" className="p-1.5 rounded text-zinc-500 hover:text-amber-400 hover:bg-amber-400/10 transition-colors">
-                      <Copy size={13} />
+                      title="Nhân bản" className="p-2 rounded-lg text-muted-fg hover:text-amber-600 hover:bg-amber-500/10 transition-all duration-200">
+                      <Copy size={16} />
                     </button>
                     {t.status !== 'published' && (
                       <button id={`tpl-publish-${t.id}`} onClick={() => handlePublish(t.id)}
-                        title="Publish" className="p-1.5 rounded text-zinc-500 hover:text-emerald-400 hover:bg-emerald-400/10 transition-colors">
-                        <CheckCircle2 size={13} />
+                        title="Phát hành" className="p-2 rounded-lg text-muted-fg hover:text-emerald-600 hover:bg-emerald-500/10 transition-all duration-200">
+                        <CheckCircle2 size={16} />
                       </button>
                     )}
                     {!t.isDefault && t.status === 'published' && (
                       <button id={`tpl-setdefault-${t.id}`} onClick={() => handleSetDefault(t.id)}
-                        title="Set as Default" className="p-1.5 rounded text-zinc-500 hover:text-yellow-400 hover:bg-yellow-400/10 transition-colors">
-                        <Star size={13} />
+                        title="Đặt làm Mặc định" className="p-2 rounded-lg text-muted-fg hover:text-yellow-600 hover:bg-yellow-500/10 transition-all duration-200">
+                        <Star size={16} />
                       </button>
                     )}
                     {t.status !== 'archived' && (
                       <button id={`tpl-archive-${t.id}`} onClick={() => handleArchive(t.id)}
-                        title="Archive" className="p-1.5 rounded text-zinc-500 hover:text-orange-400 hover:bg-orange-400/10 transition-colors">
-                        <Archive size={13} />
+                        title="Lưu trữ" className="p-2 rounded-lg text-muted-fg hover:text-orange-600 hover:bg-orange-500/10 transition-all duration-200">
+                        <Archive size={16} />
                       </button>
                     )}
                     <button id={`tpl-export-${t.id}`} onClick={() => handleExport(t)}
-                      title="Export" className="p-1.5 rounded text-zinc-500 hover:text-cyan-400 hover:bg-cyan-400/10 transition-colors">
-                      <Download size={13} />
+                      title="Xuất file" className="p-2 rounded-lg text-muted-fg hover:text-cyan-600 hover:bg-cyan-500/10 transition-all duration-200">
+                      <Download size={16} />
                     </button>
                     {!t.isDefault && (
                       <button id={`tpl-delete-${t.id}`} onClick={() => handleDelete(t.id)}
-                        title="Delete" className="p-1.5 rounded text-zinc-500 hover:text-red-400 hover:bg-red-400/10 transition-colors">
-                        <Trash2 size={13} />
+                        title="Xóa" className="p-2 rounded-lg text-muted-fg hover:text-red-600 hover:bg-red-500/10 transition-all duration-200">
+                        <Trash2 size={16} />
                       </button>
                     )}
                   </div>
@@ -790,30 +796,30 @@ export function LabelTemplatesTab() {
 
       {/* Printer Assignment Dialog */}
       <Dialog open={assignOpen} onOpenChange={v => !v && setAssignOpen(false)}>
-        <DialogContent className="max-w-lg bg-zinc-900 border-zinc-700 text-zinc-100">
-          <DialogHeader>
+        <DialogContent className="max-w-lg bg-card border-border text-foreground">
+          <DialogHeader className="border-b border-border pb-2">
             <DialogTitle className="text-base font-semibold flex items-center gap-2">
-              <Settings2 size={16} className="text-indigo-400" /> Printer Template Assignments
+              <Settings2 size={16} className="text-brand" /> Cấu hình Phân bổ Mẫu nhãn in
             </DialogTitle>
-            <DialogDescription className="text-zinc-400 text-xs">
-              Assign a specific label template to each printer. Leaves the assignment empty to use the system default.
+            <DialogDescription className="text-muted-fg text-xs">
+              Gán mẫu nhãn in cụ thể cho từng thiết bị máy in. Bỏ trống để sử dụng mẫu mặc định của hệ thống.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
+          <div className="space-y-3 py-3">
             {printers.map(p => {
               const code = p.printerCode ?? p.PrinterCode
               return (
-                <div key={code} className="flex items-center gap-3 bg-zinc-800/40 border border-zinc-700/50 rounded-lg p-3">
+                <div key={code} className="flex items-center gap-4 bg-surface-2 border border-border rounded-xl p-4">
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-zinc-200 truncate">{p.displayName ?? p.DisplayName}</div>
-                    <div className="text-xs text-zinc-500 font-mono">{code}</div>
+                    <div className="text-sm font-bold text-foreground truncate">{p.displayName ?? p.DisplayName}</div>
+                    <div className="text-xs text-muted-fg font-mono mt-0.5">Mã thiết bị: {code}</div>
                   </div>
                   <Select value={assignSelections[code] ?? 'none'} onValueChange={v => setAssignSelections(prev => ({ ...prev, [code]: v }))}>
-                    <SelectTrigger id={`assign-${code}`} className="w-52 h-8 text-xs bg-zinc-800 border-zinc-700 text-zinc-100">
-                      <SelectValue placeholder="Use system default" />
+                    <SelectTrigger id={`assign-${code}`} className="w-56 h-10 text-sm bg-background border-border text-foreground focus:ring-brand">
+                      <SelectValue placeholder="Mặc định hệ thống" />
                     </SelectTrigger>
-                    <SelectContent className="bg-zinc-800 border-zinc-700 text-zinc-100">
-                      <SelectItem value="none">— System Default —</SelectItem>
+                    <SelectContent className="bg-card border-border text-foreground">
+                      <SelectItem value="none">— Mặc định hệ thống —</SelectItem>
                       {templates.filter(t => t.status === 'published').map(t => (
                         <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                       ))}
@@ -823,12 +829,12 @@ export function LabelTemplatesTab() {
               )
             })}
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setAssignOpen(false)} className="text-zinc-400 h-8 text-sm">Cancel</Button>
+          <DialogFooter className="gap-2 border-t border-border pt-3">
+            <Button variant="ghost" onClick={() => setAssignOpen(false)} className="text-muted-fg hover:text-foreground hover:bg-surface-2 h-9 text-sm font-semibold">Hủy</Button>
             <Button id="assign-save-btn" onClick={handleSaveAssignments} disabled={assignSaving}
-              className="bg-indigo-600 hover:bg-indigo-500 h-8 text-sm">
-              {assignSaving ? <RefreshCw size={12} className="animate-spin mr-1" /> : null}
-              Save Assignments
+              className="bg-brand hover:bg-brand-light active:bg-brand-dark text-white h-9 px-4 text-sm font-semibold rounded-lg shadow-sm">
+              {assignSaving ? <RefreshCw size={14} className="animate-spin mr-1.5" /> : null}
+              Lưu phân bổ
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -838,3 +844,4 @@ export function LabelTemplatesTab() {
 }
 
 export default LabelTemplatesTab
+

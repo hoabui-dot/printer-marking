@@ -18,6 +18,18 @@ import {
 } from '@/components/ui/dialog'
 import { type Alarm, type PagedAlarmResult } from '@/hooks/useDashboard'
 import client from '@/api/client'
+import {
+  getRetentionLimitStr,
+  getTodayStr,
+  normalizeStartOfDay,
+  normalizeEndOfDay,
+  clampToRetentionWindow,
+  buildLast7DaysRange,
+  buildTodayRange,
+  buildYesterdayRange,
+  buildLast3DaysRange,
+  formatRangeDisplay
+} from '@/lib/dateUtils'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -32,19 +44,17 @@ interface AlarmFilters {
   dateTo: string
 }
 
-const TODAY = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const defaultFilters = (): AlarmFilters => {
+  const range = buildLast7DaysRange()
+  return {
+    status: '',
+    severity: '',
+    deviceId: '',
+    search: '',
+    dateFrom: range.dateFrom,
+    dateTo: range.dateTo,
+  }
 }
-
-const defaultFilters = (): AlarmFilters => ({
-  status: '',
-  severity: '',
-  deviceId: '',
-  search: '',
-  dateFrom: '',
-  dateTo: '',
-})
 
 const PAGE_SIZE = 20
 
@@ -207,6 +217,8 @@ function FilterToolbar({
   onChange: (f: Partial<AlarmFilters>) => void
   onReset: () => void
 }) {
+  const rangeDisplay = formatRangeDisplay(filters.dateFrom, filters.dateTo)
+
   return (
     <div className="flex flex-wrap gap-2 items-end pb-4 border-b border-border">
       {/* Search */}
@@ -250,24 +262,10 @@ function FilterToolbar({
       <Select
         value=""
         onValueChange={v => {
-          const today = TODAY()
-          if (v === 'today') onChange({ dateFrom: today, dateTo: today })
-          else if (v === 'yesterday') {
-            const y = new Date(); y.setDate(y.getDate() - 1)
-            const ys = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`
-            onChange({ dateFrom: ys, dateTo: ys })
-          }
-          else if (v === '7d') {
-            const s = new Date(); s.setDate(s.getDate() - 7)
-            const ss = `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, '0')}-${String(s.getDate()).padStart(2, '0')}`
-            onChange({ dateFrom: ss, dateTo: today })
-          }
-          else if (v === '30d') {
-            const s = new Date(); s.setDate(s.getDate() - 30)
-            const ss = `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, '0')}-${String(s.getDate()).padStart(2, '0')}`
-            onChange({ dateFrom: ss, dateTo: today })
-          }
-          else if (v === 'all') onChange({ dateFrom: '', dateTo: '' })
+          if (v === 'today') onChange(buildTodayRange())
+          else if (v === 'yesterday') onChange(buildYesterdayRange())
+          else if (v === '3d') onChange(buildLast3DaysRange())
+          else if (v === '7d') onChange(buildLast7DaysRange())
         }}
       >
         <SelectTrigger className="h-8 text-xs w-36">
@@ -276,26 +274,49 @@ function FilterToolbar({
         <SelectContent>
           <SelectItem value="today">Hôm nay</SelectItem>
           <SelectItem value="yesterday">Hôm qua</SelectItem>
+          <SelectItem value="3d">3 ngày qua</SelectItem>
           <SelectItem value="7d">7 ngày qua</SelectItem>
-          <SelectItem value="30d">30 ngày qua</SelectItem>
-          <SelectItem value="all">Tất cả</SelectItem>
         </SelectContent>
       </Select>
 
       {/* Date from / to */}
-      <input
-        type="date"
-        value={filters.dateFrom}
-        onChange={e => onChange({ dateFrom: e.target.value })}
-        className="h-8 text-xs bg-background border border-border rounded-md px-2 text-foreground"
-      />
-      <span className="text-muted-fg text-xs self-center">→</span>
-      <input
-        type="date"
-        value={filters.dateTo}
-        onChange={e => onChange({ dateTo: e.target.value })}
-        className="h-8 text-xs bg-background border border-border rounded-md px-2 text-foreground"
-      />
+      <div className="flex items-center gap-1.5">
+        <input
+          type="date"
+          min={getRetentionLimitStr()}
+          max={getTodayStr()}
+          value={filters.dateFrom ? filters.dateFrom.split('T')[0] : ''}
+          onChange={e => {
+            const val = e.target.value
+            if (val) {
+              const clamped = clampToRetentionWindow(val, getRetentionLimitStr())
+              onChange({ dateFrom: normalizeStartOfDay(clamped) })
+            }
+          }}
+          className="h-8 text-xs bg-background border border-border rounded-md px-2 text-foreground"
+        />
+        <span className="text-muted-fg text-xs self-center">→</span>
+        <input
+          type="date"
+          min={getRetentionLimitStr()}
+          max={getTodayStr()}
+          value={filters.dateTo ? filters.dateTo.split('T')[0] : ''}
+          onChange={e => {
+            const val = e.target.value
+            if (val) {
+              const clamped = clampToRetentionWindow(val, getTodayStr())
+              onChange({ dateTo: normalizeEndOfDay(clamped) })
+            }
+          }}
+          className="h-8 text-xs bg-background border border-border rounded-md px-2 text-foreground"
+        />
+      </div>
+
+      {rangeDisplay && (
+        <div className="text-[11px] text-brand-light font-bold self-center px-2.5 py-1 rounded bg-brand/5 border border-brand/10">
+          📅 {rangeDisplay}
+        </div>
+      )}
 
       {/* Reset */}
       <Button size="sm" variant="ghost" className="h-8 text-xs gap-1.5" onClick={onReset}>

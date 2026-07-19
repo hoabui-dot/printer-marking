@@ -33,30 +33,26 @@ export default function LoginPage() {
 
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-6"
-      style={{ background: 'radial-gradient(ellipse at 60% 20%, hsl(16 80% 12%) 0%, hsl(220 20% 6%) 70%)' }}
-    >
+    <div className="flex min-h-screen items-center justify-center p-6 bg-background relative overflow-hidden">
       {/* Background decorative glow */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-        <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full opacity-10"
-          style={{ background: 'radial-gradient(circle, hsl(16 90% 52%) 0%, transparent 70%)' }}
+        <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full opacity-5 dark:opacity-10"
+          style={{ background: 'radial-gradient(circle, hsl(var(--brand)) 0%, transparent 70%)' }}
         />
       </div>
 
-      <Card className="relative w-full max-w-md border-border-strong shadow-2xl overflow-hidden">
+      <Card className="relative w-full max-w-md border-border shadow-xl overflow-hidden bg-card text-foreground">
         {/* Top brand stripe */}
-        <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, hsl(var(--brand-dark)), hsl(var(--brand-light)))' }} />
+        <div className="h-1.5 w-full bg-brand" />
 
         <CardHeader className="p-8 pb-4 text-center space-y-3">
           {/* Logo mark */}
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg"
-            style={{ background: 'linear-gradient(135deg, hsl(var(--brand-dark)), hsl(var(--brand-light)))' }}
-          >
-            <Flame className="h-7 w-7 text-white" />
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl shadow-md bg-brand text-white">
+            <Flame className="h-7 w-7" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Kiosk Trạm ND</h1>
-            <p className="text-sm text-muted-fg mt-1">
+            <h1 className="text-[22px] font-semibold tracking-tight text-foreground">Kiosk Trạm ND</h1>
+            <p className="text-xs text-muted-fg mt-1">
               Hệ thống quản lý in &amp; khắc laser
             </p>
           </div>
@@ -91,7 +87,7 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+              <div className="flex items-center gap-2 rounded-lg border border-error/20 bg-error/10 px-3 py-2.5 text-sm font-bold text-error">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>{error}</span>
               </div>

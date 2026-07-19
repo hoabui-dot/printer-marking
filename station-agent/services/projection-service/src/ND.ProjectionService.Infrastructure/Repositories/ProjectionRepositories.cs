@@ -172,12 +172,15 @@ public sealed class ProductionRecordRepository : IProductionRecordRepository
     public async Task<(IReadOnlyList<ProductionRecord> Items, int TotalCount)> GetTodayAsync(
         int page, int pageSize, CancellationToken ct = default)
     {
-        var todayUtc = DateTime.UtcNow.Date;
-        var startOfToday = todayUtc.ToString("o");
-        var endOfToday = todayUtc.AddDays(1).ToString("o");
+        var nowLocal = DateTime.Now;
+        var startOfTodayLocal = new DateTime(nowLocal.Year, nowLocal.Month, nowLocal.Day, 0, 0, 0, DateTimeKind.Local);
+        var endOfTodayLocal = new DateTime(nowLocal.Year, nowLocal.Month, nowLocal.Day, 23, 59, 59, 999, DateTimeKind.Local);
+
+        var startOfToday = startOfTodayLocal.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+        var endOfToday = endOfTodayLocal.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
         var query = _context.ProductionRecords
-            .Where(r => string.Compare(r.CreatedAt, startOfToday) >= 0 && string.Compare(r.CreatedAt, endOfToday) < 0)
+            .Where(r => string.Compare(r.CreatedAt, startOfToday) >= 0 && string.Compare(r.CreatedAt, endOfToday) <= 0)
             .OrderByDescending(r => r.CreatedAt);
 
         var totalCount = await query.CountAsync(ct);
@@ -211,11 +214,21 @@ public sealed class ProductionRecordRepository : IProductionRecordRepository
         }
         if (!string.IsNullOrWhiteSpace(dateFrom))
         {
-            query = query.Where(r => string.Compare(r.CreatedAt, dateFrom) >= 0);
+            var targetFrom = dateFrom;
+            if (DateTimeOffset.TryParse(dateFrom, out var dtoFrom))
+            {
+                targetFrom = dtoFrom.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            }
+            query = query.Where(r => string.Compare(r.CreatedAt, targetFrom) >= 0);
         }
         if (!string.IsNullOrWhiteSpace(dateTo))
         {
-            query = query.Where(r => string.Compare(r.CreatedAt, dateTo) <= 0);
+            var targetTo = dateTo;
+            if (DateTimeOffset.TryParse(dateTo, out var dtoTo))
+            {
+                targetTo = dtoTo.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            }
+            query = query.Where(r => string.Compare(r.CreatedAt, targetTo) <= 0);
         }
 
         var groupedQuery = query.GroupBy(r => r.JobNo).Select(g => new {
@@ -373,9 +386,23 @@ public sealed class AlarmRepository : IAlarmRepository
 
         // ── Date range filter ──────────────────────────────────────────────────
         if (!string.IsNullOrWhiteSpace(dateFrom))
-            query = query.Where(a => string.Compare(a.CreatedAt, dateFrom) >= 0);
+        {
+            var targetFrom = dateFrom;
+            if (DateTimeOffset.TryParse(dateFrom, out var dtoFrom))
+            {
+                targetFrom = dtoFrom.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            }
+            query = query.Where(a => string.Compare(a.CreatedAt, targetFrom) >= 0);
+        }
         if (!string.IsNullOrWhiteSpace(dateTo))
-            query = query.Where(a => string.Compare(a.CreatedAt, dateTo) <= 0);
+        {
+            var targetTo = dateTo;
+            if (DateTimeOffset.TryParse(dateTo, out var dtoTo))
+            {
+                targetTo = dtoTo.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            }
+            query = query.Where(a => string.Compare(a.CreatedAt, targetTo) <= 0);
+        }
 
         // ── Full-text search ───────────────────────────────────────────────────
         if (!string.IsNullOrWhiteSpace(search))

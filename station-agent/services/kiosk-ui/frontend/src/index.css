@@ -8,7 +8,7 @@
   --brand:         16 90% 52%;   /* #f05a1a  warm orange-red */
   --brand-dark:    14 86% 42%;   /* #c04510  deeper variant  */
   --brand-light:   20 95% 60%;   /* #f7813a  lighter tint    */
-  --brand-glow:    16 90% 52%;
+  --brand-glow:    16 90% 15%;
 
   /* ── Backgrounds ────────────────────────────────────────── */
   --background:    220 20% 6%;   /* #0d0f14  near-black      */
@@ -24,6 +24,12 @@
   /* ── Borders ─────────────────────────────────────────────── */
   --border:        220 14% 18%;  /* #252c38  default border  */
   --border-strong: 220 14% 24%;  /* #313d4d  highlighted     */
+
+  /* ── Status Colors ──────────────────────────────────────── */
+  --success:       142 70% 45%;  /* Emerald green */
+  --warning:       35 90% 50%;   /* Warm amber */
+  --error:         0 84% 60%;    /* Red */
+  --info:          217 91% 60%;  /* Blue */
 
   /* ── shadcn token aliases ───────────────────────────────── */
   --card:              var(--surface);
@@ -42,38 +48,52 @@
   --destructive-foreground: 0 0% 100%;
   --input:             var(--surface-2);
   --ring:              var(--brand);
-  --radius:            0.5rem;
+  --radius:            0.75rem;
 }
 
 .light {
-  /* ── Backgrounds (synchronized with light mode in mes-frontend) ── */
-  --background:    210 40% 98%;  /* #F8FAFC */
-  --surface:       0 0% 100%;    /* #FFFFFF */
-  --surface-2:     210 40% 96%;  /* #F1F5F9 */
-  --surface-3:     210 30% 90%;  /* #E2E8F0 */
+  /* ── Backgrounds ── */
+  --background:    220 14% 97.5%;  /* #F7F8FA */
+  --surface:       0 0% 100%;      /* #FFFFFF */
+  --surface-2:     220 13% 95%;    /* #F3F4F6 */
+  --surface-3:     213 100% 97%;   /* #EFF6FF Selected row */
 
   /* ── Foregrounds ── */
-  --foreground:    222 47% 11%;  /* #0F172A */
-  --muted-fg:      215 25% 35%;  /* #475569 */
-  --subtle-fg:     215 16% 47%;  /* #64748B */
+  --foreground:    221 39% 11%;    /* #111827 */
+  --muted-fg:      220 9% 46%;     /* #6B7280 */
+  --subtle-fg:     218 11% 65%;    /* #9CA3AF */
 
   /* ── Borders ── */
-  --border:        214 32% 91%;  /* #E2E8F0 */
-  --border-strong: 215 20% 80%;  /* #CBD5E1 */
+  --border:        220 13% 91%;    /* #E5E7EB */
+  --border-strong: 220 13% 86%;    /* #D1D5DB */
+
+  /* ── Brand overrides for light mode ── */
+  --brand:         24 96% 53%;     /* #F97316 */
+  --brand-light:   20 92% 48%;     /* #EA580C hover */
+  --brand-dark:    18 90% 40%;     /* #C2410C pressed */
+  --brand-glow:    33 100% 96.5%;  /* #FFF7ED light background */
+
+  /* ── Status Colors overrides for light mode ── */
+  --success:       142 76% 36%;    /* #16A34A */
+  --warning:       35 92% 44%;     /* #D97706 */
+  --error:         0 72% 51%;      /* #DC2626 */
+  --info:          221 83% 53%;     /* #2563EB */
 
   /* ── shadcn token overrides ── */
   --card:              var(--surface);
   --card-foreground:   var(--foreground);
   --popover:           var(--surface-2);
   --popover-foreground:var(--foreground);
+  --primary:           var(--brand);
   --primary-foreground:0 0% 100%;
   --secondary:         var(--surface-2);
   --secondary-foreground:var(--foreground);
   --muted:             var(--surface-2);
   --muted-foreground:  var(--muted-fg);
+  --accent:            var(--brand);
   --accent-foreground: 0 0% 100%;
   --input:             var(--surface-2);
-  --brand-light:       16 90% 42%;   /* Deeper shade for high contrast in light mode */
+  --ring:              var(--brand);
 }
 
 @theme {
@@ -109,6 +129,13 @@
   --color-brand: hsl(var(--brand));
   --color-brand-dark: hsl(var(--brand-dark));
   --color-brand-light: hsl(var(--brand-light));
+  --color-brand-glow: hsl(var(--brand-glow));
+  
+  --color-success: hsl(var(--success));
+  --color-warning: hsl(var(--warning));
+  --color-error: hsl(var(--error));
+  --color-info: hsl(var(--info));
+
   --color-surface: hsl(var(--surface));
   --color-surface-2: hsl(var(--surface-2));
   --color-surface-3: hsl(var(--surface-3));
