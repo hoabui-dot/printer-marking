@@ -301,16 +301,16 @@ function TemplateEditorDialog({
               </div>
             {/* Layout type badge (read-only) */}
               <div className="col-span-2">
-                <label className={labelCls}>Bố cục in (Layout)</label>
+                <label className={labelCls}>Cột nhãn (Column Across)</label>
                 <div className="flex items-center gap-3">
                   <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[13px] font-bold border ${
                     layoutType === '3UP' ? 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-400 dark:border-violet-500/20'
                     : layoutType === '2UP' ? 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/20'
                     : 'bg-surface-2 text-muted-fg border-border'
                   }`}>
-                    {layoutType === '1UP' ? '1-Up — 1 nhãn / tờ'
-                    : layoutType === '2UP' ? '2-Up — 2 nhãn / tờ'
-                    : '3-Up — 3 nhãn / tờ'}
+                    {layoutType === '1UP' ? '1 cột nhãn (1 nhãn / hàng)'
+                    : layoutType === '2UP' ? '2 cột nhãn (2 nhãn / hàng)'
+                    : '3 cột nhãn (3 nhãn / hàng)'}
                   </span>
                   {isEdit && <span className="text-[12px] text-muted-fg">Không thể đổi sau khi tạo</span>}
                 </div>
@@ -809,12 +809,12 @@ export function LabelTemplatesTab() {
         ))}
       </div>
 
-      {/* ── N-Up Layout Tabs ────────────────────────────────────────────────── */}
+      {/* ── Column Layout Tabs ────────────────────────────────────────────────── */}
       {(() => {
         const tabDefs: { key: '1UP' | '2UP' | '3UP'; label: string; emoji: string; desc: string }[] = [
-          { key: '1UP', label: '1-Up', emoji: '▭', desc: '1 nhãn / tờ' },
-          { key: '2UP', label: '2-Up', emoji: '▭▭', desc: '2 nhãn / tờ' },
-          { key: '3UP', label: '3-Up', emoji: '▭▭▭', desc: '3 nhãn / tờ' },
+          { key: '1UP', label: '1 Cột nhãn', emoji: '▭', desc: '1 nhãn / hàng' },
+          { key: '2UP', label: '2 Cột nhãn', emoji: '▭▭', desc: '2 nhãn / hàng' },
+          { key: '3UP', label: '3 Cột nhãn', emoji: '▭▭▭', desc: '3 nhãn / hàng' },
         ]
         // count all templates (ignoring status filter) per layout — use unfiltered set from loaded data
         const countFor = (lt: string) => templates.filter(t => (t.layoutType ?? '1UP') === lt).length

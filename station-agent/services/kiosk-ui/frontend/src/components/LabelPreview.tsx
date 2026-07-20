@@ -276,7 +276,7 @@ export function LabelPreview({
       <div
         className={`relative ${className}`}
         style={{ width, height: totalH }}
-        title={`${cols}×${rows} N-Up — ${parsed.width}×${parsed.height}mm / nhãn`}
+        title={`${cols} Cột nhãn — ${parsed.width}×${parsed.height}mm / nhãn`}
       >
         <div
           style={{
@@ -291,9 +291,9 @@ export function LabelPreview({
           ))}
         </div>
 
-        {/* N-Up badge */}
+        {/* Column badge */}
         <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded select-none pointer-events-none">
-          {cols === 2 ? '2-Up' : cols === 3 ? '3-Up' : `${cols}×${rows}`}
+          {cols === 2 ? '2 Cột' : cols === 3 ? '3 Cột' : '1 Cột'}
         </div>
       </div>
     )

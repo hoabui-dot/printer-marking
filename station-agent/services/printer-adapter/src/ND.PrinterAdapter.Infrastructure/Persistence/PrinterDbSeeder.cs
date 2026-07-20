@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ND.PrinterAdapter.Domain.Entities;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ND.PrinterAdapter.Infrastructure.Persistence;
 
@@ -18,7 +20,7 @@ public static class PrinterDbSeeder
             p2.SetOnline();
             await db.Printers.AddAsync(p2);
 
-            var p3 = Printer.Create("Printer-03", "Zebra Desktop C", "localhost", 9102, "ZPL", "ZEBRA", driverType: "simulation");
+            var p3 = Printer.Create("Printer-03", "Zebra Industrial C", "localhost", 9102, "ZPL", "ZEBRA", driverType: "simulation");
             p3.SetOnline();
             await db.Printers.AddAsync(p3);
 
@@ -36,17 +38,14 @@ public static class PrinterDbSeeder
         }
         else
         {
-            var cupsCode = "Zebra-GK420t-CUPS";
-            var cupsHost = Environment.GetEnvironmentVariable("CUPS_HEALTH_HOST") ?? "host.docker.internal";
-
-            var existingCups = await db.Printers.FirstOrDefaultAsync(p => p.PrinterCode == cupsCode);
+            var existingCups = await db.Printers.FirstOrDefaultAsync(p => p.PrinterCode == "Printer-03");
+            var cupsCode = "Printer-03";
+            var cupsHost = "localhost";
             if (existingCups == null)
             {
-                var cupsQueue = Environment.GetEnvironmentVariable("CUPS_QUEUE") ?? "Zebra_Technologies_ZTC_GK420t";
-                var pCups = Printer.Create(cupsCode, "Zebra GK420t (Physical)", cupsHost, 631, "ZPL", "ZEBRA",
-                    driverType: "cups", cupsQueueName: cupsQueue);
-                await db.Printers.AddAsync(pCups);
-                await db.SaveChangesAsync();
+                var p3 = Printer.Create(cupsCode, "Zebra Industrial C (CUPS Local)", cupsHost, 9102, "ZPL", "ZEBRA", driverType: "cups", cupsQueueName: "Zebra_ZD420");
+                p3.SetOnline();
+                await db.Printers.AddAsync(p3);
             }
             else if (existingCups.IpAddress == "localhost" || existingCups.IpAddress == "127.0.0.1")
             {
@@ -85,48 +84,202 @@ public static class PrinterDbSeeder
 
         foreach (var def in definitions)
         {
-            var exists = await db.LabelTemplates.AnyAsync(t => t.TemplateCode == def.Code);
-            if (exists) continue;
+            // 1-Up (original size)
+            await SeedOrUpdateTemplateAsync(db, def.Code, def.Name, def.Description, def.Note, def.Category,
+                def.Dpi, def.WidthMm, def.HeightMm, def.Orientation, def.BarcodeTypes, def.PrinterModels, def.StationTypes,
+                def.TemplateJson, "1UP", 1, 1, 0.0, def.IsDefault);
 
-            var tmpl = LabelTemplate.Create(
-                name: def.Name,
-                description: def.Description,
-                dpi: def.Dpi,
-                labelWidth: def.WidthMm,
-                labelHeight: def.HeightMm,
-                templateJson: def.TemplateJson,
-                status: "published",
-                createdBy: "system",
-                note: def.Note,
-                templateCode: def.Code,
-                category: def.Category,
-                orientation: def.Orientation,
-                revision: "A",
-                supportedBarcodeTypes: def.BarcodeTypes,
-                supportedPrinterModels: def.PrinterModels,
-                compatibleStationTypes: def.StationTypes
-            );
+            // 2-Up (35x22, 2 columns, gap 2.0)
+            var scaledJson2 = ScaleTemplateJsonTo35x22(def.TemplateJson, def.WidthMm, def.HeightMm);
+            await SeedOrUpdateTemplateAsync(db, def.Code + "-2UP", def.Name + " (2-Up)", def.Description, def.Note, def.Category,
+                def.Dpi, 35.0, 22.0, def.Orientation, def.BarcodeTypes, def.PrinterModels, def.StationTypes,
+                scaledJson2, "2UP", 2, 1, 2.0, false);
 
-            if (def.IsDefault)
-                tmpl.SetAsDefault();
-
-            await db.LabelTemplates.AddAsync(tmpl);
+            // 3-Up (35x22, 3 columns, gap 2.0)
+            var scaledJson3 = ScaleTemplateJsonTo35x22(def.TemplateJson, def.WidthMm, def.HeightMm);
+            await SeedOrUpdateTemplateAsync(db, def.Code + "-3UP", def.Name + " (3-Up)", def.Description, def.Note, def.Category,
+                def.Dpi, 35.0, 22.0, def.Orientation, def.BarcodeTypes, def.PrinterModels, def.StationTypes,
+                scaledJson3, "3UP", 3, 1, 2.0, false);
         }
 
         await db.SaveChangesAsync();
     }
 
-    private static HashSet<string> GetOfficialTemplateCodes() => new(StringComparer.Ordinal)
+    private static async Task SeedOrUpdateTemplateAsync(
+        PrinterDbContext db, string code, string name, string description, string note, string category,
+        int dpi, double width, double height, string orientation, string barcodeTypes, string printerModels, string stationTypes,
+        string templateJson, string layoutType, int sheetColumns, int sheetRows, double gapMm, bool isDefault)
     {
-        "LBL-KHO-50x30",
-        "LBL-SAT-100x60",
-        "LBL-TAM-SAT-100x80",
-        "LBL-PALLET-100x150",
-        "LBL-SHEET-LARGE-80x50",
-        "LBL-SHEET-SMALL-50x30",
-        "LBL-WIP-60x40",
-        "LBL-ISSUE-100x60",
-    };
+        var existing = await db.LabelTemplates.FirstOrDefaultAsync(t => t.TemplateCode == code);
+        if (existing == null)
+        {
+            var tmpl = LabelTemplate.Create(
+                name: name,
+                description: description,
+                dpi: dpi,
+                labelWidth: width,
+                labelHeight: height,
+                templateJson: templateJson,
+                status: "published",
+                createdBy: "system",
+                note: note,
+                templateCode: code,
+                category: category,
+                orientation: orientation,
+                revision: "A",
+                supportedBarcodeTypes: barcodeTypes,
+                supportedPrinterModels: printerModels,
+                compatibleStationTypes: stationTypes,
+                layoutType: layoutType,
+                sheetColumns: sheetColumns,
+                sheetRows: sheetRows,
+                gapMm: gapMm
+            );
+
+            if (isDefault)
+                tmpl.SetAsDefault();
+
+            await db.LabelTemplates.AddAsync(tmpl);
+        }
+        else
+        {
+            existing.Update(
+                name: name,
+                description: description,
+                dpi: dpi,
+                labelWidth: width,
+                labelHeight: height,
+                templateJson: templateJson,
+                updatedBy: "system",
+                note: note,
+                templateCode: code,
+                category: category,
+                orientation: orientation,
+                revision: "A",
+                supportedBarcodeTypes: barcodeTypes,
+                supportedPrinterModels: printerModels,
+                compatibleStationTypes: stationTypes,
+                gapMm: gapMm
+            );
+            if (isDefault)
+                existing.SetAsDefault();
+            else
+                existing.UnsetDefault();
+        }
+    }
+
+    private static string ScaleTemplateJsonTo35x22(string json, double origW, double origH)
+    {
+        try
+        {
+            var node = JsonNode.Parse(json);
+            if (node == null) return json;
+
+            node["width"] = 35;
+            node["height"] = 22;
+
+            double scaleX = 35.0 / origW;
+            double scaleY = 22.0 / origH;
+
+            var elements = node["elements"]?.AsArray();
+            if (elements != null)
+            {
+                foreach (var el in elements)
+                {
+                    if (el == null) continue;
+
+                    var type = el["type"]?.GetValue<string>();
+
+                    if (el["x"] != null)
+                    {
+                        var xVal = el["x"].GetValue<double>();
+                        el["x"] = (int)(xVal * scaleX);
+                    }
+                    if (el["y"] != null)
+                    {
+                        var yVal = el["y"].GetValue<double>();
+                        el["y"] = (int)(yVal * scaleY);
+                    }
+
+                    if (type == "text")
+                    {
+                        if (el["fontSize"] != null)
+                        {
+                            var fs = el["fontSize"].GetValue<double>();
+                            el["fontSize"] = Math.Max(5, (int)(fs * Math.Min(scaleX, scaleY)));
+                        }
+                    }
+                    else if (type == "barcode")
+                    {
+                        if (el["height"] != null)
+                        {
+                            var h = el["height"].GetValue<double>();
+                            el["height"] = Math.Max(10, (int)(h * scaleY));
+                        }
+                        if (el["barWidth"] != null)
+                        {
+                            var bw = el["barWidth"].GetValue<double>();
+                            el["barWidth"] = Math.Max(1, (int)(bw * scaleX));
+                        }
+                    }
+                    else if (type == "qr")
+                    {
+                        if (el["magnification"] != null)
+                        {
+                            var mag = el["magnification"].GetValue<double>();
+                            el["magnification"] = Math.Max(1, (int)(mag * Math.Min(scaleX, scaleY)));
+                        }
+                    }
+                    else if (type == "line" || type == "rect")
+                    {
+                        if (el["width"] != null)
+                        {
+                            var w = el["width"].GetValue<double>();
+                            el["width"] = Math.Max(1, (int)(w * scaleX));
+                        }
+                        if (el["height"] != null)
+                        {
+                            var h = el["height"].GetValue<double>();
+                            el["height"] = Math.Max(1, (int)(h * scaleY));
+                        }
+                        if (el["strokeWidth"] != null)
+                        {
+                            var sw = el["strokeWidth"].GetValue<double>();
+                            el["strokeWidth"] = Math.Max(1, (int)(sw * Math.Min(scaleX, scaleY)));
+                        }
+                    }
+                }
+            }
+
+            return node.ToJsonString();
+        }
+        catch
+        {
+            return json;
+        }
+    }
+
+    private static HashSet<string> GetOfficialTemplateCodes()
+    {
+        var codes = new HashSet<string>(StringComparer.Ordinal);
+        var baseCodes = new[] {
+            "LBL-KHO-50x30",
+            "LBL-SAT-100x60",
+            "LBL-TAM-SAT-100x80",
+            "LBL-PALLET-100x150",
+            "LBL-SHEET-LARGE-80x50",
+            "LBL-SHEET-SMALL-50x30",
+            "LBL-WIP-60x40",
+            "LBL-ISSUE-100x60"
+        };
+        foreach (var bc in baseCodes)
+        {
+            codes.Add(bc);
+            codes.Add(bc + "-2UP");
+            codes.Add(bc + "-3UP");
+        }
+        return codes;
+    }
 
     private record TemplateDefinition(
         string Code, string Name, string Description, string Note, string Category,
