@@ -262,47 +262,21 @@ export function LabelPreview({
     return <div className={errorCls} style={{ width, height: placeholderH }}>Lỗi phân tích Template</div>
   }
 
-  const { cols, rows, gapMm } = resolveLayout(template, parsed)
-  const isMultiUp = cols > 1 || rows > 1
+  const { cols } = resolveLayout(template, parsed)
+  const mmWidth  = parsed.width  || 50
+  const mmHeight = parsed.height || 30
+  const totalH   = Math.round((width * mmHeight) / mmWidth)
 
-  if (isMultiUp) {
-    const mmWidth  = parsed.width  || 50
-    const gapPx    = Math.round((gapMm / mmWidth) * width)
-    const tileW    = Math.floor((width - gapPx * (cols - 1)) / cols)
-    const tileH    = Math.round((tileW * (parsed.height || 30)) / (parsed.width || 50))
-    const totalH   = rows * tileH + (rows - 1) * gapPx
-
-    return (
-      <div
-        className={`relative ${className}`}
-        style={{ width, height: totalH }}
-        title={`${cols} Cột nhãn — ${parsed.width}×${parsed.height}mm / nhãn`}
-      >
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: `repeat(${cols}, ${tileW}px)`,
-            gridTemplateRows:    `repeat(${rows}, ${tileH}px)`,
-            gap: `${gapPx}px`,
-          }}
-        >
-          {Array.from({ length: rows * cols }, (_, i) => (
-            <SingleLabelTile key={i} parsed={parsed} data={data} tileWidth={tileW} />
-          ))}
-        </div>
-
-        {/* Column badge */}
-        <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded select-none pointer-events-none">
-          {cols === 2 ? '2 Cột' : cols === 3 ? '3 Cột' : '1 Cột'}
-        </div>
-      </div>
-    )
-  }
-
-  // Single-up
   return (
-    <div className={className}>
+    <div className={`relative ${className}`} style={{ width, height: totalH }}>
       <SingleLabelTile parsed={parsed} data={data} tileWidth={width} />
+      
+      {/* Column badge */}
+      {cols > 1 && (
+        <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded select-none pointer-events-none">
+          {cols === 2 ? '2 Cột' : cols === 3 ? '3 Cột' : `${cols} Cột`}
+        </div>
+      )}
     </div>
   )
 }

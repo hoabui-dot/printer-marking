@@ -89,20 +89,69 @@ public static class PrinterDbSeeder
                 def.Dpi, def.WidthMm, def.HeightMm, def.Orientation, def.BarcodeTypes, def.PrinterModels, def.StationTypes,
                 def.TemplateJson, "1UP", 1, 1, 0.0, def.IsDefault);
 
-            // 2-Up (35x22, 2 columns, gap 2.0)
+            // 2-Up (35x22, 2 columns, gap 2.0 => width 72.0)
             var scaledJson2 = ScaleTemplateJsonTo35x22(def.TemplateJson, def.WidthMm, def.HeightMm);
+            var duplicatedJson2 = DuplicateScaledTemplateJson(scaledJson2, 2, 2.0);
             await SeedOrUpdateTemplateAsync(db, def.Code + "-2UP", def.Name + " (2-Up)", def.Description, def.Note, def.Category,
-                def.Dpi, 35.0, 22.0, def.Orientation, def.BarcodeTypes, def.PrinterModels, def.StationTypes,
-                scaledJson2, "2UP", 2, 1, 2.0, false);
+                def.Dpi, 72.0, 22.0, def.Orientation, def.BarcodeTypes, def.PrinterModels, def.StationTypes,
+                duplicatedJson2, "2UP", 2, 1, 2.0, false);
 
-            // 3-Up (35x22, 3 columns, gap 2.0)
+            // 3-Up (35x22, 3 columns, gap 2.0 => width 109.0)
             var scaledJson3 = ScaleTemplateJsonTo35x22(def.TemplateJson, def.WidthMm, def.HeightMm);
+            var duplicatedJson3 = DuplicateScaledTemplateJson(scaledJson3, 3, 2.0);
             await SeedOrUpdateTemplateAsync(db, def.Code + "-3UP", def.Name + " (3-Up)", def.Description, def.Note, def.Category,
-                def.Dpi, 35.0, 22.0, def.Orientation, def.BarcodeTypes, def.PrinterModels, def.StationTypes,
-                scaledJson3, "3UP", 3, 1, 2.0, false);
+                def.Dpi, 109.0, 22.0, def.Orientation, def.BarcodeTypes, def.PrinterModels, def.StationTypes,
+                duplicatedJson3, "3UP", 3, 1, 2.0, false);
         }
 
         await db.SaveChangesAsync();
+    }
+
+    private static string DuplicateScaledTemplateJson(string scaledSingleJson, int cols, double gapMm)
+    {
+        try
+        {
+            var node = JsonNode.Parse(scaledSingleJson);
+            if (node == null) return scaledSingleJson;
+
+            int dpi = node["dpi"]?.GetValue<int>() ?? 203;
+            double singleW = 35.0;
+            double singleH = 22.0;
+
+            double targetW = singleW * cols + gapMm * (cols - 1);
+            double targetH = singleH;
+
+            node["width"] = targetW;
+            node["height"] = targetH;
+
+            var elements = node["elements"]?.AsArray();
+            if (elements != null)
+            {
+                var newElements = new JsonArray();
+                for (int c = 0; c < cols; c++)
+                {
+                    int offsetDots = (int)Math.Round(c * (singleW + gapMm) * (dpi / 25.4));
+                    foreach (var el in elements)
+                    {
+                        if (el == null) continue;
+                        var elCopy = el.DeepClone();
+                        if (elCopy["x"] != null)
+                        {
+                            var xVal = elCopy["x"]!.GetValue<double>();
+                            elCopy["x"] = (int)(xVal + offsetDots);
+                        }
+                        newElements.Add(elCopy);
+                    }
+                }
+                node["elements"] = newElements;
+            }
+
+            return node.ToJsonString();
+        }
+        catch
+        {
+            return scaledSingleJson;
+        }
     }
 
     private static async Task SeedOrUpdateTemplateAsync(
@@ -192,12 +241,12 @@ public static class PrinterDbSeeder
 
                     if (el["x"] != null)
                     {
-                        var xVal = el["x"].GetValue<double>();
+                        var xVal = el["x"]!.GetValue<double>();
                         el["x"] = (int)(xVal * scaleX);
                     }
                     if (el["y"] != null)
                     {
-                        var yVal = el["y"].GetValue<double>();
+                        var yVal = el["y"]!.GetValue<double>();
                         el["y"] = (int)(yVal * scaleY);
                     }
 
@@ -205,7 +254,7 @@ public static class PrinterDbSeeder
                     {
                         if (el["fontSize"] != null)
                         {
-                            var fs = el["fontSize"].GetValue<double>();
+                            var fs = el["fontSize"]!.GetValue<double>();
                             el["fontSize"] = Math.Max(5, (int)(fs * Math.Min(scaleX, scaleY)));
                         }
                     }
@@ -213,12 +262,12 @@ public static class PrinterDbSeeder
                     {
                         if (el["height"] != null)
                         {
-                            var h = el["height"].GetValue<double>();
+                            var h = el["height"]!.GetValue<double>();
                             el["height"] = Math.Max(10, (int)(h * scaleY));
                         }
                         if (el["barWidth"] != null)
                         {
-                            var bw = el["barWidth"].GetValue<double>();
+                            var bw = el["barWidth"]!.GetValue<double>();
                             el["barWidth"] = Math.Max(1, (int)(bw * scaleX));
                         }
                     }
@@ -226,7 +275,7 @@ public static class PrinterDbSeeder
                     {
                         if (el["magnification"] != null)
                         {
-                            var mag = el["magnification"].GetValue<double>();
+                            var mag = el["magnification"]!.GetValue<double>();
                             el["magnification"] = Math.Max(1, (int)(mag * Math.Min(scaleX, scaleY)));
                         }
                     }
@@ -234,17 +283,17 @@ public static class PrinterDbSeeder
                     {
                         if (el["width"] != null)
                         {
-                            var w = el["width"].GetValue<double>();
+                            var w = el["width"]!.GetValue<double>();
                             el["width"] = Math.Max(1, (int)(w * scaleX));
                         }
                         if (el["height"] != null)
                         {
-                            var h = el["height"].GetValue<double>();
+                            var h = el["height"]!.GetValue<double>();
                             el["height"] = Math.Max(1, (int)(h * scaleY));
                         }
                         if (el["strokeWidth"] != null)
                         {
-                            var sw = el["strokeWidth"].GetValue<double>();
+                            var sw = el["strokeWidth"]!.GetValue<double>();
                             el["strokeWidth"] = Math.Max(1, (int)(sw * Math.Min(scaleX, scaleY)));
                         }
                     }

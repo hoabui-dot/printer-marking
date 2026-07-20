@@ -1,4 +1,4 @@
-using System.Text.Json;
+1using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using ND.Infrastructure.Observability;
@@ -102,6 +102,13 @@ using (var scope = app.Services.CreateScope())
     // which we catch and ignore.
     var conn = db.Database.GetDbConnection();
     await conn.OpenAsync();
+
+    // Explicitly set journal mode to DELETE to disable WAL mode and avoid container sync/lock issues
+    using (var pragmaCmd = conn.CreateCommand())
+    {
+        pragmaCmd.CommandText = "PRAGMA journal_mode=DELETE;";
+        await pragmaCmd.ExecuteNonQueryAsync();
+    }
     foreach (var sql in new[]
     {
         "ALTER TABLE printer_printers ADD COLUMN driver_type TEXT NOT NULL DEFAULT 'simulation'",

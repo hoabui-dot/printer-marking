@@ -110,6 +110,16 @@ try
     {
         var db = scope.ServiceProvider.GetRequiredService<SimulatorDbContext>();
         await db.Database.EnsureCreatedAsync();
+
+        var conn = db.Database.GetDbConnection();
+        await conn.OpenAsync();
+        using (var pragmaCmd = conn.CreateCommand())
+        {
+            pragmaCmd.CommandText = "PRAGMA journal_mode=DELETE;";
+            await pragmaCmd.ExecuteNonQueryAsync();
+        }
+        await conn.CloseAsync();
+
         await SimulatorDbSeeder.SeedAsync(db);
     }
 
