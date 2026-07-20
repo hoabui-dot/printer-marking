@@ -239,61 +239,70 @@ public static class PrinterDbSeeder
 
                     var type = el["type"]?.GetValue<string>();
 
-                    if (el["x"] != null)
+                    var xNode = el["x"];
+                    if (xNode != null)
                     {
-                        var xVal = el["x"]!.GetValue<double>();
+                        var xVal = xNode.GetValue<double>();
                         el["x"] = (int)(xVal * scaleX);
                     }
-                    if (el["y"] != null)
+                    var yNode = el["y"];
+                    if (yNode != null)
                     {
-                        var yVal = el["y"]!.GetValue<double>();
+                        var yVal = yNode.GetValue<double>();
                         el["y"] = (int)(yVal * scaleY);
                     }
 
                     if (type == "text")
                     {
-                        if (el["fontSize"] != null)
+                        var fontSizeNode = el["fontSize"];
+                        if (fontSizeNode != null)
                         {
-                            var fs = el["fontSize"]!.GetValue<double>();
+                            var fs = fontSizeNode.GetValue<double>();
                             el["fontSize"] = Math.Max(5, (int)(fs * Math.Min(scaleX, scaleY)));
                         }
                     }
                     else if (type == "barcode")
                     {
-                        if (el["height"] != null)
+                        var heightNode = el["height"];
+                        if (heightNode != null)
                         {
-                            var h = el["height"]!.GetValue<double>();
+                            var h = heightNode.GetValue<double>();
                             el["height"] = Math.Max(10, (int)(h * scaleY));
                         }
-                        if (el["barWidth"] != null)
+                        var barWidthNode = el["barWidth"];
+                        if (barWidthNode != null)
                         {
-                            var bw = el["barWidth"]!.GetValue<double>();
+                            var bw = barWidthNode.GetValue<double>();
                             el["barWidth"] = Math.Max(1, (int)(bw * scaleX));
                         }
                     }
                     else if (type == "qr")
                     {
-                        if (el["magnification"] != null)
+                        var magnificationNode = el["magnification"];
+                        if (magnificationNode != null)
                         {
-                            var mag = el["magnification"]!.GetValue<double>();
+                            var mag = magnificationNode.GetValue<double>();
                             el["magnification"] = Math.Max(1, (int)(mag * Math.Min(scaleX, scaleY)));
                         }
                     }
                     else if (type == "line" || type == "rect")
                     {
-                        if (el["width"] != null)
+                        var widthNode = el["width"];
+                        if (widthNode != null)
                         {
-                            var w = el["width"]!.GetValue<double>();
+                            var w = widthNode.GetValue<double>();
                             el["width"] = Math.Max(1, (int)(w * scaleX));
                         }
-                        if (el["height"] != null)
+                        var heightNode = el["height"];
+                        if (heightNode != null)
                         {
-                            var h = el["height"]!.GetValue<double>();
+                            var h = heightNode.GetValue<double>();
                             el["height"] = Math.Max(1, (int)(h * scaleY));
                         }
-                        if (el["strokeWidth"] != null)
+                        var strokeWidthNode = el["strokeWidth"];
+                        if (strokeWidthNode != null)
                         {
-                            var sw = el["strokeWidth"]!.GetValue<double>();
+                            var sw = strokeWidthNode.GetValue<double>();
                             el["strokeWidth"] = Math.Max(1, (int)(sw * Math.Min(scaleX, scaleY)));
                         }
                     }

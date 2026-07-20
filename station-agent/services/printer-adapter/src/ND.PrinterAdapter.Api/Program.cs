@@ -1,4 +1,4 @@
-1using System.Text.Json;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using ND.Infrastructure.Observability;
