@@ -26,6 +26,7 @@ namespace ND.DeviceSimulator.Infrastructure.VirtualDevices;
 /// and kiosk UI reflect gateway online/offline state in real time.
 /// </summary>
 public sealed class VirtualFactoryGateway : BackgroundService
+{
     private IMqttClient? _mqttClient;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISimulatorStateService _state;
@@ -272,7 +273,6 @@ public sealed class VirtualFactoryGateway : BackgroundService
 
         _logger.LogInformation("Gateway submitted order to Station Gateway with event id {EventId}", eventId);
         return eventId;
-    }
     }
 
     private async Task PublishHeartbeatAsync(CancellationToken ct)
