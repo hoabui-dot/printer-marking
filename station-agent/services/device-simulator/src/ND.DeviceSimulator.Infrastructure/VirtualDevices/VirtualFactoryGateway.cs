@@ -103,7 +103,8 @@ public sealed class VirtualFactoryGateway : BackgroundService
                     continue;
                 }
 
-                // Publish gateway-01 online heartbeat to RabbitMQ every 3s
+                // Keep gateway state active in simulator and publish online heartbeat to RabbitMQ every 3s
+                _state.SetGatewayConnected(true);
                 await PublishRabbitHeartbeatAsync(isOnline: true, stoppingToken);
 
                 try
@@ -161,12 +162,8 @@ public sealed class VirtualFactoryGateway : BackgroundService
 
         _mqttClient.DisconnectedAsync += async args =>
         {
-            _state.SetGatewayConnected(false);
-            await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
-
-            // Publish offline heartbeat to RabbitMQ on any unexpected disconnect
-            await PublishRabbitHeartbeatAsync(isOnline: false, CancellationToken.None);
-            _logger.LogWarning("Gateway MQTT disconnected");
+            _logger.LogDebug("Gateway MQTT disconnected: {Reason}", args.Reason);
+            await Task.CompletedTask;
         };
 
         await _mqttClient.ConnectAsync(opts.Build(), ct);
@@ -178,9 +175,6 @@ public sealed class VirtualFactoryGateway : BackgroundService
 
         _state.SetGatewayConnected(true, host, port);
         await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
-
-        // Publish initial online heartbeat immediately on connect
-        await PublishRabbitHeartbeatAsync(isOnline: true, ct);
 
         _logger.LogInformation("VirtualFactoryGateway connected to MQTT {Host}:{Port}, subscribed to {Topic}", host, port, subscribeTopic);
     }
