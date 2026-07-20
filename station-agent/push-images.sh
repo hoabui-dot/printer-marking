@@ -68,7 +68,7 @@ section() {
 # ── Service definitions ────────────────────────────────────────────────────────
 # Format: "service_name|image_tag|dockerfile_path"
 declare -a SERVICE_DEFS=(
-  "mqtt-adapter|${REGISTRY_USER}/mqtt-adapter:latest|services/mqtt-adapter/docker/Dockerfile"
+  "station-gateway|${REGISTRY_USER}/station-gateway:latest|services/mqtt-adapter/docker/Dockerfile"
   "job-engine|${REGISTRY_USER}/job-engine:latest|services/job-engine/docker/Dockerfile"
   "printer-adapter|${REGISTRY_USER}/printer-adapter:latest|services/printer-adapter/docker/Dockerfile"
   "laser-adapter|${REGISTRY_USER}/laser-adapter:latest|services/laser-adapter/docker/Dockerfile"

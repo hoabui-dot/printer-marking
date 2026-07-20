@@ -56,13 +56,13 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "mqtt-adapter", "mqtt-adapte
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{AA4835F5-5530-E8E5-1CDD-8CE843D78D1C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ND.MqttAdapter.Application", "services\mqtt-adapter\src\ND.MqttAdapter.Application\ND.MqttAdapter.Application.csproj", "{AE453888-797D-4B9E-9AF2-C7D3E61F4E09}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ND.StationGateway.Application", "services\mqtt-adapter\src\ND.StationGateway.Application\ND.StationGateway.Application.csproj", "{AE453888-797D-4B9E-9AF2-C7D3E61F4E09}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ND.MqttAdapter.Domain", "services\mqtt-adapter\src\ND.MqttAdapter.Domain\ND.MqttAdapter.Domain.csproj", "{7099CF28-4108-4244-A501-D4CA0CDEB6A0}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ND.StationGateway.Domain", "services\mqtt-adapter\src\ND.StationGateway.Domain\ND.StationGateway.Domain.csproj", "{7099CF28-4108-4244-A501-D4CA0CDEB6A0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ND.MqttAdapter.Infrastructure", "services\mqtt-adapter\src\ND.MqttAdapter.Infrastructure\ND.MqttAdapter.Infrastructure.csproj", "{45A5CE9E-76A6-4251-9E39-0B30CA058762}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ND.StationGateway.Infrastructure", "services\mqtt-adapter\src\ND.StationGateway.Infrastructure\ND.StationGateway.Infrastructure.csproj", "{45A5CE9E-76A6-4251-9E39-0B30CA058762}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ND.MqttAdapter.Worker", "services\mqtt-adapter\src\ND.MqttAdapter.Worker\ND.MqttAdapter.Worker.csproj", "{D64825D6-9C3C-4F4A-8BA1-B85385A660D3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ND.StationGateway.Api", "services\mqtt-adapter\src\ND.StationGateway.Api\ND.StationGateway.Api.csproj", "{D64825D6-9C3C-4F4A-8BA1-B85385A660D3}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "laser-adapter", "laser-adapter", "{04F94107-9639-9D57-83A1-8748AFE3771C}"
 EndProject

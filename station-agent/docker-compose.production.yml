@@ -63,28 +63,27 @@ services:
       timeout: 10s
       retries: 5
 
+  # 1. Station Gateway Service (HTTP Gateway)
   # ─────────────────────────────────────────────
-  # 1. MQTT Adapter Service
-  # ─────────────────────────────────────────────
-  mqtt-adapter:
-    image: ${DOCKER_REGISTRY:-vanhoadotbui2628}/mqtt-adapter:${VERSION:-latest}
-    container_name: production-station-mqtt-adapter
+  station-gateway:
+    image: ${DOCKER_REGISTRY:-vanhoadotbui2628}/station-gateway:${VERSION:-latest}
+    container_name: production-station-gateway
     restart: always
+    ports:
+      - "${PORT_STATION_GATEWAY:-5001}:5001"
     depends_on:
       redis:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
     environment:
+      - ASPNETCORE_HTTP_PORTS=5001
+      - ASPNETCORE_ENVIRONMENT=Production
       - STATION_ID=${STATION_ID}
       - REDIS_CONNECTION_STRING=redis:6379,password=${REDIS_PASSWORD}
-      - SQLITE_MQTT_PATH=/data/mqtt.db
-      - Mqtt__BrokerHost=${MQTT_BROKER_HOST}
-      - Mqtt__BrokerPort=${MQTT_BROKER_PORT}
-      - Mqtt__UseTls=${MQTT_USE_TLS:-true}
-      - Mqtt__Username=${MQTT_USERNAME}
-      - Mqtt__Password=${MQTT_PASSWORD}
-      - Mqtt__SubscribeTopics__0=station/${STATION_ID}/job/create
+      - SQLITE_GATEWAY_PATH=${SQLITE_GATEWAY_PATH:-/data/gateway.db}
+      - Gateway__OutboxBatchSize=10
+      - Gateway__OutboxIntervalSeconds=5
       - RabbitMq__Host=rabbitmq
       - RabbitMq__Port=5672
       - RabbitMq__Username=${RABBITMQ_USER}

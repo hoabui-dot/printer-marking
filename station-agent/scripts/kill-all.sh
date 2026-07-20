@@ -11,7 +11,7 @@ if [ ! -f "$PID_FILE" ]; then
     echo "[*] Attempting fallback: killing any ND.* processes..."
     
     # Fallback pattern matching
-    pkill -f "ND.MqttAdapter"
+    pkill -f "ND.StationGateway"
     pkill -f "ND.JobEngine"
     pkill -f "ND.PrinterAdapter"
     pkill -f "ND.LaserAdapter"
@@ -56,7 +56,7 @@ done
 
 # Also kill any lingering dotnet/node processes by name
 pkill -f "ND.DeviceSimulator" 2>/dev/null
-pkill -f "ND.MqttAdapter" 2>/dev/null
+pkill -f "ND.StationGateway" 2>/dev/null
 pkill -f "ND.ProjectionService" 2>/dev/null
 
 rm -f "$PID_FILE"

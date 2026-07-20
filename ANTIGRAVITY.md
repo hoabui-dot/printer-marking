@@ -5,7 +5,7 @@
 ---
 
 ## 1. System Overview & Architecture
-The **Station Agent** is an edge manufacturing system that handles local orchestration for industrial printing, laser marking, vision inspection, and PLC communications. It interfaces with the central **ND Factory Gateway** via MQTT.
+The **Station Agent** is an edge manufacturing system that handles local orchestration for industrial printing, laser marking, vision inspection, and PLC communications. It interfaces with the central **ND Factory Gateway** via the **Station Gateway** HTTP service (port 5001).
 
 ### Core Principles
 1. **Database per Service**: No physical database joins or foreign keys across databases. Use logical IDs (`job_id`, `attempt_id`, `user_id`, `device_id`) for references.
@@ -24,7 +24,8 @@ The **Station Agent** is an edge manufacturing system that handles local orchest
 - **Backend**: .NET 9 / C#
 - **ORM / Persistence**: Entity Framework Core 9 (SQLite provider)
 - **Caching & Lock Manager**: Redis (via `StackExchange.Redis`)
-- **Messaging Protocol**: MQTT (via `MQTTnet`)
+- **Messaging Protocol**: MQTT (internal device events only; external Factory Gateway integration uses HTTP)
+- **External HTTP Entry Point**: Station Gateway (`ND.StationGateway.Api`) on port 5001 — accepts `POST /api/gateway/orders` (UnifiedEvent JSON)
 - **Real-Time UI Push**: SignalR Hubs
 - **Frontend Kiosks**: React + Vite (TypeScript / CSS)
 - **Logging**: Serilog (structured logs to Console and File)
@@ -43,9 +44,10 @@ All backend services follow Clean Architecture layers:
 
 ## 4. Database Dictionary per Service
 
-### 4.1. `mqtt.db` (MQTT Adapter)
-- `mqtt_messages`: Deduplication and history for inbound and outbound MQTT messages.
-- `mqtt_outbox_events`: Outbox events waiting to be dispatched to the central gateway.
+### 4.1. `gateway.db` (Station Gateway — formerly mqtt-adapter)
+- `gateway_requests`: Deduplication and audit log for inbound HTTP production orders from Factory Gateway.
+- `gateway_outbox_events`: Outbox events waiting to be dispatched to the RabbitMQ `station.events` exchange.
+  - Routing key: `mqtt.MqttMessage.MqttMessageReceived` (kept for Job Engine backward-compat).
 
 ### 4.2. `job_engine.db` (Job Engine)
 - `job_engine_jobs`: Core records containing job status, source, type, and payload.

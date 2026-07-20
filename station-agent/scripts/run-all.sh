@@ -108,8 +108,10 @@ start_node_service() {
 }
 
 # ── Start all backend services ─────────────────────────────────────────────────
-start_service "mqtt-adapter"    "services/mqtt-adapter/src/ND.MqttAdapter.Worker"         "Worker" \
-    "ASPNETCORE_ENVIRONMENT=Development"
+start_service "station-gateway" "services/mqtt-adapter/src/ND.StationGateway.Api"         "5001" \
+    "ASPNETCORE_ENVIRONMENT=Development" \
+    "SQLITE_GATEWAY_PATH=data/gateway.db" \
+    "ASPNETCORE_URLS=http://localhost:5001"
 
 start_service "job-engine"      "services/job-engine/src/ND.JobEngine.Api"                 "5002" \
     "ASPNETCORE_ENVIRONMENT=Development" \

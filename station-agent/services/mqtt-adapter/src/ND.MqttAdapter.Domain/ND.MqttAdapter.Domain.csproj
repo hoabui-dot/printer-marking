@@ -1,9 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <AssemblyName>ND.MqttAdapter.Domain</AssemblyName>
-    <RootNamespace>ND.MqttAdapter.Domain</RootNamespace>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\..\shared\ND.SharedKernel\ND.SharedKernel.csproj" />
-  </ItemGroup>
-</Project>

@@ -48,7 +48,7 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
 
   # Services that require a build (infra images are pre-pulled above)
   BUILD_SERVICES=(
-    mqtt-adapter
+    station-gateway
     job-engine
     printer-adapter
     laser-adapter
