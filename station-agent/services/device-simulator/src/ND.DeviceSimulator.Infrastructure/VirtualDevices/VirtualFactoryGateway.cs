@@ -26,13 +26,13 @@ namespace ND.DeviceSimulator.Infrastructure.VirtualDevices;
 /// and kiosk UI reflect gateway online/offline state in real time.
 /// </summary>
 public sealed class VirtualFactoryGateway : BackgroundService
-{
     private IMqttClient? _mqttClient;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISimulatorStateService _state;
     private readonly IHubContext<SimulatorHub, ISimulatorClient> _hub;
     private readonly IConfiguration _config;
     private readonly IRabbitMqPublisher _rabbitPublisher;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<VirtualFactoryGateway> _logger;
 
     private static readonly JsonSerializerOptions JsonOpts  = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
@@ -49,6 +49,7 @@ public sealed class VirtualFactoryGateway : BackgroundService
         IHubContext<SimulatorHub, ISimulatorClient> hub,
         IConfiguration config,
         IRabbitMqPublisher rabbitPublisher,
+        IHttpClientFactory httpClientFactory,
         ILogger<VirtualFactoryGateway> logger)
     {
         _scopeFactory    = scopeFactory;
@@ -56,15 +57,16 @@ public sealed class VirtualFactoryGateway : BackgroundService
         _hub             = hub;
         _config          = config;
         _rabbitPublisher = rabbitPublisher;
+        _httpClientFactory = httpClientFactory;
         _logger          = logger;
     }
 
     public async Task DisconnectGatewayAsync(CancellationToken ct = default)
     {
         _forceDisconnected = true;
-        if (_mqttClient != null)
+        if (_mqttClient != null && _mqttClient.IsConnected)
         {
-            await _mqttClient.DisconnectAsync(cancellationToken: ct);
+            try { await _mqttClient.DisconnectAsync(cancellationToken: ct); } catch {}
         }
         _state.SetGatewayConnected(false);
         await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
@@ -72,13 +74,19 @@ public sealed class VirtualFactoryGateway : BackgroundService
         // Immediately publish offline heartbeat to RabbitMQ so projection-service + kiosk UI update now
         await PublishRabbitHeartbeatAsync(isOnline: false, ct);
 
-        _logger.LogInformation("Factory Gateway MQTT manually disconnected via API");
+        _logger.LogInformation("Factory Gateway manually disconnected via API");
     }
 
     public async Task ConnectGatewayAsync(CancellationToken ct = default)
     {
         _forceDisconnected = false;
-        _logger.LogInformation("Factory Gateway MQTT connection enabled via API");
+        _state.SetGatewayConnected(true);
+        await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
+
+        // Immediately publish online heartbeat to RabbitMQ so projection-service + kiosk UI update now
+        await PublishRabbitHeartbeatAsync(isOnline: true, ct);
+
+        _logger.LogInformation("Factory Gateway connection enabled via API");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -93,21 +101,29 @@ public sealed class VirtualFactoryGateway : BackgroundService
                     continue;
                 }
 
-                await ConnectAsync(stoppingToken);
-                await RunSchedulerAsync(stoppingToken);
+                // Publish gateway-01 online heartbeat to RabbitMQ every 3s
+                await PublishRabbitHeartbeatAsync(isOnline: true, stoppingToken);
+
+                try
+                {
+                    if (_mqttClient == null || !_mqttClient.IsConnected)
+                    {
+                        await ConnectAsync(stoppingToken);
+                    }
+                    await RunSchedulerAsync(stoppingToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug("MQTT connection optional attempt: {Message}", ex.Message);
+                }
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "VirtualFactoryGateway error — reconnecting in 10s");
-                _state.SetGatewayConnected(false);
-                await _hub.Clients.All.SimulatorStatusUpdated(_state.GetStatus());
-
-                // Publish offline heartbeat on unexpected disconnect
-                await PublishRabbitHeartbeatAsync(isOnline: false, stoppingToken);
-
-                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+                _logger.LogError(ex, "VirtualFactoryGateway background loop error");
             }
+
+            await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);
         }
 
         if (_mqttClient?.IsConnected == true)
@@ -169,28 +185,15 @@ public sealed class VirtualFactoryGateway : BackgroundService
 
     private async Task RunSchedulerAsync(CancellationToken ct)
     {
-        while (!ct.IsCancellationRequested && _mqttClient?.IsConnected == true)
-        {
-            await Task.Delay(TimeSpan.FromSeconds(3), ct);
+        var enabled = (_config["Simulator:GATEWAY_AUTO_PUBLISH_ENABLED"] ?? "false") == "true";
+        if (!enabled) return;
 
-            // Guard: if manually disconnected during the 3s delay, do NOT publish an online
-            // heartbeat — this was the race condition causing kiosk UI to snap back to Online.
-            if (_forceDisconnected) break;
+        var intervalSec = int.TryParse(_config["Simulator:GATEWAY_AUTO_PUBLISH_INTERVAL_SEC"] ?? "30", out var i) ? i : 30;
+        await Task.Delay(TimeSpan.FromSeconds(intervalSec), ct);
 
-            // Publish gateway-01 heartbeat to RabbitMQ every 3s.
-            // DeviceStatusPoller marks device offline after 10s silence — so 3s interval keeps it alive.
-            await PublishRabbitHeartbeatAsync(isOnline: true, ct);
-
-            var enabled = (_config["Simulator:GATEWAY_AUTO_PUBLISH_ENABLED"] ?? "false") == "true";
-            if (!enabled) continue;
-
-            var intervalSec = int.TryParse(_config["Simulator:GATEWAY_AUTO_PUBLISH_INTERVAL_SEC"] ?? "30", out var i) ? i : 30;
-            await Task.Delay(TimeSpan.FromSeconds(intervalSec - 3), ct); // already waited 3s above
-
-            await PublishHeartbeatAsync(ct);
-        }
+        if (_forceDisconnected) return;
+        await PublishHeartbeatAsync(ct);
     }
-
 
     /// <summary>
     /// Publishes a DeviceStatusHeartbeat to RabbitMQ station.events exchange.
@@ -223,25 +226,53 @@ public sealed class VirtualFactoryGateway : BackgroundService
 
     public async Task<string> PublishAsync(GatewayPublishRequest request, CancellationToken ct = default)
     {
-        if (_mqttClient?.IsConnected != true)
-            throw new InvalidOperationException("Gateway not connected to MQTT broker");
+        if (_forceDisconnected)
+            throw new InvalidOperationException("Factory Gateway is currently disconnected");
 
         var tags = request.Data.Select(d => new UnifiedTag { Tag = d.Tag, Value = d.Value, Quality = d.Quality }).ToList();
         var eventId = $"evt-sim-{Guid.NewGuid():N}";
         var evt = UnifiedEvent.Create(request.Site, request.Area, request.Line, request.Machine, request.EdgeId, tags, eventId);
         var json = JsonSerializer.Serialize(evt, JsonOpts);
 
-        await _mqttClient.PublishAsync(new MqttApplicationMessageBuilder()
-            .WithTopic(request.Topic)
-            .WithPayload(json)
-            .Build(), ct);
+        // 1. Submit order via HTTP to station-gateway
+        var gatewayUrl = Environment.GetEnvironmentVariable("STATION_GATEWAY_URL")
+            ?? _config["Simulator:STATION_GATEWAY_URL"]
+            ?? "http://station-gateway:5001";
+
+        using var client = _httpClientFactory.CreateClient();
+        var response = await client.PostAsJsonAsync($"{gatewayUrl}/api/gateway/orders", evt, JsonOpts, ct);
+        if (!response.IsSuccessStatusCode && gatewayUrl.Contains("station-gateway"))
+        {
+            // Fallback for local host environment
+            var fallbackUrl = "http://localhost:5001";
+            response = await client.PostAsJsonAsync($"{fallbackUrl}/api/gateway/orders", evt, JsonOpts, ct);
+        }
+
+        response.EnsureSuccessStatusCode();
+
+        // 2. Best effort MQTT publish if MQTT client is connected
+        if (_mqttClient?.IsConnected == true)
+        {
+            try
+            {
+                await _mqttClient.PublishAsync(new MqttApplicationMessageBuilder()
+                    .WithTopic(request.Topic)
+                    .WithPayload(json)
+                    .Build(), ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "MQTT publish skipped or failed");
+            }
+        }
 
         _state.RecordGatewayPublish(request.Topic);
         await RecordAndBroadcastAsync("PUBLISH", request.Topic, json, ct);
-        await AddTimelineAsync("GATEWAY_PUBLISHED", "OK", $"Published to {request.Topic}", ct);
+        await AddTimelineAsync("GATEWAY_PUBLISHED", "OK", $"Submitted order to Station Gateway ({request.Topic})", ct);
 
-        _logger.LogInformation("Gateway published to {Topic} with event id {EventId}", request.Topic, eventId);
+        _logger.LogInformation("Gateway submitted order to Station Gateway with event id {EventId}", eventId);
         return eventId;
+    }
     }
 
     private async Task PublishHeartbeatAsync(CancellationToken ct)

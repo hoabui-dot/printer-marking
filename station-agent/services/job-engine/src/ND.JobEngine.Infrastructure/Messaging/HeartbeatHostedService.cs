@@ -77,36 +77,7 @@ public sealed class HeartbeatHostedService : BackgroundService
                         }
                     }
                 }
-
-                // Publish gateway-01 heartbeat
-                var gwHb = new DeviceStatusHeartbeat(
-                    "gateway-01",
-                    "Gateway",
-                    true,
-                    gatewayState,
-                    DateTime.UtcNow.ToString("o")
-                );
-                await _publisher.PublishAsync(Exchange, "device.heartbeat.gateway-01", JsonSerializer.Serialize(gwHb), stoppingToken);
-
-                // Publish plc-01 heartbeat
-                var plcHb = new DeviceStatusHeartbeat(
-                    "plc-01",
-                    "PLC",
-                    true,
-                    plcState,
-                    DateTime.UtcNow.ToString("o")
-                );
-                await _publisher.PublishAsync(Exchange, "device.heartbeat.plc-01", JsonSerializer.Serialize(plcHb), stoppingToken);
-
-                // Publish camera-01 heartbeat
-                var cameraHb = new DeviceStatusHeartbeat(
-                    "camera-01",
-                    "VisionCamera",
-                    true,
-                    cameraState,
-                    DateTime.UtcNow.ToString("o")
-                );
-                await _publisher.PublishAsync(Exchange, "device.heartbeat.camera-01", JsonSerializer.Serialize(cameraHb), stoppingToken);
+                _logger.LogDebug("Job Engine active job step check completed.");
             }
             catch (Exception ex)
             {
