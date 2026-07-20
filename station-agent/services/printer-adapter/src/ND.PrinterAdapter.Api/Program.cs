@@ -116,6 +116,11 @@ using (var scope = app.Services.CreateScope())
         "ALTER TABLE label_templates ADD COLUMN created_by TEXT",
         "ALTER TABLE label_templates ADD COLUMN updated_by TEXT",
         "ALTER TABLE label_templates ADD COLUMN note TEXT",
+        // N-Up layout columns (idempotent — silently ignored if already exist)
+        "ALTER TABLE label_templates ADD COLUMN layout_type TEXT NOT NULL DEFAULT '1UP'",
+        "ALTER TABLE label_templates ADD COLUMN sheet_columns INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE label_templates ADD COLUMN sheet_rows INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE label_templates ADD COLUMN gap_mm REAL NOT NULL DEFAULT 0",
         @"CREATE TABLE IF NOT EXISTS printer_template_assignments (
             id TEXT PRIMARY KEY,
             printer_code TEXT NOT NULL UNIQUE,
@@ -440,24 +445,41 @@ app.MapGet("/api/label-templates", async (
     string? search,
     int? dpi,
     string? status,
+    string? layoutType,
     bool includeArchived = false,
     CancellationToken ct = default) =>
 {
     var templates = await repo.ListAsync(search, dpi, status, includeArchived, ct);
-    return Results.Ok(templates.Select(t => new
+
+    // Filter by layoutType if provided (1UP | 2UP | 3UP)
+    if (!string.IsNullOrWhiteSpace(layoutType))
     {
-        t.Id, t.Name, t.Description, t.Note,
-        t.TemplateCode, t.Category, t.Orientation, t.Revision,
-        t.SupportedBarcodeTypes, t.SupportedPrinterModels, t.CompatibleStationTypes,
-        t.Dpi, t.LabelWidth, t.LabelHeight,
-        templateJson = System.Text.Json.JsonDocument.Parse(t.TemplateJson).RootElement,
-        t.Version, t.Status, t.IsDefault,
-        t.IsActive, t.CreatedBy, t.UpdatedBy, t.CreatedAt, t.UpdatedAt
+        var lt = layoutType.ToUpperInvariant();
+        templates = templates.Where(t => t.LayoutType.Equals(lt, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    return Results.Ok(templates.Select(t =>
+    {
+        System.Text.Json.JsonElement jsonEl;
+        try { jsonEl = System.Text.Json.JsonDocument.Parse(t.TemplateJson).RootElement; }
+        catch { jsonEl = System.Text.Json.JsonDocument.Parse("{}").RootElement; }
+        return new
+        {
+            t.Id, t.Name, t.Description, t.Note,
+            t.TemplateCode, t.Category, t.Orientation, t.Revision,
+            t.SupportedBarcodeTypes, t.SupportedPrinterModels, t.CompatibleStationTypes,
+            t.Dpi, t.LabelWidth, t.LabelHeight,
+            templateJson = jsonEl,
+            t.Version, t.Status, t.IsDefault,
+            t.IsActive, t.CreatedBy, t.UpdatedBy, t.CreatedAt, t.UpdatedAt,
+            // N-Up layout fields
+            t.LayoutType, t.SheetColumns, t.SheetRows, t.GapMm
+        };
     }));
 })
 .WithName("ListLabelTemplates")
 .WithSummary("List label templates")
-.WithDescription("Returns all label templates. Supports optional filtering by `search` (name/code partial match), `dpi` (203, 300, 600), `status` (draft, published, archived), and `includeArchived` flag. By default archived templates are excluded.")
+.WithDescription("Returns all label templates. Supports optional filtering by `search` (name/code partial match), `dpi`, `status`, `layoutType` (1UP | 2UP | 3UP), and `includeArchived` flag.")
 .WithTags("Label Templates")
 .Produces(200);
 
@@ -487,7 +509,8 @@ app.MapGet("/api/label-templates/active", async (
             template.Dpi, template.LabelWidth, template.LabelHeight,
             templateJson = parsed, template.Version, template.Status,
             template.IsDefault, template.IsActive, template.CreatedBy, template.UpdatedBy,
-            template.CreatedAt, template.UpdatedAt
+            template.CreatedAt, template.UpdatedAt,
+            template.LayoutType, template.SheetColumns, template.SheetRows, template.GapMm
         });
     }
     catch (Exception ex)
@@ -516,7 +539,8 @@ app.MapGet("/api/label-templates/default", async (ILabelTemplateRepository repo,
         template.Dpi, template.LabelWidth, template.LabelHeight,
         templateJson = System.Text.Json.JsonDocument.Parse(template.TemplateJson).RootElement,
         template.Version, template.Status, template.IsDefault,
-        template.IsActive, template.CreatedBy, template.UpdatedBy, template.CreatedAt, template.UpdatedAt
+        template.IsActive, template.CreatedBy, template.UpdatedBy, template.CreatedAt, template.UpdatedAt,
+        template.LayoutType, template.SheetColumns, template.SheetRows, template.GapMm
     });
 })
 .WithName("GetDefaultLabelTemplate")
@@ -599,7 +623,9 @@ app.MapGet("/api/label-templates/{id}/export", async (
             template.Name, template.Description, template.Dpi,
             template.LabelWidth, template.LabelHeight,
             templateJson = System.Text.Json.JsonDocument.Parse(template.TemplateJson).RootElement,
-            template.Version, template.Status
+            template.Version, template.Status,
+            // N-Up layout
+            template.LayoutType, template.SheetColumns, template.SheetRows, template.GapMm
         }
     };
     var json = System.Text.Json.JsonSerializer.Serialize(export, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
@@ -629,13 +655,19 @@ app.MapPost("/api/label-templates/import", async (
         var dpiVal = tmpl.TryGetProperty("dpi", out var dpiP) ? dpiP.GetInt32() : 203;
         var wVal = tmpl.TryGetProperty("labelWidth", out var wP) ? wP.GetDouble() : 50;
         var hVal = tmpl.TryGetProperty("labelHeight", out var hP) ? hP.GetDouble() : 30;
+        var layoutType = tmpl.TryGetProperty("layoutType", out var ltP) ? ltP.GetString() ?? "1UP" : "1UP";
+        var sheetColumns = tmpl.TryGetProperty("sheetColumns", out var scP) ? scP.GetInt32() : 1;
+        var sheetRows = tmpl.TryGetProperty("sheetRows", out var srP) ? srP.GetInt32() : 1;
+        var gapMm = tmpl.TryGetProperty("gapMm", out var gmP) ? gmP.GetDouble() : 0.0;
         var templateJsonProp = tmpl.GetProperty("templateJson");
         var templateJsonStr = templateJsonProp.ValueKind == System.Text.Json.JsonValueKind.String
             ? templateJsonProp.GetString()!
             : templateJsonProp.GetRawText();
         // Validate JSON
         System.Text.Json.JsonDocument.Parse(templateJsonStr);
-        var imported = LabelTemplate.Create($"{name} (imported)", desc, dpiVal, wVal, hVal, templateJsonStr, "draft");
+        var imported = LabelTemplate.Create(
+            $"{name} (imported)", desc, dpiVal, wVal, hVal, templateJsonStr, "draft",
+            layoutType: layoutType, sheetColumns: sheetColumns, sheetRows: sheetRows, gapMm: gapMm);
         await repo.AddAsync(imported, ct);
         await uow.SaveChangesAsync(ct);
         return Results.Created($"/api/label-templates/{imported.Id}", new { imported.Id, imported.Name, imported.Status });
@@ -780,7 +812,8 @@ app.MapGet("/api/label-templates/{id}", async (string id, ILabelTemplateReposito
         template.Dpi, template.LabelWidth, template.LabelHeight,
         templateJson = System.Text.Json.JsonDocument.Parse(template.TemplateJson).RootElement,
         template.Version, template.Status, template.IsDefault,
-        template.IsActive, template.CreatedBy, template.UpdatedBy, template.CreatedAt, template.UpdatedAt
+        template.IsActive, template.CreatedBy, template.UpdatedBy, template.CreatedAt, template.UpdatedAt,
+        template.LayoutType, template.SheetColumns, template.SheetRows, template.GapMm
     });
 })
 .WithName("GetLabelTemplateById")
@@ -808,7 +841,8 @@ app.MapPost("/api/label-templates", async (
         req.Name, req.Description, req.Dpi, req.LabelWidth, req.LabelHeight, req.TemplateJson,
         note: req.Note, templateCode: req.TemplateCode, category: req.Category, orientation: req.Orientation,
         revision: req.Revision, supportedBarcodeTypes: req.SupportedBarcodeTypes,
-        supportedPrinterModels: req.SupportedPrinterModels, compatibleStationTypes: req.CompatibleStationTypes);
+        supportedPrinterModels: req.SupportedPrinterModels, compatibleStationTypes: req.CompatibleStationTypes,
+        layoutType: req.LayoutType, sheetColumns: req.SheetColumns, sheetRows: req.SheetRows, gapMm: req.GapMm);
     await repo.AddAsync(template, ct);
     await uow.SaveChangesAsync(ct);
 
@@ -820,7 +854,8 @@ app.MapPost("/api/label-templates", async (
         template.Dpi, template.LabelWidth, template.LabelHeight,
         templateJson = System.Text.Json.JsonDocument.Parse(template.TemplateJson).RootElement,
         template.Version, template.Status, template.IsDefault,
-        template.IsActive, template.CreatedBy, template.UpdatedBy, template.CreatedAt, template.UpdatedAt
+        template.IsActive, template.CreatedBy, template.UpdatedBy, template.CreatedAt, template.UpdatedAt,
+        template.LayoutType, template.SheetColumns, template.SheetRows, template.GapMm
     };
     return Results.Created($"/api/label-templates/{template.Id}", response);
 })
@@ -858,7 +893,8 @@ app.MapPut("/api/label-templates/{id}", async (
         req.Name, req.Description, req.Dpi, req.LabelWidth, req.LabelHeight, req.TemplateJson,
         note: req.Note, templateCode: req.TemplateCode, category: req.Category, orientation: req.Orientation,
         revision: req.Revision, supportedBarcodeTypes: req.SupportedBarcodeTypes,
-        supportedPrinterModels: req.SupportedPrinterModels, compatibleStationTypes: req.CompatibleStationTypes);
+        supportedPrinterModels: req.SupportedPrinterModels, compatibleStationTypes: req.CompatibleStationTypes,
+        gapMm: req.GapMm);
     await repo.UpdateAsync(template, ct);
     await uow.SaveChangesAsync(ct);
 
@@ -870,7 +906,8 @@ app.MapPut("/api/label-templates/{id}", async (
         template.Dpi, template.LabelWidth, template.LabelHeight,
         templateJson = System.Text.Json.JsonDocument.Parse(template.TemplateJson).RootElement,
         template.Version, template.Status, template.IsDefault,
-        template.IsActive, template.CreatedBy, template.UpdatedBy, template.CreatedAt, template.UpdatedAt
+        template.IsActive, template.CreatedBy, template.UpdatedBy, template.CreatedAt, template.UpdatedAt,
+        template.LayoutType, template.SheetColumns, template.SheetRows, template.GapMm
     });
 })
 .WithName("UpdateLabelTemplate")
@@ -911,7 +948,11 @@ app.MapPost("/api/label-templates/{id}/duplicate", async (
         category: original.Category, orientation: original.Orientation,
         supportedBarcodeTypes: original.SupportedBarcodeTypes,
         supportedPrinterModels: original.SupportedPrinterModels,
-        compatibleStationTypes: original.CompatibleStationTypes);
+        compatibleStationTypes: original.CompatibleStationTypes,
+        layoutType: original.LayoutType,
+        sheetColumns: original.SheetColumns,
+        sheetRows: original.SheetRows,
+        gapMm: original.GapMm);
     await repo.AddAsync(copy, ct);
     await uow.SaveChangesAsync(ct);
     
@@ -927,7 +968,11 @@ app.MapPost("/api/label-templates/{id}/duplicate", async (
         copy.Version,
         copy.IsActive,
         copy.CreatedAt,
-        copy.UpdatedAt
+        copy.UpdatedAt,
+        copy.LayoutType,
+        copy.SheetColumns,
+        copy.SheetRows,
+        copy.GapMm
     };
     return Results.Created($"/api/label-templates/{copy.Id}", response);
 })
@@ -1005,7 +1050,7 @@ app.MapPost("/api/label-templates/{id}/render-with-data", async (
 
     try
     {
-        var zpl = renderer.Render(template.TemplateJson, req.Data ?? new Dictionary<string, string>());
+        var zpl = renderer.Render(template.GetTemplateJsonWithLayout(), req.Data ?? new Dictionary<string, string>());
         return Results.Ok(new
         {
             templateId = template.Id,
@@ -1051,7 +1096,7 @@ app.MapPost("/api/label-templates/{id}/print-test", async (
     string zpl;
     try
     {
-        zpl = renderer.Render(template.TemplateJson, data);
+        zpl = renderer.Render(template.GetTemplateJsonWithLayout(), data);
     }
     catch (Exception ex)
     {

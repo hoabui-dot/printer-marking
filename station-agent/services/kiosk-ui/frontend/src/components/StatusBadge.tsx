@@ -9,18 +9,20 @@ export interface StatusBadgeProps {
 
 /**
  * Renders a coloured pill badge for job statuses.
- * Colour classes come from JOB_STATUS_COLORS in constants/jobs.ts.
+ * Redesigned to work in both light and dark modes.
  */
 export function StatusBadge({ status, jobType, className }: StatusBadgeProps) {
   const bgClass = getStatusColor(status)
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold text-white',
+        // Larger padding + border for accessibility (doesn't rely on color alone)
+        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[13px] font-semibold border',
         bgClass,
         className
       )}
     >
+      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60 flex-shrink-0" />
       {translateJobStatus(status, jobType)}
     </span>
   )

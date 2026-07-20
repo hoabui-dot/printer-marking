@@ -1,5 +1,7 @@
 import { QRCodeSVG } from 'qrcode.react'
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 interface LabelElement {
   id?: string
   type: string
@@ -18,133 +20,136 @@ interface LabelElement {
   symbology?: string
 }
 
-interface LabelTemplate {
-  width: number // in mm
-  height: number // in mm
+interface LabelLayout {
+  columns?: number
+  rows?: number
+  gapMm?: number
+}
+
+interface LabelTemplateJson {
+  width: number   // mm — single cell
+  height: number  // mm — single cell
   dpi: number
+  layout?: LabelLayout  // legacy JSON layout block (still supported)
   elements: LabelElement[]
 }
 
-interface LabelPreviewProps {
-  template: LabelTemplate | string | null | undefined
+/**
+ * Accepts the full API template object (with top-level sheetColumns/sheetRows)
+ * OR a raw JSON string / nested templateJson object.
+ */
+export interface LabelPreviewProps {
+  /** Full API template object or raw JSON string of the template content */
+  template: any | string | null | undefined
   data: Record<string, string>
-  width?: number // Display width in pixels
+  /** Display width in pixels for the entire preview (single or multi-up) */
+  width?: number
   className?: string
 }
 
-export function LabelPreview({
-  template,
-  data,
-  width = 400,
-  className = '',
-}: LabelPreviewProps) {
-  console.log("[LabelPreview] Render start. Template:", template, "Data:", data);
-  // Parse template if passed as string or contains templateJson string
-  let parsedTemplate: LabelTemplate | null = null
-  let jsonStr: string | null = null
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
+function resolveBinding(el: LabelElement, data: Record<string, string>): string {
+  if (el.binding && el.binding.trim() !== '') {
+    const key = el.binding.trim()
+    if (data && data[key] !== undefined && data[key] !== null) return data[key]
+    return el.defaultValue ?? el.text ?? `{${key}}`
+  }
+  return el.text ?? el.defaultValue ?? ''
+}
+
+function resolveQrPayload(el: LabelElement, data: Record<string, string>): string {
+  if (el.payloadTemplate && el.payloadTemplate.trim() !== '') {
+    return el.payloadTemplate.replace(/{([^{}]+)}/g, (match, key) => {
+      const k = key.trim()
+      return data && data[k] !== undefined ? data[k] : match
+    })
+  }
+  return resolveBinding(el, data)
+}
+
+/** Extracts the parseable template JSON object from any shape the API might send */
+function parseTemplateJson(template: any): LabelTemplateJson | null {
+  if (!template) return null
+
+  // Raw JSON string
   if (typeof template === 'string') {
-    jsonStr = template
-    console.log("[LabelPreview] Template is raw string.");
-  } else if (template && typeof template === 'object') {
-    const wrapper = template as any
-    const rawJson = wrapper.templateJson || wrapper.TemplateJson
-    console.log("[LabelPreview] Template is object. rawJson type:", typeof rawJson);
+    try { return JSON.parse(template) } catch { return null }
+  }
+
+  // API response object: { templateJson: <parsed JsonElement or string>, ...rest }
+  const rawJson = template.templateJson ?? template.TemplateJson
+  if (rawJson !== undefined) {
     if (typeof rawJson === 'string') {
-      jsonStr = rawJson
-    } else if (rawJson && typeof rawJson === 'object') {
-      parsedTemplate = rawJson as LabelTemplate
-      console.log("[LabelPreview] Resolved parsedTemplate directly from object rawJson:", parsedTemplate);
-    } else if (Array.isArray(wrapper.elements)) {
-      parsedTemplate = wrapper
-      console.log("[LabelPreview] Resolved parsedTemplate directly from wrapper elements:", parsedTemplate);
+      try { return JSON.parse(rawJson) } catch { return null }
+    }
+    if (rawJson && typeof rawJson === 'object' && Array.isArray(rawJson.elements)) {
+      return rawJson as LabelTemplateJson
     }
   }
 
-  if (jsonStr) {
-    try {
-      parsedTemplate = JSON.parse(jsonStr)
-      console.log("[LabelPreview] JSON.parse succeeded. parsedTemplate:", parsedTemplate);
-    } catch (err) {
-      console.error("[LabelPreview] JSON.parse failed on jsonStr:", jsonStr, "Error:", err);
-      parsedTemplate = null
+  // Direct template JSON object with elements array
+  if (Array.isArray(template.elements)) {
+    return template as LabelTemplateJson
+  }
+
+  return null
+}
+
+/** 
+ * Extracts N-Up layout config, preferring the DB-level fields on the API object
+ * (sheetColumns, sheetRows, gapMm) over the legacy JSON `layout` block.
+ */
+function resolveLayout(template: any, parsed: LabelTemplateJson): { cols: number; rows: number; gapMm: number } {
+  // DB-level fields take priority (set from layoutType column)
+  if (typeof template === 'object' && template !== null) {
+    const cols = template.sheetColumns ?? template.SheetColumns
+    const rows = template.sheetRows ?? template.SheetRows
+    const gap  = template.gapMm ?? template.GapMm
+    if (typeof cols === 'number' && (cols > 1 || rows > 1)) {
+      return { cols, rows: rows ?? 1, gapMm: gap ?? 0 }
     }
+    // Also handle layoutType string
+    const lt = (template.layoutType ?? template.LayoutType ?? '') as string
+    if (lt === '2UP') return { cols: 2, rows: 1, gapMm: gap ?? 2 }
+    if (lt === '3UP') return { cols: 3, rows: 1, gapMm: gap ?? 2 }
   }
 
-  if (!template) {
-    console.warn("[LabelPreview] Render aborted: template is null or undefined.");
-    return (
-      <div
-        className={`flex items-center justify-center border border-dashed border-border rounded-lg bg-surface-2 text-muted-fg text-xs italic ${className}`}
-        style={{ width, height: (width * 3) / 5 }}
-      >
-        Đang tải Template...
-      </div>
-    )
+  // Legacy JSON layout block inside templateJson
+  const layout = parsed.layout
+  if (layout) {
+    const cols = Math.max(1, layout.columns ?? 1)
+    const rows = Math.max(1, layout.rows ?? 1)
+    if (cols > 1 || rows > 1) return { cols, rows, gapMm: layout.gapMm ?? 0 }
   }
 
-  if (!parsedTemplate) {
-    console.warn("[LabelPreview] Render aborted: parsedTemplate is null or undefined (parse failure).");
-    return (
-      <div
-        className={`flex items-center justify-center border border-dashed border-border rounded-lg bg-surface-2 text-muted-fg text-xs italic ${className}`}
-        style={{ width, height: (width * 3) / 5 }}
-      >
-        Lỗi phân tích Template
-      </div>
-    )
-  }
+  return { cols: 1, rows: 1, gapMm: 0 }
+}
 
-  // Dots dimensions from template
-  const dpi = parsedTemplate.dpi || 203
-  const mmWidth = parsedTemplate.width || 50
-  const mmHeight = parsedTemplate.height || 30
+// ── Single label tile ─────────────────────────────────────────────────────────
 
+function SingleLabelTile({
+  parsed,
+  data,
+  tileWidth,
+}: {
+  parsed: LabelTemplateJson
+  data: Record<string, string>
+  tileWidth: number
+}) {
+  const dpi      = parsed.dpi || 203
+  const mmWidth  = parsed.width  || 50
+  const mmHeight = parsed.height || 30
   const dotsWidth = Math.round((mmWidth / 25.4) * dpi)
-
-  const height = (width * mmHeight) / mmWidth
-  const scale = width / dotsWidth
-
-  // Helper to resolve binding values
-  const resolveBinding = (el: LabelElement): string => {
-    if (el.binding && el.binding.trim() !== '') {
-      const key = el.binding.trim()
-      if (data && data[key] !== undefined && data[key] !== null) {
-        return data[key]
-      }
-      return el.defaultValue ?? el.text ?? `{${key}}`
-    }
-    return el.text ?? el.defaultValue ?? ''
-  }
-
-  // Helper to resolve QR payload templates
-  const resolveQrPayload = (el: LabelElement): string => {
-    if (el.payloadTemplate && el.payloadTemplate.trim() !== '') {
-      let resolved = el.payloadTemplate
-      // Match all occurrences of {variable_name}
-      resolved = resolved.replace(/{([^{}]+)}/g, (match, key) => {
-        const trimmedKey = key.trim()
-        if (data && data[trimmedKey] !== undefined && data[trimmedKey] !== null) {
-          return data[trimmedKey]
-        }
-        return match // Return original placeholder if not found
-      })
-      return resolved
-    }
-    return resolveBinding(el)
-  }
+  const tileHeight = (tileWidth * mmHeight) / mmWidth
+  const scale      = tileWidth / dotsWidth
 
   return (
     <div
-      className={`relative select-none overflow-hidden bg-white text-black border border-zinc-200 shadow-sm ${className}`}
-      style={{
-        width: `${width}px`,
-        height: `${height}px`,
-        minWidth: `${width}px`,
-        minHeight: `${height}px`,
-      }}
+      className="relative select-none overflow-hidden bg-white text-black border border-zinc-200 shadow-sm flex-shrink-0"
+      style={{ width: tileWidth, height: tileHeight, minWidth: tileWidth, minHeight: tileHeight }}
     >
-      {parsedTemplate.elements.map((el, idx) => {
+      {parsed.elements.map((el, idx) => {
         const elType = (el.type || '').toLowerCase()
         const x = el.x * scale
         const y = el.y * scale
@@ -152,126 +157,79 @@ export function LabelPreview({
         switch (elType) {
           case 'text': {
             const fontSize = (el.fontSize ?? 12) * scale * 1.3
-            const textVal = resolveBinding(el)
             return (
               <div
                 key={idx}
-                className="absolute font-sans font-bold leading-none whitespace-nowrap text-left"
-                style={{
-                  left: `${x}px`,
-                  top: `${y}px`,
-                  fontSize: `${fontSize}px`,
-                  fontFamily: 'monospace, Arial, sans-serif',
-                }}
+                className="absolute font-bold leading-none whitespace-nowrap text-left"
+                style={{ left: x, top: y, fontSize, fontFamily: 'monospace, Arial, sans-serif' }}
               >
-                {textVal}
+                {resolveBinding(el, data)}
               </div>
             )
           }
 
           case 'rect': {
-            const elWidth = (el.width ?? 100) * scale
-            const elHeight = (el.height ?? 50) * scale
-            const strokeWidth = (el.strokeWidth ?? 2) * scale
+            const elWidth  = (el.width  ?? 100) * scale
+            const elHeight = (el.height ?? 50)  * scale
+            const sw = Math.max((el.strokeWidth ?? 2) * scale, 1)
             return (
               <div
                 key={idx}
                 className="absolute border border-black"
-                style={{
-                  left: `${x}px`,
-                  top: `${y}px`,
-                  width: `${elWidth}px`,
-                  height: `${elHeight}px`,
-                  borderWidth: `${Math.max(strokeWidth, 1)}px`,
-                  boxSizing: 'border-box',
-                }}
+                style={{ left: x, top: y, width: elWidth, height: elHeight, borderWidth: sw, boxSizing: 'border-box' }}
               />
             )
           }
 
           case 'circle': {
             const diameter = (el.width ?? 60) * scale
-            const strokeWidth = (el.strokeWidth ?? 2) * scale
+            const sw = Math.max((el.strokeWidth ?? 2) * scale, 1)
             return (
               <div
                 key={idx}
                 className="absolute border border-black rounded-full"
-                style={{
-                  left: `${x}px`,
-                  top: `${y}px`,
-                  width: `${diameter}px`,
-                  height: `${diameter}px`,
-                  borderWidth: `${Math.max(strokeWidth, 1)}px`,
-                  boxSizing: 'border-box',
-                }}
+                style={{ left: x, top: y, width: diameter, height: diameter, borderWidth: sw, boxSizing: 'border-box' }}
               />
             )
           }
 
           case 'line': {
-            const elWidth = (el.width ?? 100) * scale
-            const elHeight = (el.height ?? 2) * scale
-            const thickness = Math.max(elHeight, 1)
+            const elWidth  = (el.width ?? 100) * scale
+            const thickness = Math.max((el.height ?? 2) * scale, 1)
             return (
               <div
                 key={idx}
                 className="absolute bg-black"
-                style={{
-                  left: `${x}px`,
-                  top: `${y}px`,
-                  width: `${elWidth}px`,
-                  height: `${thickness}px`,
-                }}
+                style={{ left: x, top: y, width: elWidth, height: thickness }}
               />
             )
           }
 
           case 'qr': {
-            const qrPayload = resolveQrPayload(el)
-            // If width and height are specified, use them, otherwise estimate from magnification
-            const qrWidth = el.width ? el.width * scale : (el.magnification ?? 4) * 25 * scale
-            const qrHeight = el.height ? el.height * scale : (el.magnification ?? 4) * 25 * scale
+            const qrPayload = resolveQrPayload(el, data)
+            const qrW = el.width  ? el.width  * scale : (el.magnification ?? 4) * 25 * scale
+            const qrH = el.height ? el.height * scale : (el.magnification ?? 4) * 25 * scale
             return (
               <div
                 key={idx}
                 className="absolute flex items-center justify-center p-0.5 bg-white border border-zinc-100"
-                style={{
-                  left: `${x}px`,
-                  top: `${y}px`,
-                  width: `${qrWidth}px`,
-                  height: `${qrHeight}px`,
-                }}
+                style={{ left: x, top: y, width: qrW, height: qrH }}
               >
-                <QRCodeSVG
-                  value={qrPayload}
-                  size={Math.min(qrWidth, qrHeight) - 4}
-                  level="M"
-                  includeMargin={false}
-                />
+                <QRCodeSVG value={qrPayload} size={Math.min(qrW, qrH) - 4} level="M" includeMargin={false} />
               </div>
             )
           }
 
-
           case 'barcode': {
-            const value = resolveBinding(el)
+            const value = resolveBinding(el, data)
             return (
               <div
                 key={idx}
                 className="absolute flex flex-col items-center justify-center border border-zinc-300 bg-zinc-50 overflow-hidden"
-                style={{
-                  left: `${x}px`,
-                  top: `${y}px`,
-                  width: `${(el.width ?? 120) * scale}px`,
-                  height: `${(el.height ?? 50) * scale}px`,
-                }}
+                style={{ left: x, top: y, width: (el.width ?? 120) * scale, height: (el.height ?? 50) * scale }}
               >
-                <div className="text-[7px] text-zinc-400 font-mono tracking-tighter leading-none">
-                  ▐█▐█▐▌█▌
-                </div>
-                <div className="text-[8px] font-mono text-black select-none truncate max-w-full px-1 scale-75 mt-0.5">
-                  {value}
-                </div>
+                <div className="text-[7px] text-zinc-400 font-mono tracking-tighter leading-none">▐█▐█▐▌█▌</div>
+                <div className="text-[8px] font-mono text-black select-none truncate max-w-full px-1 scale-75 mt-0.5">{value}</div>
               </div>
             )
           }
@@ -280,6 +238,71 @@ export function LabelPreview({
             return null
         }
       })}
+    </div>
+  )
+}
+
+// ── Main LabelPreview ─────────────────────────────────────────────────────────
+
+export function LabelPreview({
+  template,
+  data,
+  width = 400,
+  className = '',
+}: LabelPreviewProps) {
+  const errorCls    = `flex items-center justify-center border border-dashed border-border rounded-lg bg-surface-2 text-muted-fg text-xs italic ${className}`
+  const placeholderH = (width * 3) / 5
+
+  if (!template) {
+    return <div className={errorCls} style={{ width, height: placeholderH }}>Đang tải Template...</div>
+  }
+
+  const parsed = parseTemplateJson(template)
+  if (!parsed) {
+    return <div className={errorCls} style={{ width, height: placeholderH }}>Lỗi phân tích Template</div>
+  }
+
+  const { cols, rows, gapMm } = resolveLayout(template, parsed)
+  const isMultiUp = cols > 1 || rows > 1
+
+  if (isMultiUp) {
+    const mmWidth  = parsed.width  || 50
+    const gapPx    = Math.round((gapMm / mmWidth) * width)
+    const tileW    = Math.floor((width - gapPx * (cols - 1)) / cols)
+    const tileH    = Math.round((tileW * (parsed.height || 30)) / (parsed.width || 50))
+    const totalH   = rows * tileH + (rows - 1) * gapPx
+
+    return (
+      <div
+        className={`relative ${className}`}
+        style={{ width, height: totalH }}
+        title={`${cols}×${rows} N-Up — ${parsed.width}×${parsed.height}mm / nhãn`}
+      >
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(${cols}, ${tileW}px)`,
+            gridTemplateRows:    `repeat(${rows}, ${tileH}px)`,
+            gap: `${gapPx}px`,
+          }}
+        >
+          {Array.from({ length: rows * cols }, (_, i) => (
+            <SingleLabelTile key={i} parsed={parsed} data={data} tileWidth={tileW} />
+          ))}
+        </div>
+
+        {/* N-Up badge */}
+        <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded select-none pointer-events-none">
+          {cols === 2 ? '2-Up' : cols === 3 ? '3-Up' : `${cols}×${rows}`}
+        </div>
+      </div>
+    )
+  }
+
+  // Single-up
+  return (
+    <div className={className}>
+      <SingleLabelTile parsed={parsed} data={data} tileWidth={width} />
     </div>
   )
 }

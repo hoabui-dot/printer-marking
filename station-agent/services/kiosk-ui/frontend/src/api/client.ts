@@ -107,13 +107,27 @@ export const printerApi = {
 }
 
 export const templateApi = {
-  list: (params?: { search?: string; dpi?: number; status?: string; includeArchived?: boolean }) =>
+  list: (params?: { search?: string; dpi?: number; status?: string; layoutType?: string; includeArchived?: boolean }) =>
     client.get<any[]>('/label-templates', { params }),
   getById: (id: string) => client.get<any>(`/label-templates/${id}`),
   getDefault: () => client.get<any>('/label-templates/default'),
-  create: (data: { name: string; description?: string; dpi: number; labelWidth: number; labelHeight: number; templateJson: string }) =>
+  create: (data: {
+    name: string; description?: string; note?: string; dpi: number
+    labelWidth: number; labelHeight: number; templateJson: string
+    templateCode?: string; category?: string; orientation?: string; revision?: string
+    supportedBarcodeTypes?: string; supportedPrinterModels?: string; compatibleStationTypes?: string
+    // N-Up layout
+    layoutType?: string; sheetColumns?: number; sheetRows?: number; gapMm?: number
+  }) =>
     client.post<any>('/label-templates', data),
-  update: (id: string, data: { name: string; description?: string; dpi: number; labelWidth: number; labelHeight: number; templateJson: string }) =>
+  update: (id: string, data: {
+    name: string; description?: string; note?: string; dpi: number
+    labelWidth: number; labelHeight: number; templateJson: string
+    templateCode?: string; category?: string; orientation?: string; revision?: string
+    supportedBarcodeTypes?: string; supportedPrinterModels?: string; compatibleStationTypes?: string
+    // N-Up: only gapMm is adjustable after creation
+    gapMm?: number
+  }) =>
     client.put<any>(`/label-templates/${id}`, data),
   delete: (id: string) => client.delete(`/label-templates/${id}`),
   duplicate: (id: string) => client.post<any>(`/label-templates/${id}/duplicate`),

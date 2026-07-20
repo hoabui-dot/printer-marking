@@ -27,8 +27,6 @@ public static class PrinterDbSeeder
             await db.Printers.AddAsync(pLegacy);
 
             var cupsQueue = Environment.GetEnvironmentVariable("CUPS_QUEUE") ?? "Zebra_Technologies_ZTC_GK420t";
-            // host.docker.internal routes to the macOS host from inside Docker Desktop containers.
-            // Using "localhost" would ping the container itself (no CUPS there), always returning offline.
             var cupsHost = Environment.GetEnvironmentVariable("CUPS_HEALTH_HOST") ?? "host.docker.internal";
             var pCups = Printer.Create("Zebra-GK420t-CUPS", "Zebra GK420t (Physical)", cupsHost, 631, "ZPL", "ZEBRA",
                 driverType: "cups", cupsQueueName: cupsQueue);
@@ -44,7 +42,6 @@ public static class PrinterDbSeeder
             var existingCups = await db.Printers.FirstOrDefaultAsync(p => p.PrinterCode == cupsCode);
             if (existingCups == null)
             {
-                // Insert if missing
                 var cupsQueue = Environment.GetEnvironmentVariable("CUPS_QUEUE") ?? "Zebra_Technologies_ZTC_GK420t";
                 var pCups = Printer.Create(cupsCode, "Zebra GK420t (Physical)", cupsHost, 631, "ZPL", "ZEBRA",
                     driverType: "cups", cupsQueueName: cupsQueue);
@@ -53,28 +50,41 @@ public static class PrinterDbSeeder
             }
             else if (existingCups.IpAddress == "localhost" || existingCups.IpAddress == "127.0.0.1")
             {
-                // Migrate existing record: localhost cannot reach macOS host CUPS from inside Docker.
-                // host.docker.internal is Docker Desktop's special DNS that routes to the macOS host.
-                // ExecuteUpdateAsync bypasses the private setter restriction on IpAddress.
                 await db.Printers
                     .Where(p => p.PrinterCode == cupsCode)
                     .ExecuteUpdateAsync(s => s.SetProperty(p => p.IpAddress, cupsHost));
             }
         }
 
-
-        // ── Industrial Label Templates ────────────────────────────────────────
-        // Idempotent: check by TemplateCode before inserting.
+        // ── Official Vietnamese Label Templates ───────────────────────────────
         await SeedTemplatesAsync(db);
     }
 
     private static async Task SeedTemplatesAsync(PrinterDbContext db)
     {
-        var definitions = GetIndustrialTemplateDefinitions();
+        var officialCodes = GetOfficialTemplateCodes();
+
+        // Phase 1: Delete all templates NOT in the official list (legacy + old demo)
+        var templatesToDelete = await db.LabelTemplates
+            .Where(t => t.TemplateCode == null || !officialCodes.Contains(t.TemplateCode))
+            .ToListAsync();
+
+        if (templatesToDelete.Count > 0)
+        {
+            var idsToDelete = templatesToDelete.Select(t => t.Id).ToList();
+            await db.LabelTemplateVersions
+                .Where(v => idsToDelete.Contains(v.TemplateId))
+                .ExecuteDeleteAsync();
+
+            db.LabelTemplates.RemoveRange(templatesToDelete);
+            await db.SaveChangesAsync();
+        }
+
+        // Phase 2: Insert official templates (idempotent by template_code)
+        var definitions = GetOfficialTemplateDefinitions();
 
         foreach (var def in definitions)
         {
-            // Idempotent: skip if already exists by templateCode
             var exists = await db.LabelTemplates.AnyAsync(t => t.TemplateCode == def.Code);
             if (exists) continue;
 
@@ -87,6 +97,7 @@ public static class PrinterDbSeeder
                 templateJson: def.TemplateJson,
                 status: "published",
                 createdBy: "system",
+                note: def.Note,
                 templateCode: def.Code,
                 category: def.Category,
                 orientation: def.Orientation,
@@ -105,309 +116,267 @@ public static class PrinterDbSeeder
         await db.SaveChangesAsync();
     }
 
-    // ── Template Definitions ─────────────────────────────────────────────────
+    private static HashSet<string> GetOfficialTemplateCodes() => new(StringComparer.Ordinal)
+    {
+        "LBL-KHO-50x30",
+        "LBL-SAT-100x60",
+        "LBL-TAM-SAT-100x80",
+        "LBL-PALLET-100x150",
+        "LBL-SHEET-LARGE-80x50",
+        "LBL-SHEET-SMALL-50x30",
+        "LBL-WIP-60x40",
+        "LBL-ISSUE-100x60",
+    };
 
     private record TemplateDefinition(
-        string Code, string Name, string Description, string Category,
+        string Code, string Name, string Description, string Note, string Category,
         int Dpi, double WidthMm, double HeightMm, string Orientation,
         string BarcodeTypes, string PrinterModels, string StationTypes,
         string TemplateJson, bool IsDefault = false);
 
-    private static IReadOnlyList<TemplateDefinition> GetIndustrialTemplateDefinitions()
-    {
-        return new List<TemplateDefinition>
+    private static IReadOnlyList<TemplateDefinition> GetOfficialTemplateDefinitions() =>
+        new List<TemplateDefinition>
         {
-            // ── 1. Product QR Label (DEFAULT) — 50×30mm ───────────────────────
             new(
-                Code: "LBL-PRODUCT-50x30",
-                Name: "Industrial Product QR Label",
-                Description: "Won Seal Tech Co., Ltd. — 50×30mm standard product label with QR code and serial number.",
-                Category: "PRODUCT",
-                Dpi: 203, WidthMm: 50, HeightMm: 30, Orientation: "LANDSCAPE",
-                BarcodeTypes: "[\"QR\"]",
-                PrinterModels: "[\"GK420t\",\"ZT230\",\"ZT410\"]",
-                StationTypes: "[\"PRINT_STATION\",\"MARK_STATION\"]",
-                IsDefault: true,
-                TemplateJson: """
-                {
-                  "width": 50, "height": 30, "dpi": 203,
-                  "elements": [
-                    { "type": "text", "x": 10, "y": 15, "fontSize": 11, "text": "WON SEAL TECH CO., LTD." },
-                    { "type": "text", "x": 10, "y": 50, "fontSize": 10, "binding": "product_name", "defaultValue": "Bearing Seal" },
-                    { "type": "text", "x": 10, "y": 85, "fontSize": 8, "text": "Product:" },
-                    { "type": "text", "x": 90, "y": 85, "fontSize": 9, "binding": "product_code", "defaultValue": "BEARING-SEAL-01" },
-                    { "type": "text", "x": 10, "y": 115, "fontSize": 8, "text": "Serial:" },
-                    { "type": "text", "x": 90, "y": 115, "fontSize": 9, "binding": "serial_number", "defaultValue": "SN-000001" },
-                    { "type": "text", "x": 10, "y": 145, "fontSize": 7, "binding": "batch_number", "defaultValue": "BATCH-01" },
-                    { "type": "text", "x": 150, "y": 145, "fontSize": 7, "text": "Rev:" },
-                    { "type": "text", "x": 185, "y": 145, "fontSize": 7, "binding": "revision", "defaultValue": "A" },
-                    { "type": "text", "x": 10, "y": 170, "fontSize": 7, "binding": "production_date", "defaultValue": "2026-07-09" },
-                    {
-                      "type": "qr", "x": 280, "y": 50, "magnification": 4,
-                      "payloadTemplate": "{\"sn\":\"{serial_number}\",\"prod\":\"{product_code}\",\"rev\":\"{revision}\",\"batch\":\"{batch_number}\"}"
-                    }
-                  ]
-                }
-                """),
-
-            // ── 2. Shelf/Rack/Storage Label — 50×30mm ────────────────────────
-            new(
-                Code: "LBL-SHELF-50x30",
-                Name: "Shelf / Rack Location Label",
-                Description: "Warehouse location identification. 50×30mm with QR and Code128.",
-                Category: "SHELF",
+                Code: "LBL-KHO-50x30",
+                Name: "Vị trí kho / kệ / ô chứa",
+                Description: "Tem định vị dùng để nhận diện vị trí lưu trữ trong kho, kệ hoặc ô chứa.",
+                Note: "Dán cố định tại kệ, ô kho.",
+                Category: "Kho",
                 Dpi: 203, WidthMm: 50, HeightMm: 30, Orientation: "LANDSCAPE",
                 BarcodeTypes: "[\"CODE128\",\"QR\"]",
                 PrinterModels: "[\"GK420t\",\"ZD420\",\"ZT230\"]",
                 StationTypes: "[\"WAREHOUSE\",\"PRINT_STATION\"]",
+                IsDefault: true,
                 TemplateJson: """
-                {
-                  "width": 50, "height": 30, "dpi": 203,
-                  "elements": [
-                    { "type": "text", "x": 10, "y": 12, "fontSize": 9, "text": "LOCATION" },
-                    { "type": "text", "x": 10, "y": 45, "fontSize": 18, "binding": "location_code", "defaultValue": "A-01-03" },
-                    { "type": "text", "x": 10, "y": 100, "fontSize": 7, "binding": "zone", "defaultValue": "Zone A - Row 1" },
-                    { "type": "barcode", "x": 10, "y": 125, "height": 50, "symbology": "CODE128", "barWidth": 2, "binding": "location_code", "defaultValue": "A-01-03" },
-                    { "type": "qr", "x": 300, "y": 30, "magnification": 3, "binding": "location_code", "defaultValue": "A-01-03" }
-                  ]
-                }
-                """),
+                    {
+                      "width": 50, "height": 30, "dpi": 203,
+                      "elements": [
+                        { "type": "text", "x": 10, "y": 12, "fontSize": 8, "text": "VI TRI KHO" },
+                        { "type": "text", "x": 10, "y": 45, "fontSize": 18, "binding": "location_code", "defaultValue": "A-01-03" },
+                        { "type": "text", "x": 10, "y": 100, "fontSize": 7, "binding": "zone", "defaultValue": "Khu A - Ke 1" },
+                        { "type": "barcode", "x": 10, "y": 125, "height": 50, "symbology": "CODE128", "barWidth": 2, "binding": "location_code", "defaultValue": "A-01-03" },
+                        { "type": "qr", "x": 300, "y": 30, "magnification": 3, "binding": "location_code", "defaultValue": "A-01-03" }
+                      ]
+                    }
+                    """),
 
-            // ── 3. Inspection/Supervisor Label — 100×60mm ─────────────────────
             new(
-                Code: "LBL-INSP-100x60",
-                Name: "Inspection / Supervisor Label",
-                Description: "QC inspection records, supervisor sign-off. 100×60mm, Code128.",
-                Category: "INSPECTION",
+                Code: "LBL-SAT-100x60",
+                Name: "Bó sắt / kiện sắt",
+                Description: "Tem nhận diện bó hoặc kiện sắt phục vụ quản lý kho và truy xuất.",
+                Note: "Nên có mã vật tư, lot, khối lượng.",
+                Category: "Thành phẩm",
                 Dpi: 203, WidthMm: 100, HeightMm: 60, Orientation: "LANDSCAPE",
                 BarcodeTypes: "[\"CODE128\"]",
                 PrinterModels: "[\"GK420t\",\"ZT230\",\"ZT410\"]",
-                StationTypes: "[\"QC_STATION\",\"PRINT_STATION\"]",
+                StationTypes: "[\"WAREHOUSE\",\"PRINT_STATION\"]",
                 TemplateJson: """
-                {
-                  "width": 100, "height": 60, "dpi": 203,
-                  "elements": [
-                    { "type": "rect", "x": 5, "y": 5, "width": 790, "height": 470, "strokeWidth": 3 },
-                    { "type": "text", "x": 15, "y": 20, "fontSize": 16, "text": "INSPECTION RECORD" },
-                    { "type": "line", "x": 5, "y": 65, "width": 790, "height": 2 },
-                    { "type": "text", "x": 15, "y": 80, "fontSize": 9, "text": "Job No:" },
-                    { "type": "text", "x": 120, "y": 80, "fontSize": 10, "binding": "production_order", "defaultValue": "PO-2026-001" },
-                    { "type": "text", "x": 15, "y": 120, "fontSize": 9, "text": "Product:" },
-                    { "type": "text", "x": 120, "y": 120, "fontSize": 10, "binding": "product_code", "defaultValue": "BEARING-SEAL-01" },
-                    { "type": "text", "x": 15, "y": 160, "fontSize": 9, "text": "Serial:" },
-                    { "type": "text", "x": 120, "y": 160, "fontSize": 10, "binding": "serial_number", "defaultValue": "SN-000001" },
-                    { "type": "text", "x": 15, "y": 200, "fontSize": 9, "text": "Inspector:" },
-                    { "type": "text", "x": 120, "y": 200, "fontSize": 10, "binding": "operator", "defaultValue": "Inspector A" },
-                    { "type": "text", "x": 15, "y": 240, "fontSize": 9, "text": "Date:" },
-                    { "type": "text", "x": 120, "y": 240, "fontSize": 9, "binding": "production_date", "defaultValue": "2026-07-09" },
-                    { "type": "text", "x": 15, "y": 280, "fontSize": 9, "text": "Result:" },
-                    { "type": "text", "x": 120, "y": 280, "fontSize": 14, "binding": "inspection_result", "defaultValue": "PASS" },
-                    { "type": "barcode", "x": 15, "y": 320, "height": 80, "symbology": "CODE128", "barWidth": 2, "binding": "serial_number", "defaultValue": "SN-000001" }
-                  ]
-                }
-                """),
+                    {
+                      "width": 100, "height": 60, "dpi": 203,
+                      "elements": [
+                        { "type": "rect", "x": 5, "y": 5, "width": 790, "height": 470, "strokeWidth": 3 },
+                        { "type": "text", "x": 15, "y": 18, "fontSize": 14, "text": "BO SAT / KIEN SAT" },
+                        { "type": "line", "x": 5, "y": 60, "width": 790, "height": 2 },
+                        { "type": "text", "x": 15, "y": 80, "fontSize": 9, "text": "Ma vat tu:" },
+                        { "type": "text", "x": 130, "y": 80, "fontSize": 11, "binding": "material_code", "defaultValue": "SAT-001" },
+                        { "type": "text", "x": 15, "y": 120, "fontSize": 9, "text": "Lot No:" },
+                        { "type": "text", "x": 130, "y": 120, "fontSize": 11, "binding": "lot_number", "defaultValue": "LOT-2026-07-A" },
+                        { "type": "text", "x": 15, "y": 160, "fontSize": 9, "text": "Khoi luong (kg):" },
+                        { "type": "text", "x": 220, "y": 160, "fontSize": 11, "binding": "weight", "defaultValue": "100.0" },
+                        { "type": "text", "x": 15, "y": 200, "fontSize": 9, "text": "Ngay sx:" },
+                        { "type": "text", "x": 130, "y": 200, "fontSize": 9, "binding": "production_date", "defaultValue": "2026-07-09" },
+                        { "type": "barcode", "x": 15, "y": 240, "height": 100, "symbology": "CODE128", "barWidth": 3, "binding": "serial_number", "defaultValue": "SAT-000001" },
+                        { "type": "text", "x": 15, "y": 350, "fontSize": 7, "binding": "serial_number", "defaultValue": "SAT-000001" }
+                      ]
+                    }
+                    """),
 
-            // ── 4. Roll/Material Reel Label — 100×80mm ───────────────────────
             new(
-                Code: "LBL-ROLL-100x80",
-                Name: "Roll / Material Reel Label",
-                Description: "Rubber rolls and raw material reels. 100×80mm with large Code128.",
-                Category: "MATERIAL",
+                Code: "LBL-TAM-SAT-100x80",
+                Name: "Tấm sắt / cuộn sắt",
+                Description: "Tem quản lý tấm hoặc cuộn sắt.",
+                Note: "Dùng tem PET hoặc thẻ treo vì bề mặt khó dán.",
+                Category: "Nguyên vật liệu",
                 Dpi: 203, WidthMm: 100, HeightMm: 80, Orientation: "PORTRAIT",
                 BarcodeTypes: "[\"CODE128\"]",
                 PrinterModels: "[\"ZT230\",\"ZT410\",\"ZT610\"]",
                 StationTypes: "[\"WAREHOUSE\",\"MATERIAL_STATION\"]",
                 TemplateJson: """
-                {
-                  "width": 100, "height": 80, "dpi": 203,
-                  "elements": [
-                    { "type": "text", "x": 15, "y": 15, "fontSize": 13, "text": "MATERIAL REEL" },
-                    { "type": "line", "x": 5, "y": 55, "width": 790, "height": 2 },
-                    { "type": "text", "x": 15, "y": 70, "fontSize": 9, "text": "Material:" },
-                    { "type": "text", "x": 130, "y": 70, "fontSize": 11, "binding": "material", "defaultValue": "NBR-70 Rubber" },
-                    { "type": "text", "x": 15, "y": 110, "fontSize": 9, "text": "Lot No:" },
-                    { "type": "text", "x": 130, "y": 110, "fontSize": 11, "binding": "lot_number", "defaultValue": "LOT-2026-07-A" },
-                    { "type": "text", "x": 15, "y": 150, "fontSize": 9, "text": "Roll ID:" },
-                    { "type": "text", "x": 130, "y": 150, "fontSize": 11, "binding": "serial_number", "defaultValue": "ROLL-001" },
-                    { "type": "text", "x": 15, "y": 190, "fontSize": 9, "text": "Weight (kg):" },
-                    { "type": "text", "x": 200, "y": 190, "fontSize": 11, "binding": "weight", "defaultValue": "25.0" },
-                    { "type": "text", "x": 15, "y": 230, "fontSize": 9, "text": "MFG Date:" },
-                    { "type": "text", "x": 130, "y": 230, "fontSize": 9, "binding": "manufacture_date", "defaultValue": "2026-07-09" },
-                    { "type": "barcode", "x": 15, "y": 280, "height": 130, "symbology": "CODE128", "barWidth": 3,
-                      "binding": "serial_number", "defaultValue": "ROLL-001" },
-                    { "type": "text", "x": 15, "y": 420, "fontSize": 7, "binding": "lot_number", "defaultValue": "LOT-2026-07-A" }
-                  ]
-                }
-                """),
+                    {
+                      "width": 100, "height": 80, "dpi": 203,
+                      "elements": [
+                        { "type": "text", "x": 15, "y": 15, "fontSize": 14, "text": "TAM SAT / CUON SAT" },
+                        { "type": "line", "x": 5, "y": 55, "width": 790, "height": 2 },
+                        { "type": "text", "x": 15, "y": 70, "fontSize": 9, "text": "Vat lieu:" },
+                        { "type": "text", "x": 130, "y": 70, "fontSize": 11, "binding": "material", "defaultValue": "Thep CT3" },
+                        { "type": "text", "x": 15, "y": 110, "fontSize": 9, "text": "Lot No:" },
+                        { "type": "text", "x": 130, "y": 110, "fontSize": 11, "binding": "lot_number", "defaultValue": "LOT-2026-07-A" },
+                        { "type": "text", "x": 15, "y": 150, "fontSize": 9, "text": "Cuon/Tam ID:" },
+                        { "type": "text", "x": 180, "y": 150, "fontSize": 11, "binding": "serial_number", "defaultValue": "CUON-001" },
+                        { "type": "text", "x": 15, "y": 190, "fontSize": 9, "text": "Trong luong (kg):" },
+                        { "type": "text", "x": 230, "y": 190, "fontSize": 11, "binding": "weight", "defaultValue": "500.0" },
+                        { "type": "text", "x": 15, "y": 230, "fontSize": 9, "text": "Ngay nhap:" },
+                        { "type": "text", "x": 130, "y": 230, "fontSize": 9, "binding": "manufacture_date", "defaultValue": "2026-07-09" },
+                        { "type": "barcode", "x": 15, "y": 280, "height": 130, "symbology": "CODE128", "barWidth": 3, "binding": "serial_number", "defaultValue": "CUON-001" },
+                        { "type": "text", "x": 15, "y": 420, "fontSize": 7, "binding": "lot_number", "defaultValue": "LOT-2026-07-A" }
+                      ]
+                    }
+                    """),
 
-            // ── 5. Pallet Label — 100×150mm ──────────────────────────────────
             new(
                 Code: "LBL-PALLET-100x150",
-                Name: "Pallet Label",
-                Description: "Shipping, warehouse and forklift scanning pallet label. 100×150mm with large QR and Code128.",
-                Category: "PALLET",
+                Name: "Pallet hàng",
+                Description: "Tem nhận diện pallet hàng phục vụ xuất nhập kho.",
+                Note: "Dễ quét từ xa bằng PDA.",
+                Category: "Pallet",
                 Dpi: 203, WidthMm: 100, HeightMm: 150, Orientation: "PORTRAIT",
                 BarcodeTypes: "[\"CODE128\",\"QR\"]",
                 PrinterModels: "[\"ZT410\",\"ZT610\",\"ZT620\"]",
                 StationTypes: "[\"WAREHOUSE\",\"SHIPPING_STATION\"]",
                 TemplateJson: """
-                {
-                  "width": 100, "height": 150, "dpi": 203,
-                  "elements": [
-                    { "type": "rect", "x": 5, "y": 5, "width": 790, "height": 1190, "strokeWidth": 4 },
-                    { "type": "text", "x": 20, "y": 20, "fontSize": 18, "text": "PALLET" },
-                    { "type": "line", "x": 5, "y": 75, "width": 790, "height": 3 },
-                    { "type": "qr", "x": 30, "y": 90, "magnification": 8,
-                      "payloadTemplate": "{\"pallet\":\"{serial_number}\",\"po\":\"{production_order}\",\"prod\":\"{product_code}\"}" },
-                    { "type": "text", "x": 430, "y": 90, "fontSize": 8, "text": "Order:" },
-                    { "type": "text", "x": 430, "y": 120, "fontSize": 11, "binding": "production_order", "defaultValue": "PO-2026-001" },
-                    { "type": "text", "x": 430, "y": 160, "fontSize": 8, "text": "Product:" },
-                    { "type": "text", "x": 430, "y": 190, "fontSize": 10, "binding": "product_code", "defaultValue": "BEARING-SEAL-01" },
-                    { "type": "text", "x": 430, "y": 230, "fontSize": 8, "text": "Pallet ID:" },
-                    { "type": "text", "x": 430, "y": 260, "fontSize": 10, "binding": "serial_number", "defaultValue": "PLT-001" },
-                    { "type": "text", "x": 430, "y": 300, "fontSize": 8, "text": "Qty:" },
-                    { "type": "text", "x": 430, "y": 330, "fontSize": 14, "binding": "quantity", "defaultValue": "100" },
-                    { "type": "text", "x": 430, "y": 380, "fontSize": 8, "text": "Destination:" },
-                    { "type": "text", "x": 430, "y": 410, "fontSize": 9, "binding": "destination", "defaultValue": "WAREHOUSE A" },
-                    { "type": "line", "x": 5, "y": 490, "width": 790, "height": 3 },
-                    { "type": "text", "x": 20, "y": 510, "fontSize": 8, "text": "Shipper:" },
-                    { "type": "text", "x": 130, "y": 510, "fontSize": 9, "binding": "customer", "defaultValue": "Won Seal Tech" },
-                    { "type": "text", "x": 20, "y": 550, "fontSize": 8, "text": "Date:" },
-                    { "type": "text", "x": 130, "y": 550, "fontSize": 9, "binding": "manufacture_date", "defaultValue": "2026-07-09" },
-                    { "type": "barcode", "x": 20, "y": 600, "height": 150, "symbology": "CODE128", "barWidth": 4,
-                      "binding": "serial_number", "defaultValue": "PLT-001" },
-                    { "type": "text", "x": 20, "y": 760, "fontSize": 7, "binding": "serial_number", "defaultValue": "PLT-001" }
-                  ]
-                }
-                """),
+                    {
+                      "width": 100, "height": 150, "dpi": 203,
+                      "elements": [
+                        { "type": "rect", "x": 5, "y": 5, "width": 790, "height": 1190, "strokeWidth": 4 },
+                        { "type": "text", "x": 20, "y": 20, "fontSize": 18, "text": "PALLET HANG" },
+                        { "type": "line", "x": 5, "y": 75, "width": 790, "height": 3 },
+                        { "type": "qr", "x": 30, "y": 90, "magnification": 8, "payloadTemplate": "{\"pallet\":\"{serial_number}\",\"po\":\"{production_order}\"}" },
+                        { "type": "text", "x": 430, "y": 90, "fontSize": 8, "text": "Don hang:" },
+                        { "type": "text", "x": 430, "y": 120, "fontSize": 11, "binding": "production_order", "defaultValue": "PO-2026-001" },
+                        { "type": "text", "x": 430, "y": 160, "fontSize": 8, "text": "San pham:" },
+                        { "type": "text", "x": 430, "y": 190, "fontSize": 10, "binding": "product_code", "defaultValue": "SP-001" },
+                        { "type": "text", "x": 430, "y": 230, "fontSize": 8, "text": "Pallet ID:" },
+                        { "type": "text", "x": 430, "y": 260, "fontSize": 10, "binding": "serial_number", "defaultValue": "PLT-001" },
+                        { "type": "text", "x": 430, "y": 300, "fontSize": 8, "text": "So luong:" },
+                        { "type": "text", "x": 430, "y": 330, "fontSize": 14, "binding": "quantity", "defaultValue": "100" },
+                        { "type": "text", "x": 430, "y": 380, "fontSize": 8, "text": "Diem den:" },
+                        { "type": "text", "x": 430, "y": 410, "fontSize": 9, "binding": "destination", "defaultValue": "KHO A" },
+                        { "type": "line", "x": 5, "y": 490, "width": 790, "height": 3 },
+                        { "type": "text", "x": 20, "y": 510, "fontSize": 8, "text": "Ngay:" },
+                        { "type": "text", "x": 100, "y": 510, "fontSize": 9, "binding": "manufacture_date", "defaultValue": "2026-07-09" },
+                        { "type": "barcode", "x": 20, "y": 600, "height": 150, "symbology": "CODE128", "barWidth": 4, "binding": "serial_number", "defaultValue": "PLT-001" },
+                        { "type": "text", "x": 20, "y": 760, "fontSize": 7, "binding": "serial_number", "defaultValue": "PLT-001" }
+                      ]
+                    }
+                    """),
 
-            // ── 6. Parent Rubber Sheet Label — 80×50mm ────────────────────────
             new(
-                Code: "LBL-SHEET-P-80x50",
-                Name: "Parent Rubber Sheet Label",
-                Description: "Parent sheet identification for rubber sheet tracking. 80×50mm with QR.",
-                Category: "SHEET",
+                Code: "LBL-SHEET-LARGE-80x50",
+                Name: "Tấm cao su lớn",
+                Description: "Tem quản lý tấm cao su lớn.",
+                Note: "Quản lý mã tấm cha Parent Sheet ID.",
+                Category: "Tấm cao su",
                 Dpi: 203, WidthMm: 80, HeightMm: 50, Orientation: "LANDSCAPE",
                 BarcodeTypes: "[\"QR\"]",
                 PrinterModels: "[\"GK420t\",\"ZT230\"]",
                 StationTypes: "[\"MATERIAL_STATION\",\"PRINT_STATION\"]",
                 TemplateJson: """
-                {
-                  "width": 80, "height": 50, "dpi": 203,
-                  "elements": [
-                    { "type": "text", "x": 10, "y": 12, "fontSize": 11, "text": "PARENT SHEET" },
-                    { "type": "line", "x": 5, "y": 45, "width": 530, "height": 2 },
-                    { "type": "text", "x": 10, "y": 60, "fontSize": 9, "text": "Sheet ID:" },
-                    { "type": "text", "x": 120, "y": 60, "fontSize": 11, "binding": "serial_number", "defaultValue": "SHEET-P-001" },
-                    { "type": "text", "x": 10, "y": 100, "fontSize": 9, "text": "Material:" },
-                    { "type": "text", "x": 120, "y": 100, "fontSize": 10, "binding": "material", "defaultValue": "NBR-70" },
-                    { "type": "text", "x": 10, "y": 140, "fontSize": 9, "text": "Lot:" },
-                    { "type": "text", "x": 80, "y": 140, "fontSize": 9, "binding": "lot_number", "defaultValue": "LOT-2026-07-A" },
-                    { "type": "text", "x": 10, "y": 180, "fontSize": 9, "text": "Size:" },
-                    { "type": "text", "x": 80, "y": 180, "fontSize": 9, "binding": "sheet_size", "defaultValue": "1200x600mm" },
-                    { "type": "text", "x": 10, "y": 220, "fontSize": 8, "binding": "manufacture_date", "defaultValue": "2026-07-09" },
                     {
-                      "type": "qr", "x": 570, "y": 40, "magnification": 6,
-                      "payloadTemplate": "{\"sheet\":\"{serial_number}\",\"lot\":\"{lot_number}\",\"mat\":\"{material}\"}"
+                      "width": 80, "height": 50, "dpi": 203,
+                      "elements": [
+                        { "type": "text", "x": 10, "y": 12, "fontSize": 11, "text": "TAM CAO SU LON" },
+                        { "type": "line", "x": 5, "y": 45, "width": 530, "height": 2 },
+                        { "type": "text", "x": 10, "y": 60, "fontSize": 9, "text": "Ma tam cha:" },
+                        { "type": "text", "x": 140, "y": 60, "fontSize": 11, "binding": "serial_number", "defaultValue": "SHEET-P-001" },
+                        { "type": "text", "x": 10, "y": 100, "fontSize": 9, "text": "Vat lieu:" },
+                        { "type": "text", "x": 120, "y": 100, "fontSize": 10, "binding": "material", "defaultValue": "NBR-70" },
+                        { "type": "text", "x": 10, "y": 140, "fontSize": 9, "text": "Lot:" },
+                        { "type": "text", "x": 80, "y": 140, "fontSize": 9, "binding": "lot_number", "defaultValue": "LOT-2026-07-A" },
+                        { "type": "text", "x": 10, "y": 180, "fontSize": 9, "text": "Kich thuoc:" },
+                        { "type": "text", "x": 130, "y": 180, "fontSize": 9, "binding": "sheet_size", "defaultValue": "1200x600mm" },
+                        { "type": "text", "x": 10, "y": 220, "fontSize": 8, "binding": "manufacture_date", "defaultValue": "2026-07-09" },
+                        { "type": "qr", "x": 570, "y": 40, "magnification": 6, "payloadTemplate": "{\"sheet\":\"{serial_number}\",\"lot\":\"{lot_number}\"}" }
+                      ]
                     }
-                  ]
-                }
-                """),
+                    """),
 
-            // ── 7. Child Rubber Sheet Label — 50×30mm ────────────────────────
             new(
-                Code: "LBL-SHEET-C-50x30",
-                Name: "Child Rubber Sheet Label",
-                Description: "Individual child sheet tracking cut from parent. 50×30mm compact QR.",
-                Category: "SHEET",
+                Code: "LBL-SHEET-SMALL-50x30",
+                Name: "Tấm cao su nhỏ sau khi cắt",
+                Description: "Tem quản lý từng tấm cao su sau khi cắt.",
+                Note: "Mỗi tấm con có mã riêng.",
+                Category: "Tấm cao su",
                 Dpi: 203, WidthMm: 50, HeightMm: 30, Orientation: "LANDSCAPE",
                 BarcodeTypes: "[\"QR\"]",
                 PrinterModels: "[\"GK420t\",\"ZD420\"]",
                 StationTypes: "[\"MATERIAL_STATION\",\"PRINT_STATION\"]",
                 TemplateJson: """
-                {
-                  "width": 50, "height": 30, "dpi": 203,
-                  "elements": [
-                    { "type": "text", "x": 8, "y": 10, "fontSize": 9, "text": "CHILD SHEET" },
-                    { "type": "text", "x": 8, "y": 40, "fontSize": 8, "binding": "serial_number", "defaultValue": "SHEET-C-001" },
-                    { "type": "text", "x": 8, "y": 70, "fontSize": 7, "binding": "lot_number", "defaultValue": "LOT-2026-07-A" },
-                    { "type": "text", "x": 8, "y": 100, "fontSize": 7, "text": "Parent:" },
-                    { "type": "text", "x": 90, "y": 100, "fontSize": 7, "binding": "parent_id", "defaultValue": "SHEET-P-001" },
-                    { "type": "text", "x": 8, "y": 130, "fontSize": 7, "binding": "manufacture_date", "defaultValue": "2026-07-09" },
-                    { "type": "qr", "x": 270, "y": 30, "magnification": 3, "binding": "serial_number", "defaultValue": "SHEET-C-001" }
-                  ]
-                }
-                """),
+                    {
+                      "width": 50, "height": 30, "dpi": 203,
+                      "elements": [
+                        { "type": "text", "x": 8, "y": 10, "fontSize": 9, "text": "TAM CAO SU NHO" },
+                        { "type": "text", "x": 8, "y": 40, "fontSize": 8, "binding": "serial_number", "defaultValue": "SHEET-C-001" },
+                        { "type": "text", "x": 8, "y": 70, "fontSize": 7, "binding": "lot_number", "defaultValue": "LOT-2026-07-A" },
+                        { "type": "text", "x": 8, "y": 100, "fontSize": 7, "text": "Tam cha:" },
+                        { "type": "text", "x": 100, "y": 100, "fontSize": 7, "binding": "parent_id", "defaultValue": "SHEET-P-001" },
+                        { "type": "text", "x": 8, "y": 130, "fontSize": 7, "binding": "manufacture_date", "defaultValue": "2026-07-09" },
+                        { "type": "qr", "x": 270, "y": 30, "magnification": 3, "binding": "serial_number", "defaultValue": "SHEET-C-001" }
+                      ]
+                    }
+                    """),
 
-            // ── 8. Semi-Finished WIP Label — 60×40mm ─────────────────────────
             new(
                 Code: "LBL-WIP-60x40",
-                Name: "Semi-Finished Product (WIP) Label",
-                Description: "MES and operation tracking for work-in-progress items. 60×40mm with QR.",
+                Name: "Bán thành phẩm/WIP trong MES",
+                Description: "Tem theo dõi bán thành phẩm trong quá trình sản xuất.",
+                Note: "Dùng để theo dõi theo công đoạn.",
                 Category: "WIP",
                 Dpi: 203, WidthMm: 60, HeightMm: 40, Orientation: "LANDSCAPE",
                 BarcodeTypes: "[\"QR\"]",
                 PrinterModels: "[\"GK420t\",\"ZD420\",\"ZT230\"]",
                 StationTypes: "[\"PRINT_STATION\",\"MARK_STATION\",\"WIP_STATION\"]",
                 TemplateJson: """
-                {
-                  "width": 60, "height": 40, "dpi": 203,
-                  "elements": [
-                    { "type": "text", "x": 8, "y": 10, "fontSize": 11, "text": "WIP" },
-                    { "type": "line", "x": 5, "y": 40, "width": 470, "height": 2 },
-                    { "type": "text", "x": 8, "y": 55, "fontSize": 9, "text": "Serial:" },
-                    { "type": "text", "x": 95, "y": 55, "fontSize": 10, "binding": "serial_number", "defaultValue": "SN-000001" },
-                    { "type": "text", "x": 8, "y": 90, "fontSize": 9, "text": "Product:" },
-                    { "type": "text", "x": 95, "y": 90, "fontSize": 9, "binding": "product_code", "defaultValue": "BEARING-SEAL-01" },
-                    { "type": "text", "x": 8, "y": 125, "fontSize": 9, "text": "Op:" },
-                    { "type": "text", "x": 65, "y": 125, "fontSize": 9, "binding": "operation", "defaultValue": "LASER_MARK" },
-                    { "type": "text", "x": 8, "y": 160, "fontSize": 8, "text": "Station:" },
-                    { "type": "text", "x": 95, "y": 160, "fontSize": 8, "binding": "station", "defaultValue": "STATION-01" },
-                    { "type": "text", "x": 8, "y": 190, "fontSize": 7, "binding": "production_date", "defaultValue": "2026-07-09" },
                     {
-                      "type": "qr", "x": 500, "y": 25, "magnification": 5,
-                      "payloadTemplate": "{\"sn\":\"{serial_number}\",\"op\":\"{operation}\",\"prod\":\"{product_code}\"}"
+                      "width": 60, "height": 40, "dpi": 203,
+                      "elements": [
+                        { "type": "text", "x": 8, "y": 10, "fontSize": 11, "text": "BAN THANH PHAM" },
+                        { "type": "line", "x": 5, "y": 40, "width": 470, "height": 2 },
+                        { "type": "text", "x": 8, "y": 55, "fontSize": 9, "text": "Serial:" },
+                        { "type": "text", "x": 95, "y": 55, "fontSize": 10, "binding": "serial_number", "defaultValue": "SN-000001" },
+                        { "type": "text", "x": 8, "y": 90, "fontSize": 9, "text": "San pham:" },
+                        { "type": "text", "x": 110, "y": 90, "fontSize": 9, "binding": "product_code", "defaultValue": "SP-001" },
+                        { "type": "text", "x": 8, "y": 125, "fontSize": 9, "text": "Cong doan:" },
+                        { "type": "text", "x": 120, "y": 125, "fontSize": 9, "binding": "operation", "defaultValue": "CAT" },
+                        { "type": "text", "x": 8, "y": 160, "fontSize": 8, "text": "Tram:" },
+                        { "type": "text", "x": 80, "y": 160, "fontSize": 8, "binding": "station", "defaultValue": "STATION-01" },
+                        { "type": "text", "x": 8, "y": 190, "fontSize": 7, "binding": "production_date", "defaultValue": "2026-07-09" },
+                        { "type": "qr", "x": 500, "y": 25, "magnification": 5, "payloadTemplate": "{\"sn\":\"{serial_number}\",\"op\":\"{operation}\"}" }
+                      ]
                     }
-                  ]
-                }
-                """),
+                    """),
 
-            // ── 9. Material Issue Label — 100×60mm ────────────────────────────
             new(
                 Code: "LBL-ISSUE-100x60",
-                Name: "Material Issue Label",
-                Description: "Warehouse to MES material issuance tracking. 100×60mm with QR and Code128.",
-                Category: "ISSUE",
+                Name: "Phiếu cấp liệu / phiếu xuất kho",
+                Description: "Tem phục vụ cấp liệu và xuất kho.",
+                Note: "Dùng cho WMS cấp liệu sang MES.",
+                Category: "WMS",
                 Dpi: 203, WidthMm: 100, HeightMm: 60, Orientation: "LANDSCAPE",
                 BarcodeTypes: "[\"CODE128\",\"QR\"]",
                 PrinterModels: "[\"GK420t\",\"ZT230\",\"ZT410\"]",
                 StationTypes: "[\"WAREHOUSE\",\"MATERIAL_STATION\"]",
                 TemplateJson: """
-                {
-                  "width": 100, "height": 60, "dpi": 203,
-                  "elements": [
-                    { "type": "text", "x": 15, "y": 15, "fontSize": 13, "text": "MATERIAL ISSUE" },
-                    { "type": "line", "x": 5, "y": 55, "width": 790, "height": 2 },
-                    { "type": "text", "x": 15, "y": 70, "fontSize": 9, "text": "Material:" },
-                    { "type": "text", "x": 130, "y": 70, "fontSize": 11, "binding": "material", "defaultValue": "NBR-70 Rubber" },
-                    { "type": "text", "x": 15, "y": 110, "fontSize": 9, "text": "Issue No:" },
-                    { "type": "text", "x": 130, "y": 110, "fontSize": 10, "binding": "serial_number", "defaultValue": "ISSUE-001" },
-                    { "type": "text", "x": 15, "y": 150, "fontSize": 9, "text": "From:" },
-                    { "type": "text", "x": 100, "y": 150, "fontSize": 9, "binding": "source_location", "defaultValue": "WAREHOUSE-A" },
-                    { "type": "text", "x": 15, "y": 185, "fontSize": 9, "text": "To:" },
-                    { "type": "text", "x": 60, "y": 185, "fontSize": 9, "binding": "destination", "defaultValue": "PRODUCTION-01" },
-                    { "type": "text", "x": 15, "y": 220, "fontSize": 9, "text": "Qty:" },
-                    { "type": "text", "x": 75, "y": 220, "fontSize": 11, "binding": "quantity", "defaultValue": "50" },
-                    { "type": "text", "x": 200, "y": 220, "fontSize": 8, "binding": "manufacture_date", "defaultValue": "2026-07-09" },
-                    { "type": "barcode", "x": 15, "y": 260, "height": 80, "symbology": "CODE128", "barWidth": 2,
-                      "binding": "serial_number", "defaultValue": "ISSUE-001" },
                     {
-                      "type": "qr", "x": 620, "y": 60, "magnification": 5,
-                      "payloadTemplate": "{\"issue\":\"{serial_number}\",\"mat\":\"{material}\",\"qty\":\"{quantity}\"}"
+                      "width": 100, "height": 60, "dpi": 203,
+                      "elements": [
+                        { "type": "text", "x": 15, "y": 15, "fontSize": 14, "text": "PHIEU CAP LIEU / XUAT KHO" },
+                        { "type": "line", "x": 5, "y": 55, "width": 790, "height": 2 },
+                        { "type": "text", "x": 15, "y": 70, "fontSize": 9, "text": "Vat lieu:" },
+                        { "type": "text", "x": 130, "y": 70, "fontSize": 11, "binding": "material", "defaultValue": "Cao su NBR-70" },
+                        { "type": "text", "x": 15, "y": 110, "fontSize": 9, "text": "So phieu:" },
+                        { "type": "text", "x": 130, "y": 110, "fontSize": 10, "binding": "serial_number", "defaultValue": "ISSUE-001" },
+                        { "type": "text", "x": 15, "y": 150, "fontSize": 9, "text": "Tu kho:" },
+                        { "type": "text", "x": 100, "y": 150, "fontSize": 9, "binding": "source_location", "defaultValue": "KHO-A" },
+                        { "type": "text", "x": 15, "y": 185, "fontSize": 9, "text": "Den:" },
+                        { "type": "text", "x": 60, "y": 185, "fontSize": 9, "binding": "destination", "defaultValue": "SX-01" },
+                        { "type": "text", "x": 15, "y": 220, "fontSize": 9, "text": "So luong:" },
+                        { "type": "text", "x": 120, "y": 220, "fontSize": 11, "binding": "quantity", "defaultValue": "50" },
+                        { "type": "text", "x": 250, "y": 220, "fontSize": 8, "binding": "manufacture_date", "defaultValue": "2026-07-09" },
+                        { "type": "barcode", "x": 15, "y": 260, "height": 80, "symbology": "CODE128", "barWidth": 2, "binding": "serial_number", "defaultValue": "ISSUE-001" },
+                        { "type": "qr", "x": 620, "y": 60, "magnification": 5, "payloadTemplate": "{\"issue\":\"{serial_number}\",\"qty\":\"{quantity}\"}" }
+                      ]
                     }
-                  ]
-                }
-                """)
+                    """)
         };
-    }
 }

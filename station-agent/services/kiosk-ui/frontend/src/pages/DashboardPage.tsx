@@ -899,7 +899,7 @@ export default function DashboardPage() {
     <div className="flex flex-col min-h-screen bg-background text-foreground">
 
       {/* ── TOP HEADER BAR ──────────────────────────────── */}
-      <header className="sticky top-0 z-40 w-full border-b border-border bg-card">
+      <header className="sticky top-0 z-40 w-full border-b border-border bg-card [box-shadow:var(--shadow-sm)]">
         <div className="flex h-16 items-center justify-between gap-4 px-6 lg:px-8 max-w-7xl mx-auto w-full">
           {/* Brand */}
           <div className="flex items-center gap-3 min-w-0">
@@ -981,7 +981,11 @@ export default function DashboardPage() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* ── LEFT SIDEBAR NAVIGATION ────────────────── */}
         <aside className="w-76 border-r border-border bg-card flex flex-col shrink-0 select-none">
-          <div className="flex-1 overflow-y-auto p-4 space-y-1.5">
+          {/* Sidebar header label */}
+          <div className="px-5 py-3 border-b border-border">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-muted-fg">Điều hướng</p>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-1">
             {tabs.filter((t) => t.show).map(({ key, label, icon: Icon }) => {
               const active = tab === key
               return (
@@ -989,13 +993,18 @@ export default function DashboardPage() {
                   key={key}
                   onClick={() => setTab(key)}
                   className={[
-                    'w-full flex items-center gap-3.5 px-4.5 py-4 text-base font-bold rounded-xl border transition-all duration-200 cursor-pointer touch-manipulation text-left',
+                    'w-full flex items-center gap-3 px-4 py-3.5 text-[15px] font-semibold rounded-xl border transition-all duration-150 cursor-pointer touch-manipulation text-left',
                     active
-                      ? 'border-brand text-brand bg-brand/10 shadow-[0_0_15px_rgba(240,90,26,0.1)] font-extrabold'
-                      : 'border-transparent text-muted-fg hover:text-foreground hover:bg-surface-2 hover:border-border/40',
+                      ? 'border-brand/30 text-brand bg-brand-glow font-bold'
+                      : 'border-transparent text-muted-fg hover:text-foreground hover:bg-surface-2 hover:border-border',
                   ].join(' ')}
                 >
-                  <Icon className={['h-5.5 w-5.5 shrink-0 transition-transform duration-200', active ? 'scale-110 text-brand animate-pulse' : 'text-muted-fg'].join(' ')} />
+                  <div className={[
+                    'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all duration-150',
+                    active ? 'bg-brand/15 text-brand' : 'text-muted-fg',
+                  ].join(' ')}>
+                    <Icon className="h-4.5 w-4.5" />
+                  </div>
                   <span>{label}</span>
                 </button>
               )

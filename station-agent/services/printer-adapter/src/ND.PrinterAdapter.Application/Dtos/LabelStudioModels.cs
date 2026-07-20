@@ -16,7 +16,12 @@ public record CreateTemplateRequest(
     string? Revision = "A",
     string? SupportedBarcodeTypes = null,
     string? SupportedPrinterModels = null,
-    string? CompatibleStationTypes = null);
+    string? CompatibleStationTypes = null,
+    // N-Up layout — set at creation, not editable after
+    string  LayoutType   = "1UP",
+    int     SheetColumns = 1,
+    int     SheetRows    = 1,
+    double  GapMm        = 0);
 
 public record UpdateTemplateRequest(
     string Name,
@@ -32,7 +37,9 @@ public record UpdateTemplateRequest(
     string? Revision = null,
     string? SupportedBarcodeTypes = null,
     string? SupportedPrinterModels = null,
-    string? CompatibleStationTypes = null);
+    string? CompatibleStationTypes = null,
+    // N-Up: only gap is adjustable after creation
+    double? GapMm = null);
 
 public record RenderRequest(
     string TemplateJson,

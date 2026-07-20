@@ -272,7 +272,7 @@ public sealed class JobProcessingConsumer : BackgroundService
         if (variables.TryGetValue("trace_id", out var trId)) resolvedData["trace_id"] = trId;
 
         // Render ZPL dynamically using template & resolvedData
-        var renderedZpl = _labelRenderer.Render(template.TemplateJson, resolvedData);
+        var renderedZpl = _labelRenderer.Render(template.GetTemplateJsonWithLayout(), resolvedData);
 
         var printerJob = PrinterJob.Create(evt.JobId, evt.EventId, printer.Id, template.Name, renderedZpl, copies: 1);
         await db.PrinterJobs.AddAsync(printerJob, cancellationToken);

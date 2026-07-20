@@ -37,11 +37,21 @@ public sealed class LabelTemplate : Entity
     public string? CompatibleStationTypes { get; private set; }
 
     public int Dpi { get; private set; } = 203;
-    public double LabelWidth { get; private set; }   // mm
-    public double LabelHeight { get; private set; }  // mm
+    public double LabelWidth { get; private set; }   // mm — single cell
+    public double LabelHeight { get; private set; }  // mm — single cell
     public string TemplateJson { get; private set; } = default!;
     public int Version { get; private set; } = 1;
     public bool IsActive { get; private set; } = true;
+
+    // ── N-Up layout ───────────────────────────────────────────────────────────
+    /// <summary>Layout style: 1UP | 2UP | 3UP</summary>
+    public string LayoutType   { get; private set; } = "1UP";
+    /// <summary>Number of label cells per row on the physical sheet (1, 2, or 3).</summary>
+    public int    SheetColumns { get; private set; } = 1;
+    /// <summary>Number of label rows on the physical sheet (always 1 for 2UP/3UP standard stock).</summary>
+    public int    SheetRows    { get; private set; } = 1;
+    /// <summary>Gap between label cells in millimetres.</summary>
+    public double GapMm        { get; private set; } = 0;
 
     /// <summary>Status: draft | published | archived</summary>
     public string Status { get; private set; } = "published";
@@ -71,8 +81,15 @@ public sealed class LabelTemplate : Entity
         string? revision = "A",
         string? supportedBarcodeTypes = null,
         string? supportedPrinterModels = null,
-        string? compatibleStationTypes = null)
+        string? compatibleStationTypes = null,
+        string  layoutType   = "1UP",
+        int     sheetColumns = 1,
+        int     sheetRows    = 1,
+        double  gapMm        = 0)
     {
+        // Derive columns/rows from layoutType if not explicitly set
+        var cols = sheetColumns > 1 ? sheetColumns : layoutType switch { "2UP" => 2, "3UP" => 3, _ => 1 };
+        var rows = sheetRows    > 1 ? sheetRows    : 1;
         return new LabelTemplate
         {
             Name = name,
@@ -95,7 +112,11 @@ public sealed class LabelTemplate : Entity
             IsDefault = false,
             CreatedBy = createdBy,
             UpdatedBy = createdBy,
-            UpdatedAt = DateTime.UtcNow.ToString("o")
+            UpdatedAt = DateTime.UtcNow.ToString("o"),
+            LayoutType   = layoutType.ToUpperInvariant() is "1UP" or "2UP" or "3UP" ? layoutType.ToUpperInvariant() : "1UP",
+            SheetColumns = cols,
+            SheetRows    = rows,
+            GapMm        = gapMm
         };
     }
 
@@ -118,7 +139,8 @@ public sealed class LabelTemplate : Entity
         string? revision = null,
         string? supportedBarcodeTypes = null,
         string? supportedPrinterModels = null,
-        string? compatibleStationTypes = null)
+        string? compatibleStationTypes = null,
+        double? gapMm = null)
     {
         Name = name;
         Description = description;
@@ -130,6 +152,9 @@ public sealed class LabelTemplate : Entity
         if (supportedBarcodeTypes is not null) SupportedBarcodeTypes = supportedBarcodeTypes;
         if (supportedPrinterModels is not null) SupportedPrinterModels = supportedPrinterModels;
         if (compatibleStationTypes is not null) CompatibleStationTypes = compatibleStationTypes;
+        if (gapMm.HasValue) GapMm = gapMm.Value;
+        // Sync SheetColumns from LayoutType if columns still default
+        SheetColumns = LayoutType switch { "2UP" => 2, "3UP" => 3, _ => 1 };
         Dpi = dpi;
         LabelWidth = labelWidth;
         LabelHeight = labelHeight;
@@ -168,4 +193,44 @@ public sealed class LabelTemplate : Entity
 
     public void Deactivate() => IsActive = false;
     public void Activate() => IsActive = true;
+
+    /// <summary>
+    /// Returns the TemplateJson with the columns, rows, and gapMm injected
+    /// into a top-level "layout" property, matching the renderer expectation.
+    /// </summary>
+    public string GetTemplateJsonWithLayout()
+    {
+        if (string.IsNullOrWhiteSpace(TemplateJson)) return TemplateJson;
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(TemplateJson);
+            var root = doc.RootElement;
+
+            using var ms = new System.IO.MemoryStream();
+            using (var writer = new System.Text.Json.Utf8JsonWriter(ms))
+            {
+                writer.WriteStartObject();
+                foreach (var prop in root.EnumerateObject())
+                {
+                    if (prop.NameEquals("layout")) continue; // override existing
+                    prop.WriteTo(writer);
+                }
+
+                writer.WriteStartObject("layout");
+                writer.WriteNumber("columns", SheetColumns);
+                writer.WriteNumber("rows", SheetRows);
+                writer.WriteNumber("gapMm", GapMm);
+                writer.WriteEndObject();
+
+                writer.WriteEndObject();
+            }
+
+            return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+        }
+        catch
+        {
+            return TemplateJson;
+        }
+    }
 }

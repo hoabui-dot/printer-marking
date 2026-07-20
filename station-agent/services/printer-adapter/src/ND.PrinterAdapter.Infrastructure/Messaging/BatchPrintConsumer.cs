@@ -185,7 +185,7 @@ public sealed class BatchPrintConsumer : BackgroundService
                 try
                 {
                     var vars = BuildLabelVariables(baseVars, item, cmd);
-                    var zpl  = _labelRenderer.Render(template.TemplateJson, vars);
+                    var zpl  = _labelRenderer.Render(template.GetTemplateJsonWithLayout(), vars);
                     zplParts.Add(zpl);
                 }
                 catch (Exception ex)

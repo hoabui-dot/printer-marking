@@ -44,17 +44,29 @@ public sealed class ZplRenderer : ILabelRenderer
             throw new InvalidOperationException("Label template JSON is invalid.", ex);
         }
 
+        // ── Detect multi-up layout ────────────────────────────────────────────
+        if (root.TryGetProperty("layout", out var layoutProp) && layoutProp.ValueKind == JsonValueKind.Object)
+        {
+            var cols   = layoutProp.TryGetProperty("columns", out var cProp) ? cProp.GetInt32() : 1;
+            var rows   = layoutProp.TryGetProperty("rows",    out var rProp) ? rProp.GetInt32() : 1;
+            var gapMm  = layoutProp.TryGetProperty("gapMm",  out var gProp) ? gProp.GetDouble() : 0.0;
+
+            if (cols > 1 || rows > 1)
+            {
+                _logger.LogDebug("ZplRenderer: multi-up layout detected — {Cols}×{Rows}, gap={Gap}mm", cols, rows, gapMm);
+                return RenderMultiUp(root, data, cols, rows, gapMm);
+            }
+        }
+
+        // ── Single-label render (unchanged) ──────────────────────────────────
         var dpi = root.TryGetProperty("dpi", out var dpiProp) ? dpiProp.GetInt32() : 203;
         var sb = new StringBuilder();
-        sb.AppendLine("^XA"); // Start label
+        sb.AppendLine("^XA");
 
-        // Set label dimensions if provided
         if (root.TryGetProperty("width", out var wProp) && root.TryGetProperty("height", out var hProp))
         {
-            var widthDots = MmToDots(wProp.GetDouble(), dpi);
-            var heightDots = MmToDots(hProp.GetDouble(), dpi);
-            sb.AppendLine($"^PW{widthDots}"); // Print width
-            sb.AppendLine($"^LL{heightDots}"); // Label length
+            sb.AppendLine($"^PW{MmToDots(wProp.GetDouble(), dpi)}");
+            sb.AppendLine($"^LL{MmToDots(hProp.GetDouble(), dpi)}");
         }
 
         if (!root.TryGetProperty("elements", out var elements))
@@ -63,6 +75,77 @@ public sealed class ZplRenderer : ILabelRenderer
             return sb.ToString();
         }
 
+        sb.Append(RenderElementList(elements, data, dpi, offsetX: 0, offsetY: 0));
+        sb.AppendLine("^XZ");
+        return sb.ToString();
+    }
+
+    // ── Multi-Up Renderer ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Renders <paramref name="cols"/> × <paramref name="rows"/> copies of the label elements
+    /// into a single ZPL document, tiled left-to-right, top-to-bottom.
+    /// Each cell is offset by (col * (cellWidthDots + gapDots), row * (cellHeightDots + gapDots)).
+    /// </summary>
+    private string RenderMultiUp(
+        JsonElement root,
+        IDictionary<string, string> data,
+        int cols, int rows, double gapMm)
+    {
+        var dpi        = root.TryGetProperty("dpi",    out var dpiProp) ? dpiProp.GetInt32()    : 203;
+        var cellWmm    = root.TryGetProperty("width",  out var wProp)   ? wProp.GetDouble()     : 50.0;
+        var cellHmm    = root.TryGetProperty("height", out var hProp)   ? hProp.GetDouble()     : 30.0;
+
+        var cellWdots  = MmToDots(cellWmm,  dpi);
+        var cellHdots  = MmToDots(cellHmm,  dpi);
+        var gapDots    = MmToDots(gapMm,    dpi);
+
+        // Full sheet dimensions
+        var sheetWdots = cols * cellWdots + (cols - 1) * gapDots;
+        var sheetHdots = rows * cellHdots + (rows - 1) * gapDots;
+
+        var sb = new StringBuilder();
+        sb.AppendLine("^XA");
+        sb.AppendLine($"^PW{sheetWdots}");
+        sb.AppendLine($"^LL{sheetHdots}");
+
+        if (!root.TryGetProperty("elements", out var elements))
+        {
+            sb.AppendLine("^XZ");
+            return sb.ToString();
+        }
+
+        for (var row = 0; row < rows; row++)
+        {
+            for (var col = 0; col < cols; col++)
+            {
+                var offsetX = col * (cellWdots + gapDots);
+                var offsetY = row * (cellHdots + gapDots);
+                sb.Append(RenderElementList(elements, data, dpi, offsetX, offsetY));
+            }
+        }
+
+        sb.AppendLine("^XZ");
+
+        _logger.LogDebug(
+            "ZplRenderer: multi-up rendered {Cells} cells ({Bytes} bytes)",
+            cols * rows, Encoding.UTF8.GetByteCount(sb.ToString()));
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Renders all elements in <paramref name="elements"/>, adding <paramref name="offsetX"/> / <paramref name="offsetY"/>
+    /// dots to every element's X/Y position. Used by both single-label and multi-up paths.
+    /// </summary>
+    private string RenderElementList(
+        JsonElement elements,
+        IDictionary<string, string> data,
+        int dpi,
+        int offsetX,
+        int offsetY)
+    {
+        var sb = new StringBuilder();
         foreach (var el in elements.EnumerateArray())
         {
             var type = el.TryGetProperty("type", out var typeProp) ? typeProp.GetString() : null;
@@ -72,13 +155,13 @@ public sealed class ZplRenderer : ILabelRenderer
             {
                 var elementZpl = type.ToLowerInvariant() switch
                 {
-                    "text"       => RenderText(el, data, dpi),
-                    "barcode"    => RenderBarcode(el, data, dpi),
-                    "qr"         => RenderQrCode(el, data, dpi),
-                    "datamatrix" => RenderDataMatrix(el, data, dpi),
-                    "rect"       => RenderRect(el, dpi),
-                    "circle"     => RenderCircle(el, dpi),
-                    "line"       => RenderLine(el, dpi),
+                    "text"       => RenderText(el, data, dpi, offsetX, offsetY),
+                    "barcode"    => RenderBarcode(el, data, dpi, offsetX, offsetY),
+                    "qr"         => RenderQrCode(el, data, dpi, offsetX, offsetY),
+                    "datamatrix" => RenderDataMatrix(el, data, dpi, offsetX, offsetY),
+                    "rect"       => RenderRect(el, dpi, offsetX, offsetY),
+                    "circle"     => RenderCircle(el, dpi, offsetX, offsetY),
+                    "line"       => RenderLine(el, dpi, offsetX, offsetY),
                     _            => null
                 };
 
@@ -90,52 +173,50 @@ public sealed class ZplRenderer : ILabelRenderer
                 _logger.LogWarning(ex, "ZplRenderer: failed to render element of type '{Type}' — skipping", type);
             }
         }
-
-        sb.AppendLine("^XZ"); // End label
         return sb.ToString();
     }
 
     // ─── Element Renderers ────────────────────────────────────────────────────
 
-    private string RenderText(JsonElement el, IDictionary<string, string> data, int dpi)
+    private string RenderText(JsonElement el, IDictionary<string, string> data, int dpi, int offsetX = 0, int offsetY = 0)
     {
-        var x = GetInt(el, "x", 0);
-        var y = GetInt(el, "y", 0);
+        var x = GetInt(el, "x", 0) + offsetX;
+        var y = GetInt(el, "y", 0) + offsetY;
         var fontSize = GetInt(el, "fontSize", 24);
         var text = ResolveBinding(el, data);
 
         // ^A0N: ZPL standard font. Scale height proportionally from fontSize.
         var fontHeight = (int)(fontSize * 1.4);
-        var fontWidth = (int)(fontSize * 1.2);
+        var fontWidth  = (int)(fontSize * 1.2);
 
         return $"^FO{x},{y}^A0N,{fontHeight},{fontWidth}^FD{EscapeZpl(text)}^FS\n";
     }
 
-    private string RenderBarcode(JsonElement el, IDictionary<string, string> data, int dpi)
+    private string RenderBarcode(JsonElement el, IDictionary<string, string> data, int dpi, int offsetX = 0, int offsetY = 0)
     {
-        var x = GetInt(el, "x", 0);
-        var y = GetInt(el, "y", 0);
-        var height = GetInt(el, "height", 80);
-        var value = ResolveBinding(el, data);
+        var x = GetInt(el, "x", 0) + offsetX;
+        var y = GetInt(el, "y", 0) + offsetY;
+        var height   = GetInt(el, "height", 80);
+        var value    = ResolveBinding(el, data);
         var symbology = el.TryGetProperty("symbology", out var sym) ? sym.GetString() ?? "Code128" : "Code128";
         var barWidth = GetInt(el, "barWidth", 3);
 
         return symbology.ToUpperInvariant() switch
         {
-            "CODE128"  => $"^FO{x},{y}^BY{barWidth}^BCN,{height},Y,N,N^FD{EscapeZpl(value)}^FS\n",
-            "CODE39"   => $"^FO{x},{y}^BY{barWidth}^B3N,N,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
-            "EAN13"    => $"^FO{x},{y}^BY{barWidth}^BEN,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
-            "UPCA"     => $"^FO{x},{y}^BY{barWidth}^BUN,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
-            "EAN8"     => $"^FO{x},{y}^BY{barWidth}^B8N,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
-            "ITF"      => $"^FO{x},{y}^BY{barWidth}^BIN,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
-            _          => $"^FO{x},{y}^BY{barWidth}^BCN,{height},Y,N,N^FD{EscapeZpl(value)}^FS\n" // default Code128
+            "CODE128" => $"^FO{x},{y}^BY{barWidth}^BCN,{height},Y,N,N^FD{EscapeZpl(value)}^FS\n",
+            "CODE39"  => $"^FO{x},{y}^BY{barWidth}^B3N,N,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
+            "EAN13"   => $"^FO{x},{y}^BY{barWidth}^BEN,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
+            "UPCA"    => $"^FO{x},{y}^BY{barWidth}^BUN,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
+            "EAN8"    => $"^FO{x},{y}^BY{barWidth}^B8N,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
+            "ITF"     => $"^FO{x},{y}^BY{barWidth}^BIN,{height},Y,N^FD{EscapeZpl(value)}^FS\n",
+            _         => $"^FO{x},{y}^BY{barWidth}^BCN,{height},Y,N,N^FD{EscapeZpl(value)}^FS\n"
         };
     }
 
-    private string RenderQrCode(JsonElement el, IDictionary<string, string> data, int dpi)
+    private string RenderQrCode(JsonElement el, IDictionary<string, string> data, int dpi, int offsetX = 0, int offsetY = 0)
     {
-        var x = GetInt(el, "x", 0);
-        var y = GetInt(el, "y", 0);
+        var x = GetInt(el, "x", 0) + offsetX;
+        var y = GetInt(el, "y", 0) + offsetY;
         
         int magnification;
         if (el.TryGetProperty("width", out var wProp) && wProp.ValueKind == JsonValueKind.Number)
@@ -178,10 +259,10 @@ public sealed class ZplRenderer : ILabelRenderer
         return ResolveBinding(el, data);
     }
 
-    private string RenderDataMatrix(JsonElement el, IDictionary<string, string> data, int dpi)
+    private string RenderDataMatrix(JsonElement el, IDictionary<string, string> data, int dpi, int offsetX = 0, int offsetY = 0)
     {
-        var x = GetInt(el, "x", 0);
-        var y = GetInt(el, "y", 0);
+        var x = GetInt(el, "x", 0) + offsetX;
+        var y = GetInt(el, "y", 0) + offsetY;
         var magnification = GetInt(el, "magnification", 4);
         var value = ResolveBinding(el, data);
 
@@ -189,35 +270,35 @@ public sealed class ZplRenderer : ILabelRenderer
         return $"^FO{x},{y}^BXN,{magnification},200^FD{EscapeZpl(value)}^FS\n";
     }
 
-    private string RenderRect(JsonElement el, int dpi)
+    private string RenderRect(JsonElement el, int dpi, int offsetX = 0, int offsetY = 0)
     {
-        var x = GetInt(el, "x", 0);
-        var y = GetInt(el, "y", 0);
-        var width = GetInt(el, "width", 100);
-        var height = GetInt(el, "height", 50);
+        var x         = GetInt(el, "x", 0) + offsetX;
+        var y         = GetInt(el, "y", 0) + offsetY;
+        var width     = GetInt(el, "width", 100);
+        var height    = GetInt(el, "height", 50);
         var thickness = GetInt(el, "strokeWidth", 2);
 
         // ^GB: Graphic Box. Format: ^GBw,h,t
         return $"^FO{x},{y}^GB{width},{height},{thickness}^FS\n";
     }
 
-    private string RenderCircle(JsonElement el, int dpi)
+    private string RenderCircle(JsonElement el, int dpi, int offsetX = 0, int offsetY = 0)
     {
-        var x = GetInt(el, "x", 0);
-        var y = GetInt(el, "y", 0);
-        var diameter = GetInt(el, "width", 60);
+        var x         = GetInt(el, "x", 0) + offsetX;
+        var y         = GetInt(el, "y", 0) + offsetY;
+        var diameter  = GetInt(el, "width", 60);
         var thickness = GetInt(el, "strokeWidth", 2);
 
         // ^GE: Graphic Ellipse. Format: ^GEw,h,t
         return $"^FO{x},{y}^GE{diameter},{diameter},{thickness}^FS\n";
     }
 
-    private string RenderLine(JsonElement el, int dpi)
+    private string RenderLine(JsonElement el, int dpi, int offsetX = 0, int offsetY = 0)
     {
-        var x = GetInt(el, "x", 0);
-        var y = GetInt(el, "y", 0);
-        var width = GetInt(el, "width", 100);
-        var height = GetInt(el, "height", 2);
+        var x         = GetInt(el, "x", 0) + offsetX;
+        var y         = GetInt(el, "y", 0) + offsetY;
+        var width     = GetInt(el, "width", 100);
+        var height    = GetInt(el, "height", 2);
         var thickness = Math.Max(height, 1);
 
         // ^GB: Graphic Box — use it as a line by making height == thickness

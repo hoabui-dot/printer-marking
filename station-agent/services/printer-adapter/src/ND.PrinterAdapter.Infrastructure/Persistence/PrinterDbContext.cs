@@ -102,6 +102,11 @@ public sealed class PrinterDbContext : DbContext, IUnitOfWork
             e.Property(x => x.UpdatedBy).HasColumnName("updated_by");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at").IsRequired();
             e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+            // N-Up layout columns
+            e.Property(x => x.LayoutType)  .HasColumnName("layout_type")  .HasDefaultValue("1UP").IsRequired();
+            e.Property(x => x.SheetColumns).HasColumnName("sheet_columns").HasDefaultValue(1);
+            e.Property(x => x.SheetRows)   .HasColumnName("sheet_rows")   .HasDefaultValue(1);
+            e.Property(x => x.GapMm)       .HasColumnName("gap_mm")       .HasDefaultValue(0.0);
         });
 
 

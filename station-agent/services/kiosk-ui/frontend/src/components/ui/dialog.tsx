@@ -15,7 +15,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-50 bg-black/70 backdrop-blur-sm animate-in fade-in-0',
+      'fixed inset-0 z-50 bg-black/60 backdrop-blur-sm animate-in fade-in-0',
       className
     )}
     {...props}
@@ -32,13 +32,18 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 border border-border-strong bg-card p-6 shadow-2xl rounded-xl text-foreground animate-in fade-in-0 zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-1/2 duration-150',
+        'fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4',
+        // bg-card = white in light, dark surface in dark
+        'border border-border bg-card p-6 rounded-2xl text-foreground',
+        '[box-shadow:var(--shadow-lg,0_20px_60px_rgba(0,0,0,0.2))]',
+        'animate-in fade-in-0 zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-1/2 duration-150',
         className
       )}
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-md p-1 text-muted-fg opacity-70 transition-all hover:opacity-100 hover:bg-surface-2 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring">
+      {/* Close button — larger, clearer in light mode */}
+      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-lg p-1.5 text-muted-fg opacity-70 transition-all hover:opacity-100 hover:bg-surface-2 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring">
         <X className="h-4 w-4" />
         <span className="sr-only">Đóng</span>
       </DialogPrimitive.Close>
@@ -53,7 +58,7 @@ const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
 DialogHeader.displayName = 'DialogHeader'
 
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 gap-2', className)} {...props} />
+  <div className={cn('flex flex-col-reverse sm:flex-row sm:justify-end gap-2', className)} {...props} />
 )
 DialogFooter.displayName = 'DialogFooter'
 
@@ -63,7 +68,8 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn('text-lg font-bold leading-none tracking-tight', className)}
+    // 22px section title per design system
+    className={cn('text-[22px] font-semibold leading-tight tracking-tight text-foreground', className)}
     {...props}
   />
 ))
@@ -75,7 +81,7 @@ const DialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
-    className={cn('text-sm text-muted-fg', className)}
+    className={cn('text-[13px] text-muted-fg leading-relaxed', className)}
     {...props}
   />
 ))
