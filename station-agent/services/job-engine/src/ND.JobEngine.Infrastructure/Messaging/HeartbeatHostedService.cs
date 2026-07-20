@@ -41,43 +41,7 @@ public sealed class HeartbeatHostedService : BackgroundService
                 var stepRepo = scope.ServiceProvider.GetRequiredService<IJobStepRepository>();
                 var attemptRepo = scope.ServiceProvider.GetRequiredService<IJobAttemptRepository>();
 
-                // Check active steps
-                var activeJobs = await jobRepo.GetByStatusAsync("Running", stoppingToken);
-                
-                string plcState = "Idle";
-                string cameraState = "Idle";
-                string gatewayState = "Connected";
-
-                if (activeJobs.Count > 0)
-                {
-                    var activeJob = activeJobs[0];
-                    var attempts = await attemptRepo.GetByJobIdAsync(activeJob.Id, stoppingToken);
-                    var activeAttempt = attempts.OrderByDescending(a => a.RetrySequence).FirstOrDefault();
-                    if (activeAttempt != null)
-                    {
-                        var steps = await stepRepo.GetByAttemptIdAsync(activeAttempt.Id, stoppingToken);
-                        var runningStep = steps.FirstOrDefault(s => s.Status == StepStatus.Running);
-                        if (runningStep != null)
-                        {
-                            var name = runningStep.StepName.ToUpperInvariant();
-                            if (name == "VISION_CHECK")
-                            {
-                                cameraState = "Verifying";
-                                plcState = "Busy";
-                            }
-                            else if (name == "PLC_REJECT")
-                            {
-                                plcState = "Rejecting";
-                                cameraState = "Idle";
-                            }
-                            else
-                            {
-                                plcState = "Busy";
-                            }
-                        }
-                    }
-                }
-                _logger.LogDebug("Job Engine active job step check completed.");
+                _logger.LogDebug("Job Engine Heartbeat service active.");
             }
             catch (Exception ex)
             {
